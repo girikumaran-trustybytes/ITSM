@@ -1,14 +1,25 @@
 :root {
-  --bg: #eef3f8;
-  --teal: #20c6b2; /* primary accent - change if you have a design token */
-  --dark-teal: #1a4f47;
-  --muted: #6b7280;
-  --muted-soft: #9aa7b3;
+  /* Design system from ticket UI reference */
+  --bg: #F8FAFC;
   --card: #ffffff;
-  --primary-bg: #1a4f47;
-  --accent-red: #e02424;
+  --card-radius: 6px;
+  --card-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --text-heading: #333333;
+  --text-label: #4A5568;
+  --text-value: #718096;
+  --link: #3182CE;
+  --button-red: #E53E3E;
+  --button-red-hover: #C53030;
+  --status-new-bg: #9EE077;
+  --avatar-green: #66BB6A;
+  --border-light: #E0E0E0;
+  --muted: #718096;
+  --muted-soft: #9aa7b3;
   --assigned-bg: #f3f4f6;
-  --card-shadow: 0 6px 18px rgba(15,23,42,0.06);
+  --teal: #20c6b2;
+  --dark-teal: #1a4f47;
+  --primary-bg: #1a4f47;
+  --accent-red: #E53E3E;
 }
 
 * {
@@ -20,7 +31,9 @@ html,
 #root {
   height: 100%;
   margin: 0;
-  font-family: Inter, Segoe UI, Arial, sans-serif;
+  font-family: 'Segoe UI', Roboto, 'Open Sans', system-ui, sans-serif;
+  font-size: 15px;
+  color: var(--text-label);
   background: var(--bg);
 }
 
@@ -115,8 +128,8 @@ html,
 /* Secondary Sidebar */
 .secondary-sidebar {
   width: 280px;
-  background: #fff;
-  border-right: 1px solid #e6edf3;
+  background: var(--card);
+  border-right: 1px solid var(--border-light);
   overflow-y: auto;
 }
 
@@ -152,12 +165,12 @@ html,
 
 .groups-title {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
   margin: 16px 0 12px 0;
   font-weight: 600;
-  color: #2b3942;
-  font-size: 13px;
+  color: var(--text-heading);
+  font-size: 15px;
 }
 
 .groups-title .icon {
@@ -236,7 +249,7 @@ html,
 
 .main-area {
   flex: 1;
-  padding: 24px;
+  padding: 24px 30px;
   overflow-y: auto;
 }
 
@@ -248,8 +261,8 @@ html,
 }
 
 .top-bar .breadcrumbs {
-  color: #546a73;
-  font-size: 14px;
+  color: var(--text-value);
+  font-size: 15px;
 }
 
 .top-bar .actions {
@@ -287,9 +300,9 @@ html,
 
 .card {
   background: var(--card);
-  border-radius: 12px;
-  padding: 12px;
-  box-shadow: 0 6px 18px rgba(27, 39, 46, 0.06);
+  border-radius: var(--card-radius);
+  padding: 20px 24px;
+  box-shadow: var(--card-shadow);
 }
 
 .asset-table {
@@ -379,22 +392,22 @@ html,
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--button-red);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(32, 198, 178, 0.3);
+  box-shadow: 0 4px 12px rgba(229, 62, 62, 0.25);
   transition: all 0.2s;
-  font-weight: bold;
+  font-weight: 600;
   font-size: 18px;
   border: none;
 }
 
 .floating-tools .chat:hover,
 .floating-tools .help:hover {
-  background: #1aad9a;
+  background: var(--button-red-hover);
   transform: scale(1.1);
 }
 
@@ -471,9 +484,9 @@ html,
   outline: none;
   flex: 1;
   padding: 8px 0 8px 0;
-  font-size: 13px;
+  font-size: 14px;
   background: transparent;
-  color: #2b3942;
+  color: var(--text-label);
   width: 100%;
   padding-right: 28px;
 }
@@ -512,8 +525,8 @@ html,
 .filter-option {
   padding: 10px 16px;
   cursor: pointer;
-  font-size: 13px;
-  color: #2b3942;
+  font-size: 14px;
+  color: var(--text-label);
   transition: all 0.2s;
 }
 
@@ -555,22 +568,22 @@ html,
 }
 
 .incidents-table {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  background: var(--card);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
   overflow: hidden;
 }
 
 .table-header {
   display: grid;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 14px 20px;
   border-bottom: 1px solid #f1f5f8;
   font-weight: 600;
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 14px;
+  color: var(--text-label);
   background: #f9fafb;
-  justify-items: start; /* ensure grid items (column headers) are left-aligned */
+  justify-items: start;
 }
 
 /* Ensure header labels are left aligned */
@@ -626,11 +639,11 @@ html,
 .table-row {
   display: grid;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 14px 20px;
   border-bottom: 1px solid #fbfcfd;
   align-items: center;
-  font-size: 13px;
-  color: #2b3942;
+  font-size: 15px;
+  color: var(--text-label);
   transition: all 0.2s;
   cursor: pointer;
 }
@@ -669,7 +682,7 @@ html,
 }
 
 .col-summary a {
-  color: var(--teal);
+  color: var(--link);
   text-decoration: none;
   cursor: pointer;
 }
@@ -679,8 +692,8 @@ html,
 }
 
 .col-category {
-  font-size: 12px;
-  color: #546a73;
+  font-size: 14px;
+  color: var(--text-value);
 }
 
 .col-lastAction {
@@ -692,7 +705,7 @@ html,
 }
 
 .last-action-time {
-  color: #2b3942;
+  color: var(--text-heading);
   font-weight: 500;
 }
 
@@ -731,12 +744,11 @@ html,
 }
 
 .status-badge {
-  display: block;
-  padding: 4px 12px;
-  border-radius: 4px;
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
-  width: 100%;
   text-align: center;
   box-sizing: border-box;
 }
@@ -810,8 +822,11 @@ html,
 }
 
 .status-badge.new {
-  background: #064e3b; /* dark green */
+  background: var(--status-new-bg);
   color: #ffffff;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 10px;
 }
 
 .filter-icon-button {
@@ -898,9 +913,9 @@ html,
 }
 
 .modal-content {
-  background: white;
+  background: var(--card);
   border-radius: 8px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
   max-width: 800px;
   width: 90%;
   max-height: 90vh;
@@ -921,7 +936,7 @@ html,
 
 .modal-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 600;
 }
 
@@ -957,8 +972,8 @@ html,
 .form-label {
   display: block;
   font-weight: 600;
-  font-size: 13px;
-  color: #2b3942;
+  font-size: 14px;
+  color: var(--text-label);
   margin-bottom: 8px;
 }
 
@@ -1372,11 +1387,10 @@ html,
 /* Main Content */
 .detail-main {
   flex: 1;
-  padding: 20px;
+  padding: 20px 24px;
   display: grid;
-  /* left action column, main content, and combined right area (two cards) */
   grid-template-columns: 180px minmax(0, 1fr) 520px;
-  gap: 20px;
+  gap: 24px;
   max-width: 100%;
 }
 
@@ -1396,15 +1410,16 @@ html,
 }
 
 .ticket-title h2 {
-  margin: 0 0 4px 0;
+  margin: 0 0 8px 0;
   font-size: 20px;
-  color: #2b3942;
+  font-weight: 600;
+  color: var(--text-heading);
 }
 
 .ticket-title p {
   margin: 0;
-  font-size: 16px;
-  color: #2b3942;
+  font-size: 15px;
+  color: var(--text-value);
 }
 
 /* Progress Tracker */
@@ -1482,7 +1497,7 @@ html,
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--avatar-green);
   color: white;
   display: flex;
   align-items: center;
@@ -1506,8 +1521,8 @@ html,
 
 .comment-author {
   font-weight: 600;
-  color: #2b3942;
-  font-size: 13px;
+  color: var(--text-heading);
+  font-size: 14px;
 }
 
 .comment-action {
@@ -1560,17 +1575,16 @@ html,
 
 .comment-text {
   margin: 0;
-  color: #4b5563;
-  font-size: 13px;
+  color: var(--text-value);
+  font-size: 14px;
   line-height: 1.6;
 }
 
 /* Sidebar */
 .detail-sidebar {
-  /* Right area containing two separate cards (ticket info + end-user) displayed side-by-side on wide screens */
   grid-column: 3;
   grid-row: 1 / -1;
-  padding: 12px;
+  padding: 12px 0;
   background: transparent;
   height: fit-content;
   position: sticky;
@@ -1578,27 +1592,26 @@ html,
   width: 100%;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  gap: 24px;
   align-items: start;
 }
 
 .ticket-info-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 18px;
+  background: var(--card);
+  border-radius: var(--card-radius);
+  padding: 20px 24px;
   box-shadow: var(--card-shadow);
   display: block;
-  /* make each card scroll independently when content grows */
   max-height: 72vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
 .sidebar-title {
-  margin: 0 0 16px 0;
-  font-size: 15px;
+  margin: 0 0 20px 0;
+  font-size: 18px;
   font-weight: 600;
-  color: #2b3942;
+  color: var(--text-heading);
 }
 
 .sidebar-field {
@@ -1607,18 +1620,16 @@ html,
 
 .sidebar-field label {
   display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  margin-bottom: 6px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-label);
+  margin-bottom: 8px;
 }
 
 .sidebar-field span {
   display: block;
-  font-size: 13px;
-  color: #2b3942;
+  font-size: 15px;
+  color: var(--text-value);
 }
 
 /* Assigned agent label and block */
@@ -1662,9 +1673,9 @@ html,
 
 /* End user card */
 .enduser-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 18px;
+  background: var(--card);
+  border-radius: var(--card-radius);
+  padding: 20px 24px;
   box-shadow: var(--card-shadow);
   max-height: 72vh;
   overflow-y: auto;
@@ -1674,43 +1685,46 @@ html,
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #ef4444;
+  background: var(--avatar-green);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 16px;
 }
 .call-button, .message-button {
-  padding: 8px 12px;
-  border-radius: 20px;
+  padding: 10px 16px;
+  border-radius: 22px;
   border: none;
   cursor: pointer;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .call-button {
-  background: var(--accent-red);
+  background: var(--button-red);
   color: white;
-  padding: 10px 14px;
-  border-radius: 999px;
-  border: none;
-  font-weight: 700;
+  font-weight: 600;
+}
+.call-button:hover {
+  background: var(--button-red-hover);
 }
 .message-button {
   background: #fff;
-  color: var(--accent-red);
+  color: var(--button-red);
   border: 1px solid #fdecea;
-  padding: 10px 14px;
-  border-radius: 999px;
-  font-weight: 700;
+}
+.message-button:hover {
+  background: #fff7f7;
 }
 
 /* Slightly tighter typography and spacing for sidebar */
 .ticket-info-card,
 .enduser-card {
-  padding: 18px;
+  padding: 20px 24px;
 }
 
 /* scrollbar subtle styling for the right cards */
@@ -1757,7 +1771,7 @@ html,
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--avatar-green);
   color: white;
   display: flex;
   align-items: center;
@@ -1774,9 +1788,9 @@ html,
 }
 
 .agent-name {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  color: #2b3942;
+  color: var(--text-heading);
 }
 
 .agent-team {
@@ -1800,12 +1814,12 @@ html,
   font-size: 13px;
 }
 
-/* End-user card tweaks to match screenshot */
+/* End-user card */
 .enduser-card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 6px 18px rgba(15,23,42,0.06);
+  background: var(--card);
+  border-radius: var(--card-radius);
+  padding: 20px 24px;
+  box-shadow: var(--card-shadow);
 }
 
 .enduser-header .enduser-avatar,
@@ -1820,30 +1834,30 @@ html,
   font-size:16px;
 }
 
-/* Call and message buttons styled as rounded red/outline pills */
+/* Call and message buttons: pill-shaped red per design */
 .call-button {
-  background: #e02424;
+  background: var(--button-red);
   color: white;
   border: none;
-  padding: 10px 14px;
-  border-radius: 999px;
-  box-shadow: 0 4px 10px rgba(224,36,36,0.18);
+  padding: 10px 16px;
+  border-radius: 22px;
+  box-shadow: 0 2px 8px rgba(229, 62, 62, 0.2);
 }
-.call-button:hover { background: #c71c1c; }
+.call-button:hover { background: var(--button-red-hover); }
 .message-button {
   background: #fff;
-  color: #b91c1c;
-  border: 1px solid #f1dede;
-  padding: 10px 14px;
-  border-radius: 999px;
+  color: var(--button-red);
+  border: 1px solid #fdecea;
+  padding: 10px 16px;
+  border-radius: 22px;
 }
 .message-button:hover { background: #fff7f7; }
 
-/* Make email/links match primary link style from design */
+/* Links: medium blue per design */
 .sidebar-field .ticket-type-link,
 .sidebar-field .workflow-link,
 .sidebar-field a {
-  color: var(--teal);
+  color: var(--link);
   text-decoration: none;
 }
 .sidebar-field a:hover { text-decoration: underline; }
