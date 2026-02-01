@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  AGENT
+  USER
+}
+
+model User {
+  id            Int             @id @default(autoincrement())
+  email         String          @unique
+  password      String
+  name          String?
+  phone         String?
+  client        String?
+  site          String?
+  accountManager String?
+  role          Role            @default(USER)
+  status        String          @default("ACTIVE")
+  refreshTokens RefreshToken[]
+  tickets       Ticket[]        @relation("Requester")
+  assignedTo    Ticket[]        @relation("Assignee")
+  auditLogs     AuditLog[]
+  ticketHistoryChanges TicketHistory[] @relation("TicketHistoryChangedBy")
+  attachments   Attachment[]    @relation("AttachmentUploadedBy")
+  assetsAssigned Asset[]        @relation("AssetsAssignedTo")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  revoked   Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Ticket {
+  id          Int             @id @default(autoincrement())
+  ticketId    String          @unique
+  type        String
+  priority    String
+  impact      String
+  urgency     String
+  status      String
+  category    String?
+  subcategory String?
+  description String?
+  requester   User?           @relation("Requester", fields: [requesterId], references: [id])
+  requesterId Int?
+  assignee    User?           @relation("Assignee", fields: [assigneeId], references: [id])
+  assigneeId  Int?
+  slaStart    DateTime?
+  slaBreach   DateTime?
+  attachments Attachment[]
+  history     TicketHistory[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model TicketHistory {
+  id          Int      @id @default(autoincrement())
+  ticket      Ticket   @relation(fields: [ticketId], references: [id])
+  ticketId    Int
+  fromStatus  String
+  toStatus    String
+  changedBy   User?    @relation("TicketHistoryChangedBy", fields: [changedById], references: [id])
+  changedById Int?
+  note        String?
+  createdAt   DateTime @default(now())
+}
+
+model Attachment {
+  id          Int      @id @default(autoincrement())
+  filename    String
+  path        String
+  ticket      Ticket?  @relation(fields: [ticketId], references: [id])
+  ticketId    Int?
+  uploadedBy  User?    @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id])
+  uploadedById Int?
+  createdAt   DateTime @default(now())
+}
+
+model Asset {
+  id           Int       @id @default(autoincrement())
+  name         String
+  serial       String?
+  category     String
+  status       String
+  assignedTo   User?     @relation("AssetsAssignedTo", fields: [assignedToId], references: [id])
+  assignedToId Int?
+  vendor       String?
+  warrantyUntil DateTime?
+  purchaseDate DateTime?
+  auditLogs    AuditLog[] @relation("AssetAuditLogs")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  entity    String
+  entityId  Int?
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    Int?
+  asset     Asset?   @relation("AssetAuditLogs", fields: [assetId], references: [id])
+  assetId   Int?
+  meta      Json?
+  createdAt DateTime @default(now())
+}
+

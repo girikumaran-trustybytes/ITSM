@@ -1,0 +1,24 @@
+/* Minimal styles for the ticket demo */
+.ticket-header h2 { margin: 0; font-size: 20px }
+.timeline { display:flex; gap:12px; margin:16px 0 }
+.timeline-step { background:#e6f7f5; padding:12px 18px; border-radius:6px; opacity:0.6 }
+.timeline-step.active { background:linear-gradient(90deg,#1fb89a,#2fd6c1); color:white; opacity:1 }
+.actions-row { display:flex; gap:10px; margin-bottom:18px }
+.btn { background:#fff; border:1px solid #dfe7ea; padding:8px 12px; border-radius:20px; cursor:pointer }
+.feed { display:flex; flex-direction:column; gap:12px }
+.feed-item { display:flex; gap:12px; background:#fff; border-radius:10px; padding:14px; box-shadow:0 2px 6px rgba(0,0,0,0.03) }
+.avatar { width:44px; height:44px; border-radius:50%; background:#2fb7d1; color:white; display:flex; align-items:center; justify-content:center; font-weight:700 }
+.feed-meta { margin-bottom:8px }
+.tag { background:#dff3ee; color:#077a59; padding:2px 8px; border-radius:6px; font-size:12px; margin-left:8px }
+.feed-text { color:#333 }
+
+/* Modal styles */
+.modal-overlay.demo-modal { position:fixed; inset:0; background:rgba(0,0,0,0.25); display:flex; align-items:center; justify-content:center; z-index:9999 }
+.modal-panel { background:#fff; border-radius:8px; width:720px; max-width:92%; padding:18px; box-shadow:0 8px 30px rgba(0,0,0,0.15) }
+.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
+.modal-body .field { margin-bottom:12px }
+.modal-body label { display:block; font-weight:600; margin-bottom:6px }
+.modal-body input, .modal-body textarea { width:100%; padding:8px; border:1px solid #e2e8ea; border-radius:6px }
+.modal-footer { display:flex; gap:10px; justify-content:flex-end; margin-top:8px }
+.btn-cancel { background:#fff; border:1px solid #e2e8ea; padding:8px 14px; border-radius:18px }
+.btn-send { background:#13c6a8; color:#fff; border:none; padding:8px 14px; border-radius:18px }
