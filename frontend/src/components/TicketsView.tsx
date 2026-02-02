@@ -1,4 +1,6 @@
 import React, { useState } from 'react'
+import * as ticketService from '../services/ticket.service'
+import * as ticketSvc from '../services/ticket.service'
 
 export type Incident = {
   id: string
@@ -342,10 +344,20 @@ export default function TicketsView() {
 
   const handleTriage = () => {
     if (!selectedTicket) return
-    const updated = incidents.map(i => i.id === selectedTicket.id ? { ...i, status: 'In Progress' as Incident['status'] } : i)
-    setIncidents(updated)
-    setSelectedTicket(prev => prev ? { ...prev, status: 'In Progress' } : prev)
-    addTicketComment(selectedTicket.id, 'Ticket triaged and set to In Progress')
+    // Perform backend transition and update UI
+    (async () => {
+      try {
+        const res = await ticketService.transitionTicket(selectedTicket.id, 'In Progress')
+        const updated = incidents.map(i => i.id === selectedTicket.id ? { ...i, status: res.status } : i)
+        setIncidents(updated)
+        setSelectedTicket(prev => prev ? { ...prev, status: res.status } : prev)
+        addTicketComment(selectedTicket.id, 'Ticket triaged and set to In Progress')
+      } catch (err: any) {
+        // fallback: optimistic update if backend fails for connectivity
+        console.warn('Triage transition failed', err)
+        alert(err?.response?.data?.error || err?.message || 'Failed to triage ticket')
+      }
+    })()
   }
 
   const handleEmailUser = () => {
@@ -364,8 +376,31 @@ export default function TicketsView() {
 
   const handleAddNote = () => {
     if (!selectedTicket) return
-    setShowNoteEditor(true)
-    // focus will be handled by the rendered textarea
+    // Quick prompt to add a note and persist to backend if available
+    const note = window.prompt('Enter note to add to ticket:')
+    if (!note) return
+    // optimistic UI update
+    addTicketComment(selectedTicket.id, note)
+    // try to persist to backend
+    ticketSvc.createHistory(selectedTicket.id, { note }).catch(() => {
+      // ignore errors — kept in UI as demo
+    })
+  }
+
+  const handleMarkResponded = async () => {
+    if (!selectedTicket) return
+    try {
+      const updated = await ticketSvc.transitionTicket(selectedTicket.id, 'In Progress')
+      // update UI
+      setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: updated.status as any } : i))
+      setSelectedTicket(prev => prev ? { ...prev, status: updated.status } : prev)
+      addTicketComment(selectedTicket.id, 'Marked as responded (In Progress)')
+    } catch (e) {
+      // fallback: optimistic update
+      setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: 'In Progress' } : i))
+      setSelectedTicket(prev => prev ? { ...prev, status: 'In Progress' } : prev)
+      addTicketComment(selectedTicket.id, 'Marked as responded (local)')
+    }
   }
 
   const handleSaveNote = () => {
@@ -390,10 +425,18 @@ export default function TicketsView() {
 
   const handleResolveTicket = () => {
     if (!selectedTicket) return
-    const updated = incidents.map(i => i.id === selectedTicket.id ? { ...i, status: 'Closed' as Incident['status'] } : i)
-    setIncidents(updated)
-    setSelectedTicket(prev => prev ? { ...prev, status: 'Closed' } : prev)
-    addTicketComment(selectedTicket.id, 'Ticket resolved/closed')
+    (async () => {
+      try {
+        const res = await ticketService.transitionTicket(selectedTicket.id, 'Closed')
+        const updated = incidents.map(i => i.id === selectedTicket.id ? { ...i, status: res.status } : i)
+        setIncidents(updated)
+        setSelectedTicket(prev => prev ? { ...prev, status: res.status } : prev)
+        addTicketComment(selectedTicket.id, 'Ticket resolved/closed')
+      } catch (err: any) {
+        console.warn('Resolve transition failed', err)
+        alert(err?.response?.data?.error || err?.message || 'Failed to resolve ticket')
+      }
+    })()
   }
 
   // Listen for demo actions dispatched by the ticket demo/modal
@@ -552,6 +595,7 @@ export default function TicketsView() {
           <button className="pill-btn email" onClick={handleEmailUser}>✉ Email User</button>
           <button className="pill-btn add-note" onClick={handleAddNote}>📝 Add Note</button>
           <button className="pill-btn supplier" onClick={handleLogToSupplier}>📦 Log to Supplier</button>
+          <button className="pill-btn" onClick={handleMarkResponded}>⮞ Mark Responded</button>
           <button className="pill-btn resolve" onClick={handleResolveTicket}>✔ Resolve Ticket</button>
         </div>
       </div>
