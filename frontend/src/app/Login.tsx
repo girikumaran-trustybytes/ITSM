@@ -1,9 +1,9 @@
 import React from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from 'react-router-dom'
 import { TextField, Button, Box, Paper, Typography } from '@mui/material'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { login } from '../services/auth.service'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -30,7 +30,7 @@ export default function Login() {
   return (
     <Box display="flex" height="100vh" alignItems="center" justifyContent="center">
       <Paper sx={{ width: 420, p: 4 }}>
-        <Typography variant="h5" mb={2}>Admin Login</Typography>
+        <Typography variant="h5" mb={2}>Login</Typography>
         <form onSubmit={handleSubmit(onSubmit)}>
           <TextField fullWidth label="Email" margin="normal" autoComplete="username" {...register('email')} />
           <TextField fullWidth label="Password" type="password" margin="normal" autoComplete="current-password" {...register('password')} />

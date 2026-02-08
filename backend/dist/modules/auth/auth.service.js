@@ -18,7 +18,7 @@ async function login(email, password) {
     const ok = await bcrypt_1.default.compare(password, user.password);
     if (!ok)
         throw new Error('Invalid credentials');
-    const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, role: user.role }, ACCESS_SECRET, {
+    const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, role: user.role, name: user.name, email: user.email }, ACCESS_SECRET, {
         expiresIn: ACCESS_EXPIRES,
     });
     const refreshToken = jsonwebtoken_1.default.sign({ sub: user.id }, REFRESH_SECRET, {
@@ -32,7 +32,7 @@ async function login(email, password) {
             expiresAt,
         },
     });
-    return { accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role } };
+    return { accessToken, refreshToken, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
 }
 exports.login = login;
 async function refresh(refreshToken) {
@@ -44,7 +44,7 @@ async function refresh(refreshToken) {
         const user = await client_1.default.user.findUnique({ where: { id: record.userId } });
         if (!user)
             throw new Error('User not found');
-        const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, role: user.role }, ACCESS_SECRET, {
+        const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, role: user.role, name: user.name, email: user.email }, ACCESS_SECRET, {
             expiresIn: ACCESS_EXPIRES,
         });
         return { accessToken };

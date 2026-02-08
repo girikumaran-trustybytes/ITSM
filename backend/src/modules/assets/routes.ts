@@ -1,23 +1,16 @@
-import { Router, Request, Response } from 'express'
-import { getAssets, getAssetById } from '../../data'
+import { Router } from 'express'
+import * as ctrl from './assets.controller'
 import { authenticateJWT } from '../../common/middleware/auth.middleware'
+import { permit } from '../../common/middleware/rbac.middleware'
 
 const router = Router()
 
 router.use(authenticateJWT)
 
-router.get('/', async (_req: Request, res: Response) => {
-  const assets = await getAssets()
-  res.json(assets)
-})
-
-router.get('/:id', async (req: Request, res: Response) => {
-  const asset = await getAssetById(req.params.id)
-  if (asset) {
-    res.json(asset)
-  } else {
-    res.status(404).json({ error: 'Asset not found' })
-  }
-})
+router.get('/', permit(['ADMIN','AGENT']), ctrl.list)
+router.get('/:id', permit(['ADMIN','AGENT']), ctrl.getOne)
+router.post('/', permit(['ADMIN','AGENT']), ctrl.create)
+router.patch('/:id', permit(['ADMIN','AGENT']), ctrl.update)
+router.delete('/:id', permit(['ADMIN']), ctrl.remove)
 
 export default router

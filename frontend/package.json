@@ -17,6 +17,7 @@
     "@emotion/styled": "^11.11.0",
     "react-hook-form": "^7.45.0",
     "zod": "^3.21.4",
+    "lucide-react": "^0.452.0",
     "@hookform/resolvers": "^2.9.11"
   },
   "devDependencies": {

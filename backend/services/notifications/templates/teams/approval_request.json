@@ -1,0 +1,4 @@
+{
+  "title": "Approval required for ticket {{ticketId}}",
+  "text": "{{summary}}\nREQUESTER: {{requester}}\n<{{appUrl}}/tickets/{{ticketId}}|View ticket>"
+}

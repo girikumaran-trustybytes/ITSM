@@ -31,6 +31,9 @@ model User {
   ticketHistoryChanges TicketHistory[] @relation("TicketHistoryChangedBy")
   attachments   Attachment[]    @relation("AttachmentUploadedBy")
   assetsAssigned Asset[]        @relation("AssetsAssignedTo")
+  approvals     Approval[]
+  assignedTasks Task[]
+  ticketStatusChanges TicketStatusHistory[]
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 }
@@ -48,6 +51,7 @@ model RefreshToken {
 model Ticket {
   id          Int             @id @default(autoincrement())
   ticketId    String          @unique
+  subject     String?
   type        String
   priority    String
   impact      String
@@ -56,6 +60,9 @@ model Ticket {
   category    String?
   subcategory String?
   description String?
+  resolution  String?
+  resolutionCategory String?
+  resolvedAt  DateTime?
   requester   User?           @relation("Requester", fields: [requesterId], references: [id])
   requesterId Int?
   assignee    User?           @relation("Assignee", fields: [assigneeId], references: [id])
@@ -64,6 +71,14 @@ model Ticket {
   slaBreach   DateTime?
   attachments Attachment[]
   history     TicketHistory[]
+  approvals   Approval[]
+  slaTracking SlaTracking?
+  tasks       Task[]
+  statusHistory TicketStatusHistory[]
+  supplier    Supplier?       @relation("SupplierTickets", fields: [supplierId], references: [id])
+  supplierId  Int?
+  asset       Asset?          @relation("AssetTickets", fields: [assetId], references: [id])
+  assetId     Int?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 }
@@ -77,6 +92,7 @@ model TicketHistory {
   changedBy   User?    @relation("TicketHistoryChangedBy", fields: [changedById], references: [id])
   changedById Int?
   note        String?
+  internal    Boolean  @default(false)
   createdAt   DateTime @default(now())
 }
 
@@ -93,16 +109,82 @@ model Attachment {
 
 model Asset {
   id           Int       @id @default(autoincrement())
+  assetId      String?   @unique
   name         String
-  serial       String?
+  assetType    String?
   category     String
-  status       String
+  subcategory  String?
+  ciType       String?
+  serial       String?
+  assetTag     String?
+  barcode      String?
   assignedTo   User?     @relation("AssetsAssignedTo", fields: [assignedToId], references: [id])
   assignedToId Int?
-  vendor       String?
-  warrantyUntil DateTime?
+  assignedUserEmail String?
+  department   String?
+  location     String?
+  site         String?
+  costCentre   String?
+  manager      String?
+  assetOwner   String?
+
+  manufacturer String?
+  model        String?
+  cpu          String?
+  ram          String?
+  storage      String?
+  macAddress   String?
+  ipAddress    String?
+  biosVersion  String?
+  firmware     String?
+
+  os           String?
+  osVersion    String?
+  licenseKey   String?
+  installedSoftware String[] @default([])
+  antivirus    String?
+  patchStatus  String?
+  encryption   String?
+
   purchaseDate DateTime?
+  supplier     String?
+  poNumber     String?
+  invoiceNumber String?
+  purchaseCost Decimal?  @db.Decimal(12,2)
+  warrantyStart DateTime?
+  warrantyUntil DateTime?
+  amcSupport   String?
+  depreciationEnd DateTime?
+
+  status       String
+  lifecycleStage String?
+  condition    String?
+  deploymentDate DateTime?
+  lastAuditDate DateTime?
+  endOfLife    DateTime?
+  disposalDate DateTime?
+  disposalMethod String?
+
+  securityClassification String?
+  dataSensitivity String?
+  mdmEnrolled Boolean @default(false)
+  complianceStatus String?
+  riskLevel   String?
+  lastSecurityScan DateTime?
+
+  parentAsset   Asset?   @relation("AssetHierarchy", fields: [parentAssetId], references: [id])
+  parentAssetId Int?
+  childAssets   Asset[]  @relation("AssetHierarchy")
+
+  notes        String?
+  createdBy    User?     @relation("AssetCreatedBy", fields: [createdById], references: [id])
+  createdById  Int?
+  attachments  AssetAttachment[]
   auditLogs    AuditLog[] @relation("AssetAuditLogs")
+  tickets      Ticket[]  @relation("AssetTickets")
+  assetChanges AssetChange[]
+  assetProblems AssetProblem[]
+  assetServices AssetService[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 }
@@ -118,5 +200,141 @@ model AuditLog {
   assetId   Int?
   meta      Json?
   createdAt DateTime @default(now())
+}
+
+model AssetAttachment {
+  id        Int      @id @default(autoincrement())
+  asset     Asset    @relation(fields: [assetId], references: [id])
+  assetId   Int
+  filename  String
+  path      String
+  uploadedBy User?   @relation(fields: [uploadedById], references: [id])
+  uploadedById Int?
+  createdAt DateTime @default(now())
+}
+
+model Change {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  title     String
+  status    String?
+  assets    AssetChange[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Problem {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  title     String
+  status    String?
+  assets    AssetProblem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Service {
+  id        Int      @id @default(autoincrement())
+  name      String
+  description String?
+  assets    AssetService[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AssetChange {
+  assetId  Int
+  changeId Int
+  asset    Asset  @relation(fields: [assetId], references: [id])
+  change   Change @relation(fields: [changeId], references: [id])
+  @@id([assetId, changeId])
+}
+
+model AssetProblem {
+  assetId   Int
+  problemId Int
+  asset     Asset   @relation(fields: [assetId], references: [id])
+  problem   Problem @relation(fields: [problemId], references: [id])
+  @@id([assetId, problemId])
+}
+
+model AssetService {
+  assetId   Int
+  serviceId Int
+  asset     Asset   @relation(fields: [assetId], references: [id])
+  service   Service @relation(fields: [serviceId], references: [id])
+  @@id([assetId, serviceId])
+}
+
+model Supplier {
+  id          Int      @id @default(autoincrement())
+  companyName String
+  contactName String?
+  contactEmail String?
+  slaTerms    String?
+  tickets     Ticket[] @relation("SupplierTickets")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Approval {
+  id         Int      @id @default(autoincrement())
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  ticketId   Int
+  approver   User?    @relation(fields: [approverId], references: [id])
+  approverId Int?
+  status     String   @default("pending")
+  comment    String?
+  createdAt  DateTime @default(now())
+  approvedAt DateTime?
+}
+
+model SlaTracking {
+  id         Int      @id @default(autoincrement())
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  ticketId   Int     @unique
+  slaName    String?
+  startTime  DateTime?
+  pauseTime  DateTime?
+  resumeTime DateTime?
+  breachTime DateTime?
+  status     String   @default("running")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model SlaConfig {
+  id              Int      @id @default(autoincrement())
+  name            String
+  priority        String
+  responseTimeMin Int
+  resolutionTimeMin Int
+  businessHours   Boolean  @default(false)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Task {
+  id          Int      @id @default(autoincrement())
+  ticket      Ticket?  @relation(fields: [ticketId], references: [id])
+  ticketId    Int?
+  name        String
+  assignedTo  User?    @relation(fields: [assignedToId], references: [id])
+  assignedToId Int?
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+}
+
+model TicketStatusHistory {
+  id         Int      @id @default(autoincrement())
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  ticketId   Int
+  oldStatus  String
+  newStatus  String
+  changedBy  User?    @relation(fields: [changedById], references: [id])
+  changedById Int?
+  changedAt  DateTime @default(now())
 }
 

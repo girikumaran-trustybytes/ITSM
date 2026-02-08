@@ -1,0 +1,4 @@
+{
+  "title": "SLA Breach - ticket {{ticketId}}",
+  "text": "SLA {{slaName}} breached at {{breachTime}}. <{{appUrl}}/tickets/{{ticketId}}|Open ticket>"
+}

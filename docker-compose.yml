@@ -5,23 +5,29 @@ services:
       - "5000:5000"
     restart: unless-stopped
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/itsm?schema=public
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://admin:test@localhost:5432/itsm?schema=public
       - JWT_ACCESS_SECRET=change_this_access_secret
       - JWT_REFRESH_SECRET=change_this_refresh_secret
-      - ADMIN_EMAIL=admin@example.com
-      - ADMIN_PASSWORD=AdminPass123!
+      - ADMIN_EMAIL=admin@itsm.com
+      - ADMIN_PASSWORD=admin123!
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
+    command: sh -c "npm run prisma:generate && npm run prisma:migrate && npm run prisma:seed && node dist/index.js"
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        - VITE_API_BASE=/api
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
       - backend
     restart: unless-stopped

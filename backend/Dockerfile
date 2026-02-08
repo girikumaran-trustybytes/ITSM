@@ -2,7 +2,8 @@
 FROM node:20-bullseye AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --silent
+# show output for npm errors during image build; skip audit/funding to speed up
+RUN npm ci --no-audit --no-fund
 COPY . .
 # Generate Prisma client and build TypeScript
 RUN npm run prisma:generate && npm run build

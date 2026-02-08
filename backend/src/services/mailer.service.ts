@@ -45,5 +45,15 @@ export async function sendSLABreach(to: string, ticket: any) {
   await sendMail(to, `SLA Breach: ${ticket.ticketId}`, html)
 }
 
-export default { sendTicketCreated, sendAssignmentChanged, sendStatusUpdated, sendSLABreach }
+export async function sendTicketResponse(to: string, ticket: any, message: string) {
+  const html = `<h3>Update on Ticket ${ticket.ticketId}</h3><p>${message}</p>`
+  await sendMail(to, `Update: ${ticket.ticketId}`, html)
+}
+
+export async function sendTicketResolved(to: string, ticket: any) {
+  const html = `<h3>Ticket ${ticket.ticketId} Resolved</h3><p>Resolution: ${ticket.resolution || ''}</p>`
+  await sendMail(to, `Resolved: ${ticket.ticketId}`, html)
+}
+
+export default { sendTicketCreated, sendAssignmentChanged, sendStatusUpdated, sendSLABreach, sendTicketResponse, sendTicketResolved }
 

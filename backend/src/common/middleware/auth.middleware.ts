@@ -20,7 +20,7 @@ export function authenticateJWT(req: Request, res: Response, next: NextFunction)
   const token = parts[1]
   try {
     const payload = jwt.verify(token, ACCESS_SECRET) as any
-    ;(req as any).user = { id: payload.sub, role: payload.role }
+    ;(req as any).user = { id: payload.sub, role: payload.role, name: payload.name, email: payload.email }
     next()
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' })

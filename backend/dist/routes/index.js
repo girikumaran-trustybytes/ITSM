@@ -6,7 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const v1_routes_1 = __importDefault(require("./v1.routes"));
 const router = (0, express_1.Router)();
+// Mount versioned API under /v1 so endpoints become /api/v1/...
 router.use('/v1', v1_routes_1.default);
-// Keep root /api routes backwards compatible (v1 as default)
-router.use('/', v1_routes_1.default);
 exports.default = router;

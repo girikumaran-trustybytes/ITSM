@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendSLABreach = exports.sendStatusUpdated = exports.sendAssignmentChanged = exports.sendTicketCreated = void 0;
+exports.sendTicketResolved = exports.sendTicketResponse = exports.sendSLABreach = exports.sendStatusUpdated = exports.sendAssignmentChanged = exports.sendTicketCreated = void 0;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const host = process.env.SMTP_HOST;
 const port = Number(process.env.SMTP_PORT || 587);
@@ -47,4 +47,14 @@ async function sendSLABreach(to, ticket) {
     await sendMail(to, `SLA Breach: ${ticket.ticketId}`, html);
 }
 exports.sendSLABreach = sendSLABreach;
-exports.default = { sendTicketCreated, sendAssignmentChanged, sendStatusUpdated, sendSLABreach };
+async function sendTicketResponse(to, ticket, message) {
+    const html = `<h3>Update on Ticket ${ticket.ticketId}</h3><p>${message}</p>`;
+    await sendMail(to, `Update: ${ticket.ticketId}`, html);
+}
+exports.sendTicketResponse = sendTicketResponse;
+async function sendTicketResolved(to, ticket) {
+    const html = `<h3>Ticket ${ticket.ticketId} Resolved</h3><p>Resolution: ${ticket.resolution || ''}</p>`;
+    await sendMail(to, `Resolved: ${ticket.ticketId}`, html);
+}
+exports.sendTicketResolved = sendTicketResolved;
+exports.default = { sendTicketCreated, sendAssignmentChanged, sendStatusUpdated, sendSLABreach, sendTicketResponse, sendTicketResolved };

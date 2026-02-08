@@ -12,6 +12,17 @@ const app = (0, express_1.default)();
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 app.use((0, morgan_1.default)('dev'));
+// Normalize incoming requests that accidentally include a duplicate `/api` prefix
+// e.g. `/api/api/auth/login` -> `/api/auth/login` and `/api/api/v1/tickets` -> `/api/v1/tickets`
+app.use((req, _res, next) => {
+    if (req.url.startsWith('/api/api/')) {
+        req.url = req.url.replace('/api/api/', '/api/');
+    }
+    else if (req.url === '/api/api') {
+        req.url = '/api';
+    }
+    next();
+});
 // API routes
 app.use('/api', routes_1.default);
 // health

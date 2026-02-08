@@ -25,6 +25,16 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.refresh = exports.login = void 0;
 const authService = __importStar(require("./auth.service"));
+function isDbError(err) {
+    const name = err?.constructor?.name ?? '';
+    const msg = (err?.message ?? '').toLowerCase();
+    return (name === 'PrismaClientInitializationError' ||
+        name === 'PrismaClientKnownRequestError' ||
+        name === 'PrismaClientUnknownRequestError' ||
+        msg.includes('prisma') ||
+        msg.includes('database server') ||
+        msg.includes('can\'t reach database'));
+}
 async function login(req, res) {
     const { email, password } = req.body;
     try {
@@ -32,7 +42,11 @@ async function login(req, res) {
         res.json(result);
     }
     catch (err) {
-        res.status(401).json({ error: err.message || 'Unauthorized' });
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
+        res.status(401).json({ error: err.message || 'Invalid credentials' });
     }
 }
 exports.login = login;
@@ -43,6 +57,10 @@ async function refresh(req, res) {
         res.json(result);
     }
     catch (err) {
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
         res.status(401).json({ error: err.message || 'Unauthorized' });
     }
 }

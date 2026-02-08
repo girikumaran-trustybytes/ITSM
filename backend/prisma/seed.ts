@@ -1,12 +1,14 @@
 import dotenv from 'dotenv'
 dotenv.config()
 
-import prisma from '../src/prisma/client'
+import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
+
+const prisma = new PrismaClient()
 
 async function main() {
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@itsm.com'
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123'
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123!'
 
   const hashed = await bcrypt.hash(adminPassword, 12)
 
@@ -23,8 +25,8 @@ async function main() {
   // create sample agent and end user
   const agentEmail = 'agent@itsm.com'
   const userEmail = 'user@itsm.com'
-  const agentPass = await bcrypt.hash('agent123', 12)
-  const userPass = await bcrypt.hash('user123', 12)
+  const agentPass = await bcrypt.hash('agent123!', 12)
+  const userPass = await bcrypt.hash('user123!', 12)
 
   const agent = await prisma.user.upsert({
     where: { email: agentEmail },
@@ -52,35 +54,58 @@ async function main() {
     },
   })
 
-  // sample asset
-  const asset = await prisma.asset.create({
-    data: {
-      name: 'Laptop - Dell XPS 13',
-      serial: 'DX13-0001',
-      category: 'Laptop',
-      status: 'Available',
-      vendor: 'Dell',
-      purchaseDate: new Date(),
-    },
-  })
+  // sample asset (idempotent)
+  const existingAsset = await prisma.asset.findFirst({ where: { serial: 'DX13-0001' } })
+  if (existingAsset) {
+    await prisma.asset.update({
+      where: { id: existingAsset.id },
+      data: {
+        assetId: existingAsset.assetId || 'AST-0001',
+        assetType: 'Laptop',
+        name: 'Laptop - Dell XPS 13',
+        category: 'Laptop',
+        status: 'Available',
+        vendor: 'Dell',
+        purchaseDate: new Date(),
+      },
+    })
+  } else {
+    await prisma.asset.create({
+      data: {
+        assetId: 'AST-0001',
+        assetType: 'Laptop',
+        name: 'Laptop - Dell XPS 13',
+        serial: 'DX13-0001',
+        category: 'Laptop',
+        status: 'Available',
+        vendor: 'Dell',
+        purchaseDate: new Date(),
+      },
+    })
+  }
 
-  // sample ticket
-  await prisma.ticket.create({
-    data: {
-      ticketId: `TKT-${Date.now()}`,
-      type: 'Incident',
-      priority: 'Medium',
-      impact: 'Moderate',
-      urgency: 'Medium',
-      status: 'New',
-      category: 'Hardware',
-      subcategory: 'Laptop',
-      description: 'Screen flickering intermittently',
-      requesterId: endUser.id,
-      assigneeId: agent.id,
-      slaStart: new Date(),
-    },
-  })
+  // sample ticket (guard against duplicates)
+  try {
+    await prisma.ticket.create({
+      data: {
+        ticketId: `TKT-${Date.now()}`,
+        type: 'Incident',
+        priority: 'Medium',
+        impact: 'Moderate',
+        urgency: 'Medium',
+        status: 'New',
+        category: 'Hardware',
+        subcategory: 'Laptop',
+        description: 'Screen flickering intermittently',
+        requester: { connect: { id: endUser.id } },
+        assignee: { connect: { id: agent.id } },
+        // slaStart removed from seed to avoid requiring DB column during initial setup
+      },
+    })
+  } catch (e: any) {
+    // ignore unique constraint errors if running seed multiple times
+    if (e.code !== 'P2002') throw e
+  }
 
   console.log('✅ Seed completed')
 }

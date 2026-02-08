@@ -1,21 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const data_1 = require("../../data");
+const ctrl = __importStar(require("./assets.controller"));
 const auth_middleware_1 = require("../../common/middleware/auth.middleware");
+const rbac_middleware_1 = require("../../common/middleware/rbac.middleware");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.authenticateJWT);
-router.get('/', async (_req, res) => {
-    const assets = await (0, data_1.getAssets)();
-    res.json(assets);
-});
-router.get('/:id', async (req, res) => {
-    const asset = await (0, data_1.getAssetById)(req.params.id);
-    if (asset) {
-        res.json(asset);
-    }
-    else {
-        res.status(404).json({ error: 'Asset not found' });
-    }
-});
+router.get('/', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.list);
+router.get('/:id', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.getOne);
+router.post('/', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.create);
+router.patch('/:id', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.update);
+router.delete('/:id', (0, rbac_middleware_1.permit)(['ADMIN']), ctrl.remove);
 exports.default = router;

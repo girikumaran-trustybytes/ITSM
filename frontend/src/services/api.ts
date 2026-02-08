@@ -16,7 +16,7 @@ function getAccessToken() {
 async function refreshToken() {
   const refresh = localStorage.getItem('refreshToken')
   if (!refresh) throw new Error('No refresh token')
-  const res = await api.post('/api/v1/auth/refresh', { refreshToken: refresh })
+  const res = await api.post('/v1/auth/refresh', { refreshToken: refresh })
   const data = res.data
   if (data.accessToken) {
     localStorage.setItem('accessToken', data.accessToken)

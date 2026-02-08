@@ -23,7 +23,7 @@ function authenticateJWT(req, res, next) {
     const token = parts[1];
     try {
         const payload = jsonwebtoken_1.default.verify(token, ACCESS_SECRET);
-        req.user = { id: payload.sub, role: payload.role };
+        req.user = { id: payload.sub, role: payload.role, name: payload.name, email: payload.email };
         next();
     }
     catch (err) {

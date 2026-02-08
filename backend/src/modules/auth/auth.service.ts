@@ -14,7 +14,7 @@ export async function login(email: string, password: string) {
   const ok = await bcrypt.compare(password, user.password)
   if (!ok) throw new Error('Invalid credentials')
 
-  const accessToken = (jwt as any).sign({ sub: user.id, role: user.role }, ACCESS_SECRET as any, {
+  const accessToken = (jwt as any).sign({ sub: user.id, role: user.role, name: user.name, email: user.email }, ACCESS_SECRET as any, {
     expiresIn: ACCESS_EXPIRES,
   })
 
@@ -32,7 +32,7 @@ export async function login(email: string, password: string) {
     },
   })
 
-  return { accessToken, refreshToken, user: { id: user.id, email: user.email, role: user.role } }
+  return { accessToken, refreshToken, user: { id: user.id, email: user.email, name: user.name, role: user.role } }
 }
 
 export async function refresh(refreshToken: string) {
@@ -44,7 +44,7 @@ export async function refresh(refreshToken: string) {
     const user = await prisma.user.findUnique({ where: { id: record.userId } })
     if (!user) throw new Error('User not found')
 
-    const accessToken = (jwt as any).sign({ sub: user.id, role: user.role }, ACCESS_SECRET as any, {
+    const accessToken = (jwt as any).sign({ sub: user.id, role: user.role, name: user.name, email: user.email }, ACCESS_SECRET as any, {
       expiresIn: ACCESS_EXPIRES,
     })
 
@@ -53,4 +53,3 @@ export async function refresh(refreshToken: string) {
     throw new Error('Invalid refresh token')
   }
 }
-
