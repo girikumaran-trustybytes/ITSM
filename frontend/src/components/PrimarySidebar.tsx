@@ -53,7 +53,7 @@ const navItems: NavItem[] = [
     )
   },
   {
-    id: 'vendors',
+    id: 'suppliers',
     label: 'Suppliers',
     icon: (
       <svg className="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -79,8 +79,8 @@ const navItems: NavItem[] = [
 
 export default function PrimarySidebar({ activeNav, setActiveNav, role }: { activeNav: string; setActiveNav: (id: string) => void; role?: string }) {
   const visibleNavItems = navItems.filter((item) => {
-    if (role === 'ADMIN') return ['dashboard', 'tickets', 'assets', 'users', 'vendors', 'admin'].includes(item.id)
-    if (role === 'AGENT') return ['dashboard', 'tickets', 'assets', 'vendors'].includes(item.id)
+    if (role === 'ADMIN') return ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'admin'].includes(item.id)
+    if (role === 'AGENT') return ['dashboard', 'tickets', 'assets', 'suppliers'].includes(item.id)
     if (role === 'USER') return ['tickets'].includes(item.id)
     return ['tickets'].includes(item.id)
   })

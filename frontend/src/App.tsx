@@ -7,7 +7,8 @@ import AssetsView from './components/AssetsView'
 import TicketsView from './components/TicketsView'
 import TicketTimeline from './components/TicketTimeline'
 import AdminView from './components/AdminView'
-import VendorsView from './components/VendorsView'
+import UsersView from './components/UsersView'
+import SuppliersView from './components/SuppliersView'
 import Login from './app/Login'
 import ProtectedRoute from './app/ProtectedRoute'
 import Unauthorized from './app/Unauthorized'
@@ -97,8 +98,8 @@ export default function App() {
                   </>
                 )}
                 {activeNav === 'assets' && <AssetsView />}
-                {activeNav === 'vendors' && <VendorsView />}
-                {activeNav === 'users' && user?.role === 'ADMIN' && <AdminView initialTab="externalUsers" />}
+                {activeNav === 'suppliers' && <SuppliersView />}
+                {activeNav === 'users' && user?.role === 'ADMIN' && <UsersView />}
                 {activeNav === 'admin' && user?.role === 'ADMIN' && <AdminView />}
               </main>
             </div>

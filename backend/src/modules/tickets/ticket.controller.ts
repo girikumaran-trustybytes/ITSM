@@ -1,8 +1,6 @@
 import { Request, Response } from 'express'
 import * as ticketService from './ticket.service'
 
-import { validateCreate, validateTransition, validateUpdate } from './ticket.validator'
-
 export const listTickets = async (req: Request, res: Response) => {
   const page = Number(req.query.page || 1)
   const pageSize = Number(req.query.pageSize || 20)
@@ -24,9 +22,7 @@ export const getTicket = async (req: Request, res: Response) => {
 
 export const createTicket = async (req: Request, res: Response) => {
   try {
-    const payload = req.body
-    const check = validateCreate(payload)
-    if (!check.ok) return res.status(400).json({ error: check.message })
+    const payload = (req as any).validated?.body || req.body
     const creator = (req as any).user?.id || 'system'
     const role = (req as any).user?.role
     if (role === 'USER') {
@@ -42,9 +38,7 @@ export const createTicket = async (req: Request, res: Response) => {
 
 export const transitionTicket = async (req: Request, res: Response) => {
   const id = req.params.id
-  const check = validateTransition(req.body)
-  if (!check.ok) return res.status(400).json({ error: check.message })
-  const { to } = req.body
+  const { to } = (req as any).validated?.body || req.body
   const user = (req as any).user?.id || 'system'
   try {
     const t = await ticketService.transitionTicket(id, to, user)
@@ -56,7 +50,7 @@ export const transitionTicket = async (req: Request, res: Response) => {
 
 export const addHistory = async (req: Request, res: Response) => {
   const id = req.params.id
-  const payload = req.body || {}
+  const payload = (req as any).validated?.body || req.body || {}
   const note = String(payload.note || '')
   if (!note || !note.trim()) return res.status(400).json({ error: 'Note is required' })
   const user = (req as any).user?.id || 'system'
@@ -70,7 +64,7 @@ export const addHistory = async (req: Request, res: Response) => {
 
 export const respond = async (req: Request, res: Response) => {
   const id = req.params.id
-  const { message, sendEmail } = req.body || {}
+  const { message, sendEmail } = (req as any).validated?.body || req.body || {}
   if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' })
   const user = (req as any).user?.id || 'system'
   try {
@@ -83,7 +77,7 @@ export const respond = async (req: Request, res: Response) => {
 
 export const privateNote = async (req: Request, res: Response) => {
   const id = req.params.id
-  const { note } = req.body || {}
+  const { note } = (req as any).validated?.body || req.body || {}
   if (!note || !note.trim()) return res.status(400).json({ error: 'Note is required' })
   const user = (req as any).user?.id || 'system'
   try {
@@ -96,7 +90,7 @@ export const privateNote = async (req: Request, res: Response) => {
 
 export const resolveTicket = async (req: Request, res: Response) => {
   const id = req.params.id
-  const { resolution, resolutionCategory, sendEmail } = req.body || {}
+  const { resolution, resolutionCategory, sendEmail } = (req as any).validated?.body || req.body || {}
   if (!resolution || !resolution.trim()) return res.status(400).json({ error: 'Resolution details are required' })
   const user = (req as any).user?.id || 'system'
   try {
@@ -109,7 +103,7 @@ export const resolveTicket = async (req: Request, res: Response) => {
 
 export const assignAsset = async (req: Request, res: Response) => {
   const id = req.params.id
-  const { assetId } = req.body || {}
+  const { assetId } = (req as any).validated?.body || req.body || {}
   if (!assetId) return res.status(400).json({ error: 'assetId is required' })
   const user = (req as any).user?.id || 'system'
   try {
@@ -133,9 +127,7 @@ export const unassignAsset = async (req: Request, res: Response) => {
 
 export const updateTicket = async (req: Request, res: Response) => {
   const id = req.params.id
-  const payload = req.body || {}
-  const check = validateUpdate(payload)
-  if (!check.ok) return res.status(400).json({ error: check.message })
+  const payload = (req as any).validated?.body || req.body || {}
   const user = (req as any).user?.id || 'system'
   try {
     const updated = await ticketService.updateTicket(id, payload, user)

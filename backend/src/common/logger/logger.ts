@@ -1,5 +1,5 @@
 import winston from 'winston'
-import prisma from '../../prisma/client'
+import { query } from '../../db'
 
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -21,16 +21,17 @@ export async function auditLog(entry: { ticketId?: string; user?: any; from?: st
   logger.info('audit', { ...entry })
   try {
     const userId = typeof entry.user === 'number' ? entry.user : parseInt(String(entry.user)) || undefined
-    await prisma.auditLog.create({
-      data: {
-        action: entry.action,
-        entity: entry.entity || (entry.ticketId ? 'ticket' : 'system'),
-        entityId: entry.entityId ?? undefined,
-        userId: userId,
-        assetId: entry.assetId ?? undefined,
-        meta: { ...entry.meta, ticketId: entry.ticketId, from: entry.from, to: entry.to },
-      },
-    })
+    await query(
+      'INSERT INTO "AuditLog" ("action", "entity", "entityId", "userId", "assetId", "meta", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+      [
+        entry.action,
+        entry.entity || (entry.ticketId ? 'ticket' : 'system'),
+        entry.entityId ?? null,
+        userId ?? null,
+        entry.assetId ?? null,
+        { ...entry.meta, ticketId: entry.ticketId, from: entry.from, to: entry.to },
+      ]
+    )
   } catch (err) {
     // avoid breaking primary flow if audit storage fails
     logger.warn('audit_store_failed', { error: (err as any)?.message || String(err) })

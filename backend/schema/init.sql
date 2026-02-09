@@ -1,0 +1,268 @@
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Role') THEN
+    CREATE TYPE "Role" AS ENUM ('ADMIN', 'AGENT', 'USER');
+  END IF;
+END$$;
+
+CREATE TABLE IF NOT EXISTS "User" (
+  "id" SERIAL PRIMARY KEY,
+  "email" TEXT NOT NULL UNIQUE,
+  "password" TEXT NOT NULL,
+  "name" TEXT,
+  "phone" TEXT,
+  "client" TEXT,
+  "site" TEXT,
+  "accountManager" TEXT,
+  "role" "Role" NOT NULL DEFAULT 'USER',
+  "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "RefreshToken" (
+  "id" SERIAL PRIMARY KEY,
+  "token" TEXT NOT NULL UNIQUE,
+  "revoked" BOOLEAN NOT NULL DEFAULT false,
+  "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  "expiresAt" TIMESTAMP(3) NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Asset" (
+  "id" SERIAL PRIMARY KEY,
+  "assetId" TEXT UNIQUE,
+  "name" TEXT NOT NULL,
+  "assetType" TEXT,
+  "category" TEXT NOT NULL,
+  "subcategory" TEXT,
+  "ciType" TEXT,
+  "serial" TEXT,
+  "assetTag" TEXT,
+  "barcode" TEXT,
+  "assignedToId" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "assignedUserEmail" TEXT,
+  "department" TEXT,
+  "location" TEXT,
+  "site" TEXT,
+  "costCentre" TEXT,
+  "manager" TEXT,
+  "assetOwner" TEXT,
+  "manufacturer" TEXT,
+  "model" TEXT,
+  "cpu" TEXT,
+  "ram" TEXT,
+  "storage" TEXT,
+  "macAddress" TEXT,
+  "ipAddress" TEXT,
+  "biosVersion" TEXT,
+  "firmware" TEXT,
+  "os" TEXT,
+  "osVersion" TEXT,
+  "licenseKey" TEXT,
+  "installedSoftware" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  "antivirus" TEXT,
+  "patchStatus" TEXT,
+  "encryption" TEXT,
+  "purchaseDate" TIMESTAMP(3),
+  "supplier" TEXT,
+  "poNumber" TEXT,
+  "invoiceNumber" TEXT,
+  "purchaseCost" NUMERIC(12,2),
+  "warrantyStart" TIMESTAMP(3),
+  "warrantyUntil" TIMESTAMP(3),
+  "amcSupport" TEXT,
+  "depreciationEnd" TIMESTAMP(3),
+  "status" TEXT NOT NULL,
+  "lifecycleStage" TEXT,
+  "condition" TEXT,
+  "deploymentDate" TIMESTAMP(3),
+  "lastAuditDate" TIMESTAMP(3),
+  "endOfLife" TIMESTAMP(3),
+  "disposalDate" TIMESTAMP(3),
+  "disposalMethod" TEXT,
+  "securityClassification" TEXT,
+  "dataSensitivity" TEXT,
+  "mdmEnrolled" BOOLEAN NOT NULL DEFAULT false,
+  "complianceStatus" TEXT,
+  "riskLevel" TEXT,
+  "lastSecurityScan" TIMESTAMP(3),
+  "parentAssetId" INTEGER REFERENCES "Asset"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "notes" TEXT,
+  "createdById" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Supplier" (
+  "id" SERIAL PRIMARY KEY,
+  "companyName" TEXT NOT NULL,
+  "contactName" TEXT,
+  "contactEmail" TEXT,
+  "slaTerms" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Ticket" (
+  "id" SERIAL PRIMARY KEY,
+  "ticketId" TEXT NOT NULL UNIQUE,
+  "subject" TEXT,
+  "type" TEXT NOT NULL,
+  "priority" TEXT NOT NULL,
+  "impact" TEXT NOT NULL,
+  "urgency" TEXT NOT NULL,
+  "status" TEXT NOT NULL,
+  "category" TEXT,
+  "subcategory" TEXT,
+  "description" TEXT,
+  "resolution" TEXT,
+  "resolutionCategory" TEXT,
+  "resolvedAt" TIMESTAMP(3),
+  "requesterId" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "assigneeId" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "slaStart" TIMESTAMP(3),
+  "slaBreach" TIMESTAMP(3),
+  "supplierId" INTEGER REFERENCES "Supplier"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "assetId" INTEGER REFERENCES "Asset"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "TicketHistory" (
+  "id" SERIAL PRIMARY KEY,
+  "ticketId" INTEGER NOT NULL REFERENCES "Ticket"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "fromStatus" TEXT NOT NULL,
+  "toStatus" TEXT NOT NULL,
+  "changedById" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "note" TEXT,
+  "internal" BOOLEAN NOT NULL DEFAULT false,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Attachment" (
+  "id" SERIAL PRIMARY KEY,
+  "filename" TEXT NOT NULL,
+  "path" TEXT NOT NULL,
+  "ticketId" INTEGER REFERENCES "Ticket"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "uploadedById" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "AuditLog" (
+  "id" SERIAL PRIMARY KEY,
+  "action" TEXT NOT NULL,
+  "entity" TEXT NOT NULL,
+  "entityId" INTEGER,
+  "userId" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "assetId" INTEGER REFERENCES "Asset"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "meta" JSONB,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "AssetAttachment" (
+  "id" SERIAL PRIMARY KEY,
+  "assetId" INTEGER NOT NULL REFERENCES "Asset"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "filename" TEXT NOT NULL,
+  "path" TEXT NOT NULL,
+  "uploadedById" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Change" (
+  "id" SERIAL PRIMARY KEY,
+  "code" TEXT NOT NULL UNIQUE,
+  "title" TEXT NOT NULL,
+  "status" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Problem" (
+  "id" SERIAL PRIMARY KEY,
+  "code" TEXT NOT NULL UNIQUE,
+  "title" TEXT NOT NULL,
+  "status" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Service" (
+  "id" SERIAL PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "AssetChange" (
+  "assetId" INTEGER NOT NULL REFERENCES "Asset"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "changeId" INTEGER NOT NULL REFERENCES "Change"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  PRIMARY KEY ("assetId", "changeId")
+);
+
+CREATE TABLE IF NOT EXISTS "AssetProblem" (
+  "assetId" INTEGER NOT NULL REFERENCES "Asset"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "problemId" INTEGER NOT NULL REFERENCES "Problem"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  PRIMARY KEY ("assetId", "problemId")
+);
+
+CREATE TABLE IF NOT EXISTS "AssetService" (
+  "assetId" INTEGER NOT NULL REFERENCES "Asset"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "serviceId" INTEGER NOT NULL REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  PRIMARY KEY ("assetId", "serviceId")
+);
+
+CREATE TABLE IF NOT EXISTS "Approval" (
+  "id" SERIAL PRIMARY KEY,
+  "ticketId" INTEGER NOT NULL REFERENCES "Ticket"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "approverId" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "comment" TEXT,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "approvedAt" TIMESTAMP(3)
+);
+
+CREATE TABLE IF NOT EXISTS "SlaTracking" (
+  "id" SERIAL PRIMARY KEY,
+  "ticketId" INTEGER NOT NULL UNIQUE REFERENCES "Ticket"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "slaName" TEXT,
+  "startTime" TIMESTAMP(3),
+  "pauseTime" TIMESTAMP(3),
+  "resumeTime" TIMESTAMP(3),
+  "breachTime" TIMESTAMP(3),
+  "status" TEXT NOT NULL DEFAULT 'running',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "SlaConfig" (
+  "id" SERIAL PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "priority" TEXT NOT NULL,
+  "responseTimeMin" INTEGER NOT NULL,
+  "resolutionTimeMin" INTEGER NOT NULL,
+  "businessHours" BOOLEAN NOT NULL DEFAULT false,
+  "active" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "Task" (
+  "id" SERIAL PRIMARY KEY,
+  "ticketId" INTEGER REFERENCES "Ticket"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "name" TEXT NOT NULL,
+  "assignedToId" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "completedAt" TIMESTAMP(3)
+);
+
+CREATE TABLE IF NOT EXISTS "TicketStatusHistory" (
+  "id" SERIAL PRIMARY KEY,
+  "ticketId" INTEGER NOT NULL REFERENCES "Ticket"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  "oldStatus" TEXT NOT NULL,
+  "newStatus" TEXT NOT NULL,
+  "changedById" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
+  "changedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

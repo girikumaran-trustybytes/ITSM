@@ -1,4 +1,4 @@
-import prisma from './prisma/client'
+import { query, queryOne } from './db'
 
 export type Asset = {
   id: number
@@ -6,13 +6,13 @@ export type Asset = {
   serial?: string
   category: string
   status: string
-  vendor?: string
+  supplier?: string
 }
 
 export async function getAssets() {
-  return prisma.asset.findMany({ orderBy: { createdAt: 'desc' } })
+  return query('SELECT * FROM "Asset" ORDER BY "createdAt" DESC')
 }
 
 export async function getAssetById(id: string) {
-  return prisma.asset.findUnique({ where: { id: Number(id) } })
+  return queryOne('SELECT * FROM "Asset" WHERE "id" = $1', [Number(id)])
 }

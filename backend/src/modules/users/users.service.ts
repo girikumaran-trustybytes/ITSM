@@ -1,31 +1,31 @@
-import prisma from '../../prisma/client'
+import { query, queryOne } from '../../db'
 import bcrypt from 'bcrypt'
 
 export async function listUsers(opts: { q?: string; limit?: number; role?: string } = {}) {
-  const where: any = {}
+  const conditions: string[] = []
+  const params: any[] = []
   if (opts.role) {
-    where.role = opts.role
+    params.push(opts.role)
+    conditions.push(`"role" = $${params.length}`)
   }
   if (opts.q) {
-    where.OR = [
-      { name: { contains: opts.q, mode: 'insensitive' } },
-      { email: { contains: opts.q, mode: 'insensitive' } },
-    ]
+    params.push(`%${opts.q}%`)
+    conditions.push(`("name" ILIKE $${params.length} OR "email" ILIKE $${params.length})`)
   }
   const take = opts.limit && opts.limit > 0 ? opts.limit : 50
-  return prisma.user.findMany({
-    where,
-    take,
-    orderBy: { name: 'asc' },
-    select: { id: true, name: true, email: true, role: true, status: true, createdAt: true },
-  })
+  params.push(take)
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  return query(
+    `SELECT "id", "name", "email", "role", "status", "createdAt" FROM "User" ${where} ORDER BY "name" ASC LIMIT $${params.length}`,
+    params
+  )
 }
 
 export async function getUserById(id: number) {
-  return prisma.user.findUnique({
-    where: { id },
-    select: { id: true, name: true, email: true, role: true, phone: true, client: true, site: true, accountManager: true, status: true, createdAt: true, updatedAt: true },
-  })
+  return queryOne(
+    'SELECT "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt" FROM "User" WHERE "id" = $1',
+    [id]
+  )
 }
 
 export async function createUser(payload: any) {
@@ -34,7 +34,7 @@ export async function createUser(payload: any) {
   if (!email) throw { status: 400, message: 'Email is required' }
   if (!password || password.length < 6) throw { status: 400, message: 'Password must be at least 6 characters' }
 
-  const existing = await prisma.user.findUnique({ where: { email } })
+  const existing = await queryOne('SELECT "id" FROM "User" WHERE "email" = $1', [email])
   if (existing) throw { status: 409, message: 'Email already exists' }
 
   const hashed = await bcrypt.hash(password, 12)
@@ -50,10 +50,11 @@ export async function createUser(payload: any) {
     status: payload.status || 'ACTIVE',
   }
 
-  return prisma.user.create({
-    data,
-    select: { id: true, name: true, email: true, role: true, phone: true, client: true, site: true, accountManager: true, status: true, createdAt: true, updatedAt: true },
-  })
+  const rows = await query(
+    'INSERT INTO "User" ("email", "password", "name", "phone", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt"',
+    [data.email, data.password, data.name, data.phone, data.client, data.site, data.accountManager, data.role, data.status]
+  )
+  return rows[0]
 }
 
 export async function updateUser(id: number, payload: any) {
@@ -72,26 +73,37 @@ export async function updateUser(id: number, payload: any) {
   }
 
   try {
-    return await prisma.user.update({
-      where: { id },
-      data,
-      select: { id: true, name: true, email: true, role: true, phone: true, client: true, site: true, accountManager: true, status: true, createdAt: true, updatedAt: true },
-    })
+    const setParts: string[] = []
+    const params: any[] = []
+    for (const [key, value] of Object.entries(data)) {
+      params.push(value)
+      setParts.push(`"${key}" = $${params.length}`)
+    }
+    setParts.push('"updatedAt" = NOW()')
+    params.push(id)
+    const rows = await query(
+      `UPDATE "User" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`,
+      params
+    )
+    if (!rows[0]) throw { status: 404, message: 'User not found' }
+    return rows[0]
   } catch (err: any) {
-    if (err?.code === 'P2025') throw { status: 404, message: 'User not found' }
-    if (err?.code === 'P2002') throw { status: 409, message: 'Email already exists' }
+    if (err?.status === 404) throw err
+    if (err?.code === '23505') throw { status: 409, message: 'Email already exists' }
     throw err
   }
 }
 
 export async function deleteUser(id: number) {
   try {
-    return await prisma.user.delete({
-      where: { id },
-      select: { id: true, name: true, email: true },
-    })
+    const rows = await query(
+      'DELETE FROM "User" WHERE "id" = $1 RETURNING "id", "name", "email"',
+      [id]
+    )
+    if (!rows[0]) throw { status: 404, message: 'User not found' }
+    return rows[0]
   } catch (err: any) {
-    if (err?.code === 'P2025') throw { status: 404, message: 'User not found' }
+    if (err?.status === 404) throw err
     throw err
   }
 }

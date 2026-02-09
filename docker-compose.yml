@@ -9,7 +9,7 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://admin:test@localhost:5432/itsm?schema=public
+      - DATABASE_URL=postgresql://itsm_app:itsm_app_password@postgres:5432/itsm?schema=public
       - JWT_ACCESS_SECRET=change_this_access_secret
       - JWT_REFRESH_SECRET=change_this_refresh_secret
       - ADMIN_EMAIL=admin@itsm.com
@@ -19,7 +19,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    command: sh -c "npm run prisma:generate && npm run prisma:migrate && npm run prisma:seed && node dist/index.js"
+    command: node dist/index.js
 
   frontend:
     build:
@@ -33,13 +33,16 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:15
+    image: postgres:18
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: itsm
+      POSTGRES_APP_USER: itsm_app
+      POSTGRES_APP_PASSWORD: itsm_app_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d:ro
     ports:
       - "5432:5432"
     healthcheck:

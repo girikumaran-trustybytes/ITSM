@@ -66,26 +66,26 @@ export type AssetPayload = {
 }
 
 export async function listAssets(params: any = {}) {
-  const res = await api.get('/v1/assets', { params })
+  const res = await api.get('/assets', { params })
   return res.data
 }
 
 export async function getAsset(id: number) {
-  const res = await api.get(`/v1/assets/${id}`)
+  const res = await api.get(`/assets/${id}`)
   return res.data
 }
 
 export async function createAsset(payload: AssetPayload) {
-  const res = await api.post('/v1/assets', payload)
+  const res = await api.post('/assets', payload)
   return res.data
 }
 
 export async function updateAsset(id: number, payload: Partial<AssetPayload>) {
-  const res = await api.patch(`/v1/assets/${id}`, payload)
+  const res = await api.patch(`/assets/${id}`, payload)
   return res.data
 }
 
 export async function deleteAsset(id: number) {
-  const res = await api.delete(`/v1/assets/${id}`)
+  const res = await api.delete(`/assets/${id}`)
   return res.data
 }

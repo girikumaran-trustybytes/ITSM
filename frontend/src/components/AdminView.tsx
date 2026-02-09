@@ -67,10 +67,11 @@ export default function AdminView({ initialTab }: { initialTab?: string }) {
   const loadUsers = async () => {
     if (!roleFilter) return
     try {
-      const data = await userService.listUsers({ q: search, limit: 50, role: roleFilter })
+      const data = await userService.listUsers({ q: search, role: roleFilter })
       setUsers(Array.isArray(data) ? data : [])
     } catch (e) {
       console.warn('Failed to fetch users', e)
+      setUsers([])
     }
   }
 
@@ -93,7 +94,9 @@ export default function AdminView({ initialTab }: { initialTab?: string }) {
   }
 
   useEffect(() => {
-    if (roleFilter) loadUsers()
+    if (roleFilter) {
+      loadUsers()
+    }
   }, [roleFilter, search])
 
   useEffect(() => {
@@ -154,6 +157,8 @@ export default function AdminView({ initialTab }: { initialTab?: string }) {
     setShowModal(true)
   }
 
+
+
   const handleSave = async () => {
     setIsSaving(true)
     try {
@@ -213,6 +218,8 @@ export default function AdminView({ initialTab }: { initialTab?: string }) {
     }
   }
 
+
+
   return (
     <div className="admin-view">
       <div className="admin-header">
@@ -263,7 +270,10 @@ export default function AdminView({ initialTab }: { initialTab?: string }) {
               <div className="admin-col email">{u.email}</div>
               <div className="admin-col role">{u.role}</div>
               <div className="admin-col status">
-                <span className={`user-status ${String(u.status || 'ACTIVE').toLowerCase()}`}>{u.status || 'Active'}</span>
+                <span className={`user-status ${String(u.status || 'ACTIVE').toLowerCase()}`}>
+                  <span className="status-dot"></span>
+                  {u.status || 'Active'}
+                </span>
               </div>
               <div className="admin-col date">{u.createdAt ? new Date(u.createdAt).toLocaleString() : '-'}</div>
               <div className="admin-col twofa"><span className="twofa-pill">Enabled</span></div>

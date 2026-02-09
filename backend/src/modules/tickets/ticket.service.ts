@@ -1,51 +1,91 @@
-import prisma from '../../prisma/client'
+import { query, queryOne } from '../../db'
 import { workflowEngine } from '../workflows/workflow.service'
 import { auditLog } from '../../common/logger/logger'
 import mailer from '../../services/mailer.service'
 
+const isNumericId = (value: string) => /^\d+$/.test(value)
+
+function buildTicketWhere(idOrTicketId: string, alias = 't', startIndex = 1) {
+  if (isNumericId(idOrTicketId)) {
+    return { clause: `${alias}."id" = $${startIndex}`, params: [Number(idOrTicketId)] }
+  }
+  return { clause: `${alias}."ticketId" = $${startIndex}`, params: [idOrTicketId] }
+}
+
+async function getTicketRecord(idOrTicketId: string) {
+  const where = buildTicketWhere(idOrTicketId, 't', 1)
+  return queryOne<any>(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params)
+}
+
+function buildInsert(table: string, data: Record<string, any>) {
+  const keys = Object.keys(data).filter((k) => data[k] !== undefined)
+  const cols = keys.map((k) => `"${k}"`)
+  const params = keys.map((_, i) => `$${i + 1}`)
+  const values = keys.map((k) => data[k])
+  const text = `INSERT INTO "${table}" (${cols.join(', ')}, "createdAt", "updatedAt") VALUES (${params.join(', ')}, NOW(), NOW()) RETURNING *`
+  return { text, values }
+}
+
 export const getTickets = async (opts: { page?: number; pageSize?: number; q?: string } = {}, viewer?: any) => {
   const page = opts.page ?? 1
   const pageSize = opts.pageSize ?? 20
-  const where: any = {}
+  const conditions: string[] = []
+  const params: any[] = []
   if (opts.q) {
-    where.OR = [
-      { ticketId: { contains: opts.q } },
-      { subject: { contains: opts.q } },
-      { description: { contains: opts.q } },
-      { category: { contains: opts.q } },
-    ]
+    params.push(`%${opts.q}%`)
+    conditions.push(`(t."ticketId" ILIKE $${params.length} OR t."subject" ILIKE $${params.length} OR t."description" ILIKE $${params.length} OR t."category" ILIKE $${params.length})`)
   }
   if (viewer?.role === 'USER' && viewer?.id) {
-    where.requesterId = Number(viewer.id)
+    params.push(Number(viewer.id))
+    conditions.push(`t."requesterId" = $${params.length}`)
   }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const offset = (page - 1) * pageSize
 
-  const [items, total] = await Promise.all([
-    prisma.ticket.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: { requester: true, assignee: true },
-    }),
-    prisma.ticket.count({ where }),
+  const [items, totalRow] = await Promise.all([
+    query(
+      `SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee"
+       FROM "Ticket" t
+       LEFT JOIN "User" r ON r."id" = t."requesterId"
+       LEFT JOIN "User" a ON a."id" = t."assigneeId"
+       ${where}
+       ORDER BY t."createdAt" DESC
+       OFFSET $${params.length + 1}
+       LIMIT $${params.length + 2}`,
+      [...params, offset, pageSize]
+    ),
+    queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM "Ticket" t ${where}`,
+      params
+    ),
   ])
 
+  const total = Number(totalRow?.count || 0)
   return { items, total, page, pageSize }
 }
 
-const isNumericId = (value: string) => /^\d+$/.test(value)
-
-const resolveTicketWhere = (idOrTicketId: string) =>
-  isNumericId(idOrTicketId) ? { id: Number(idOrTicketId) } : { ticketId: idOrTicketId }
-
 export const getTicketById = async (id: string, viewer?: any) => {
-  const t = await prisma.ticket.findUnique({
-    where: resolveTicketWhere(id),
-    include: { attachments: true, history: true, requester: true, assignee: true, asset: true },
-  })
+  const where = buildTicketWhere(id, 't', 1)
+  const t = await queryOne<any>(
+    `SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee", row_to_json(asset) AS "asset"
+     FROM "Ticket" t
+     LEFT JOIN "User" r ON r."id" = t."requesterId"
+     LEFT JOIN "User" a ON a."id" = t."assigneeId"
+     LEFT JOIN "Asset" asset ON asset."id" = t."assetId"
+     WHERE ${where.clause}`,
+    where.params
+  )
   if (t && viewer?.role === 'USER' && viewer?.id && t.requesterId !== Number(viewer.id)) {
     return null
   }
+  if (!t) return null
+
+  const [attachments, history] = await Promise.all([
+    query('SELECT * FROM "Attachment" WHERE "ticketId" = $1', [t.id]),
+    query('SELECT * FROM "TicketHistory" WHERE "ticketId" = $1', [t.id]),
+  ])
+  t.attachments = attachments
+  t.history = history
   return t
 }
 
@@ -100,11 +140,16 @@ export const createTicket = async (payload: any, creator = 'system') => {
   if (payload.requesterId) data.requesterId = payload.requesterId
   if (payload.assigneeId) data.assigneeId = payload.assigneeId
 
-  const created = await prisma.ticket.create({ data })
+  const { text, values } = buildInsert('Ticket', data)
+  const createdRows = await query(text, values)
+  const created = createdRows[0]
 
   // start SLA tracking record
   try {
-    await prisma.slaTracking.create({ data: { ticketId: created.id, slaName: `${created.priority} SLA`, startTime: now, breachTime: computeSlaBreachTime(now, priority), status: 'running' } })
+    await query(
+      'INSERT INTO "SlaTracking" ("ticketId", "slaName", "startTime", "breachTime", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())',
+      [created.id, `${created.priority} SLA`, now, computeSlaBreachTime(now, priority), 'running']
+    )
   } catch (e) {
     console.warn('Failed creating SLA tracking record', e)
   }
@@ -124,27 +169,31 @@ export const createTicket = async (payload: any, creator = 'system') => {
 }
 
 export const transitionTicket = async (ticketId: string, toState: string, user = 'system') => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
   const can = workflowEngine.canTransition(t.type, t.status, toState)
   if (!can) throw { status: 400, message: `Invalid transition from ${t.status} to ${toState}` }
 
   const from = t.status
-  const updated = await prisma.ticket.update({
-    where: resolveTicketWhere(ticketId),
-    data: { status: toState },
-  })
+  const where = buildTicketWhere(ticketId, 't', 2)
+  const updatedRows = await query(
+    `UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
+    [toState, ...where.params]
+  )
+  const updated = updatedRows[0]
 
-  await prisma.ticketHistory.create({
-    data: {
-      ticketId: t.id,
-      fromStatus: from,
-      toStatus: toState,
-      changedById: typeof user === 'number' ? user : parseInt(String(user)) || undefined,
-      note: '',
-    },
-  })
+  await query(
+    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    [
+      t.id,
+      from,
+      toState,
+      typeof user === 'number' ? user : parseInt(String(user)) || null,
+      '',
+      false,
+    ]
+  )
   await auditLog({
     action: 'transition',
     ticketId: updated.ticketId,
@@ -153,8 +202,8 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
   })
   // notify requester/assignee
   try {
-    const requester = await prisma.user.findUnique({ where: { id: updated.requesterId || undefined } })
-    const assignee = await prisma.user.findUnique({ where: { id: updated.assigneeId || undefined } })
+    const requester = updated.requesterId ? await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [updated.requesterId]) : null
+    const assignee = updated.assigneeId ? await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [updated.assigneeId]) : null
     if (requester && requester.email) await mailer.sendStatusUpdated(requester.email, updated)
     if (assignee && assignee.email) await mailer.sendStatusUpdated(assignee.email, updated)
   } catch (e) {
@@ -166,18 +215,21 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
 }
 
 export const createHistoryEntry = async (ticketId: string, opts: { note: string; user?: any }) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
-  const created = await prisma.ticketHistory.create({
-    data: {
-      ticketId: t.id,
-      fromStatus: t.status,
-      toStatus: t.status,
-      changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined,
-      note: opts.note,
-    },
-  })
+  const rows = await query(
+    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+    [
+      t.id,
+      t.status,
+      t.status,
+      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+      opts.note,
+      false,
+    ]
+  )
+  const created = rows[0]
 
   await auditLog({
     action: 'add_history',
@@ -190,24 +242,26 @@ export const createHistoryEntry = async (ticketId: string, opts: { note: string;
 }
 
 export const addResponse = async (ticketId: string, opts: { message: string; user?: any; sendEmail?: boolean }) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
-  const created = await prisma.ticketHistory.create({
-    data: {
-      ticketId: t.id,
-      fromStatus: t.status,
-      toStatus: t.status,
-      changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined,
-      note: opts.message,
-      internal: false,
-    },
-  })
+  const rows = await query(
+    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+    [
+      t.id,
+      t.status,
+      t.status,
+      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+      opts.message,
+      false,
+    ]
+  )
+  const created = rows[0]
 
   await auditLog({ action: 'respond', ticketId: t.ticketId, user: opts.user, meta: { message: opts.message } })
 
   if (opts.sendEmail && t.requesterId) {
-    const requester = await prisma.user.findUnique({ where: { id: t.requesterId } })
+    const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
     if (requester?.email) await mailer.sendTicketResponse(requester.email, t, opts.message)
   }
 
@@ -215,40 +269,57 @@ export const addResponse = async (ticketId: string, opts: { message: string; use
 }
 
 export const addPrivateNote = async (ticketId: string, opts: { note: string; user?: any }) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
-  const created = await prisma.ticketHistory.create({
-    data: {
-      ticketId: t.id,
-      fromStatus: t.status,
-      toStatus: t.status,
-      changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined,
-      note: opts.note,
-      internal: true,
-    },
-  })
+  const rows = await query(
+    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+    [
+      t.id,
+      t.status,
+      t.status,
+      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+      opts.note,
+      true,
+    ]
+  )
+  const created = rows[0]
 
   await auditLog({ action: 'private_note', ticketId: t.ticketId, user: opts.user, meta: { note: opts.note } })
   return created
 }
 
 export const resolveTicketWithDetails = async (ticketId: string, opts: { resolution: string; resolutionCategory?: string; user?: any; sendEmail?: boolean }) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
   const from = t.status
-  const updated = await prisma.ticket.update({
-    where: resolveTicketWhere(ticketId),
-    data: { status: 'Resolved', resolution: opts.resolution, resolutionCategory: opts.resolutionCategory || undefined, resolvedAt: new Date() },
-  })
+  const where = buildTicketWhere(ticketId, 't', 4)
+  const updatedRows = await query(
+    `UPDATE "Ticket" t SET "status" = $1, "resolution" = $2, "resolutionCategory" = $3, "resolvedAt" = NOW(), "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
+    [
+      'Resolved',
+      opts.resolution,
+      opts.resolutionCategory || null,
+      ...where.params,
+    ]
+  )
+  const updated = updatedRows[0]
 
-  await prisma.ticketStatusHistory.create({ data: { ticketId: t.id, oldStatus: from, newStatus: 'Resolved', changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined } })
+  await query(
+    'INSERT INTO "TicketStatusHistory" ("ticketId", "oldStatus", "newStatus", "changedById", "changedAt") VALUES ($1, $2, $3, $4, NOW())',
+    [
+      t.id,
+      from,
+      'Resolved',
+      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+    ]
+  )
 
   await auditLog({ action: 'resolve', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } })
 
   if (opts.sendEmail && t.requesterId) {
-    const requester = await prisma.user.findUnique({ where: { id: t.requesterId } })
+    const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
     if (requester?.email) await mailer.sendTicketResolved(requester.email, updated)
   }
 
@@ -256,7 +327,7 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
 }
 
 export const updateTicket = async (ticketId: string, payload: any, user?: any) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
   const data: any = {}
@@ -269,52 +340,102 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
   if (payload.assigneeId !== undefined) data.assigneeId = payload.assigneeId || null
   if (payload.requesterId !== undefined) data.requesterId = payload.requesterId || null
 
-  const updated = await prisma.ticket.update({ where: resolveTicketWhere(ticketId), data })
+  const setParts: string[] = []
+  const params: any[] = []
+  for (const [key, value] of Object.entries(data)) {
+    params.push(value)
+    setParts.push(`"${key}" = $${params.length}`)
+  }
+  setParts.push('"updatedAt" = NOW()')
+  const where = buildTicketWhere(ticketId, 't', params.length + 1)
+  const updatedRows = await query(
+    `UPDATE "Ticket" t SET ${setParts.join(', ')} WHERE ${where.clause} RETURNING *`,
+    [...params, ...where.params]
+  )
+  const updated = updatedRows[0]
 
-  await prisma.ticketHistory.create({ data: { ticketId: t.id, fromStatus: t.status, toStatus: updated.status, changedById: typeof user === 'number' ? user : parseInt(String(user)) || undefined, note: 'ticket updated' } })
+  await query(
+    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    [
+      t.id,
+      t.status,
+      updated.status,
+      typeof user === 'number' ? user : parseInt(String(user)) || null,
+      'ticket updated',
+      false,
+    ]
+  )
 
   await auditLog({ action: 'update_ticket', ticketId: updated.ticketId, user, meta: { changes: data } })
   return updated
 }
 
 export const deleteTicket = async (ticketId: string, user?: any) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
   // hard delete for now
-  const deleted = await prisma.ticket.delete({ where: resolveTicketWhere(ticketId) })
+  const where = buildTicketWhere(ticketId, 't', 1)
+  const deletedRows = await query(`DELETE FROM "Ticket" t WHERE ${where.clause} RETURNING *`, where.params)
+  const deleted = deletedRows[0]
 
-  await prisma.ticketHistory.create({ data: { ticketId: t.id, fromStatus: t.status, toStatus: 'Deleted', changedById: typeof user === 'number' ? user : parseInt(String(user)) || undefined, note: 'deleted' } })
+  await query(
+    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    [
+      t.id,
+      t.status,
+      'Deleted',
+      typeof user === 'number' ? user : parseInt(String(user)) || null,
+      'deleted',
+      false,
+    ]
+  )
 
   await auditLog({ action: 'delete_ticket', ticketId: t.ticketId, user })
   return deleted
 }
 
 export const assignAsset = async (ticketId: string, assetId: number, user?: any) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
-  const asset = await prisma.asset.findUnique({ where: { id: assetId } })
+  const asset = await queryOne<any>('SELECT * FROM "Asset" WHERE "id" = $1', [assetId])
   if (!asset) throw { status: 404, message: 'Asset not found' }
 
-  const updated = await prisma.ticket.update({
-    where: resolveTicketWhere(ticketId),
-    data: { assetId: asset.id },
-    include: { asset: true },
-  })
+  const where = buildTicketWhere(ticketId, 't', 2)
+  await query(
+    `UPDATE "Ticket" t SET "assetId" = $1, "updatedAt" = NOW() WHERE ${where.clause}`,
+    [asset.id, ...where.params]
+  )
+
+  const updated = await queryOne<any>(
+    `SELECT t.*, row_to_json(a) AS "asset"
+     FROM "Ticket" t
+     LEFT JOIN "Asset" a ON a."id" = t."assetId"
+     WHERE t."id" = $1`,
+    [t.id]
+  )
 
   await auditLog({ action: 'assign_asset', ticketId: updated.ticketId, user, meta: { assetId: asset.id } })
   return updated
 }
 
 export const unassignAsset = async (ticketId: string, user?: any) => {
-  const t = await prisma.ticket.findUnique({ where: resolveTicketWhere(ticketId) })
+  const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
-  const updated = await prisma.ticket.update({
-    where: resolveTicketWhere(ticketId),
-    data: { assetId: null },
-    include: { asset: true },
-  })
+  const where = buildTicketWhere(ticketId, 't', 1)
+  await query(
+    `UPDATE "Ticket" t SET "assetId" = NULL, "updatedAt" = NOW() WHERE ${where.clause}`,
+    where.params
+  )
+
+  const updated = await queryOne<any>(
+    `SELECT t.*, row_to_json(a) AS "asset"
+     FROM "Ticket" t
+     LEFT JOIN "Asset" a ON a."id" = t."assetId"
+     WHERE t."id" = $1`,
+    [t.id]
+  )
 
   await auditLog({ action: 'unassign_asset', ticketId: updated.ticketId, user })
   return updated

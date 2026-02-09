@@ -12,7 +12,7 @@ export type Incident = {
   subject: string
   category: string
   priority: 'Low' | 'Medium' | 'High'
-  status: 'Re-Opened' | 'New' | 'Rejected' | 'Approved' | 'Awaiting Ap' | 'Awaiting Approval' | 'In Progress' | 'Draft' | 'Updated' | 'With Vender' | 'With HR' | 'With User' | 'Closed'
+  status: 'Re-Opened' | 'New' | 'Rejected' | 'Approved' | 'Awaiting Ap' | 'Awaiting Approval' | 'In Progress' | 'Draft' | 'Updated' | 'With Supplier' | 'With HR' | 'With User' | 'Closed'
   type: string
   endUser: string
   dateReported: string
@@ -60,35 +60,93 @@ export default function TicketsView() {
     description: ''
   })
 
-  // Try to hydrate from backend tickets API if available
+  const buildSampleIncidents = (): Incident[] => {
+    const now = new Date()
+    const t1 = new Date(now.getTime() - 15 * 60 * 1000)
+    const t2 = new Date(now.getTime() - 2 * 60 * 60 * 1000)
+    const t3 = new Date(now.getTime() - 6 * 60 * 60 * 1000)
+    return [
+      {
+        id: 'TKT-DEMO-0001',
+        slaTimeLeft: '00:00',
+        subject: 'Laptop screen flickering',
+        category: 'Hardware',
+        priority: 'Medium',
+        status: 'New',
+        type: 'Incident',
+        endUser: 'End User',
+        dateReported: t1.toLocaleString(),
+        lastAction: 'Created',
+        lastActionTime: t1.toLocaleString(),
+        assignedAgentId: undefined,
+        assignedAgentName: undefined,
+      },
+      {
+        id: 'TKT-DEMO-0002',
+        slaTimeLeft: '00:00',
+        subject: 'VPN access failing',
+        category: 'Network',
+        priority: 'High',
+        status: 'In Progress',
+        type: 'Incident',
+        endUser: 'End User',
+        dateReported: t2.toLocaleString(),
+        lastAction: 'Triaged',
+        lastActionTime: t2.toLocaleString(),
+        assignedAgentId: undefined,
+        assignedAgentName: undefined,
+      },
+      {
+        id: 'TKT-DEMO-0003',
+        slaTimeLeft: '00:00',
+        subject: 'Outlook not syncing',
+        category: 'Email',
+        priority: 'Low',
+        status: 'Awaiting Approval',
+        type: 'Incident',
+        endUser: 'End User',
+        dateReported: t3.toLocaleString(),
+        lastAction: 'Waiting',
+        lastActionTime: t3.toLocaleString(),
+        assignedAgentId: undefined,
+        assignedAgentName: undefined,
+      },
+    ]
+  }
+
+  const loadTickets = async () => {
+    try {
+      const data: any = await ticketService.listTickets({ page: 1, pageSize: 200 })
+      const items = Array.isArray(data) ? data : (data?.items || [])
+      const mapped = items.map((t: any) => ({
+        id: t.ticketId || String(t.id),
+        slaTimeLeft: '00:00',
+        subject: t.subject || t.description || '',
+        category: t.category || '',
+        priority: t.priority || 'Low',
+        status: t.status,
+        type: t.type,
+        endUser: t.requester?.name || t.requester?.email || '',
+        dateReported: t.createdAt ? new Date(t.createdAt).toLocaleString() : '',
+        lastAction: '',
+        lastActionTime: '',
+        assignedAgentId: t.assignedTo?.id || t.assignee?.id,
+        assignedAgentName: t.assignedTo?.name || t.assignee?.name
+      }))
+      if (mapped.length > 0) {
+        setIncidents(mapped)
+      } else {
+        setIncidents(buildSampleIncidents())
+      }
+    } catch (err) {
+      console.warn('Failed to fetch tickets:', err)
+      setIncidents(buildSampleIncidents())
+    }
+  }
+
+  // Hydrate from backend tickets API
   React.useEffect(() => {
-    import('../services/ticket.service').then(svc => {
-      svc.listTickets().then((data: any) => {
-        // API returns { items: [...], total: number, page: number, pageSize: number }
-        const items = Array.isArray(data) ? data : (data?.items || [])
-        if (items && items.length > 0) {
-          const mapped = items.map((t: any) => ({
-            id: t.ticketId || String(t.id),
-            slaTimeLeft: '00:00',
-            subject: t.subject || t.description || '',
-            category: t.category || '',
-            priority: t.priority || 'Low',
-            status: t.status,
-            type: t.type,
-            endUser: t.requester?.name || t.requester?.email || '',
-            dateReported: new Date(t.createdAt).toLocaleString(),
-            lastAction: '',
-            lastActionTime: '',
-            assignedAgentId: t.assignedTo?.id || t.assignee?.id,
-            assignedAgentName: t.assignedTo?.name || t.assignee?.name
-          }))
-          setIncidents(mapped)
-        }
-      }).catch((err) => {
-        // backend unavailable -> keep demo state
-        console.warn('Failed to fetch tickets:', err)
-      })
-    })
+    loadTickets()
   }, [])
 
   React.useEffect(() => {
@@ -270,7 +328,8 @@ export default function TicketsView() {
           category: newIncidentForm.category,
           description: newIncidentForm.description,
           subject: newIncidentForm.subject,
-          requesterId: undefined,
+          requesterId: user?.id ? Number(user.id) : undefined,
+          requesterEmail: user?.email || undefined,
         }
         const created: any = await ticketService.createTicket(payload)
         const newId = created.ticketId || `#${String(created.id).padStart(6,'0')}`
@@ -290,6 +349,8 @@ export default function TicketsView() {
         setIncidents([newIncident, ...incidents])
         setShowNewIncidentModal(false)
         setNewIncidentForm({ ticketType: 'Fault', subject: '', category: '', priority: '', description: '' })
+        // Refresh from DB to ensure persisted view is accurate
+        await loadTickets()
       } catch (e) {
         alert('Failed to create ticket â€” offline demo fallback will be used')
         // fallback to local demo behavior
@@ -458,7 +519,7 @@ export default function TicketsView() {
       return buttons
     }
 
-    if (status === 'waiting for vendor') {
+    if (status === 'waiting for supplier') {
       buttons.push({ label: 'Email User', onClick: handleEmailUser })
       buttons.push({ label: 'Internal note', onClick: handleAddNote })
       buttons.push({ label: 'Email Supplier', onClick: () => addTicketComment(selectedTicket.id, 'Emailed supplier') })
@@ -472,7 +533,7 @@ export default function TicketsView() {
     if (status === 'waiting for approval') {
       buttons.push({ label: 'Email User', onClick: handleEmailUser })
       buttons.push({ label: 'Internal note', onClick: handleAddNote })
-      buttons.push({ label: 'Log to Supplier', onClick: () => applyStatus('Waiting for Vendor', 'Logged to supplier') })
+      buttons.push({ label: 'Log to Supplier', onClick: () => applyStatus('Waiting for Supplier', 'Logged to supplier') })
       buttons.push({ label: 'Recall to Approval', onClick: () => applyStatus('In Progress', 'Recall to approval') })
       buttons.push({ label: 'Re-assign', onClick: () => addTicketComment(selectedTicket.id, 'Re-assign') })
       buttons.push({ label: 'Resolve', onClick: () => applyStatus('Resolved', 'Resolved') })
@@ -483,7 +544,7 @@ export default function TicketsView() {
     // In Progress / Re-Opened / other
     buttons.push({ label: 'Email User', onClick: handleEmailUser })
     buttons.push({ label: 'Internal note', onClick: handleAddNote })
-    buttons.push({ label: 'Log to Supplier', onClick: () => applyStatus('Waiting for Vendor', 'Logged to supplier') })
+    buttons.push({ label: 'Log to Supplier', onClick: () => applyStatus('Waiting for Supplier', 'Logged to supplier') })
     buttons.push({ label: 'Request Approval', onClick: () => applyStatus('Waiting for Approval', 'Approval requested') })
     buttons.push({ label: 'Re-assign', onClick: () => addTicketComment(selectedTicket.id, 'Re-assign') })
     buttons.push({ label: 'Resolve', onClick: () => applyStatus('Resolved', 'Resolved') })
@@ -512,17 +573,88 @@ export default function TicketsView() {
     Acknowledged: 'check',
   }
 
-  const getInitials = (name: string) => {
+  const isOpenStatus = (status: string) => {
+    const s = (status || '').toLowerCase()
+    return s !== 'closed' && s !== 'resolved'
+  }
+
+  // Compute queue counts early before queueSidebar JSX uses them
+  const openIncidents = incidents.filter((i) => isOpenStatus(i.status))
+  const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
+  const countWithSupplier = openIncidents.filter((i) => {
+    const s = (i.status || '').toLowerCase()
+    return s.includes('supplier')
+  }).length
+
+  const queueSidebar = (!queueCollapsed && queueRoot) ? createPortal(
+    <aside className="ticket-queue-sidebar">
+      <div className="queue-search">
+        <input placeholder="Search Tickets..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} />
+        <span className="queue-search-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.5" y1="16.5" x2="21" y2="21" />
+          </svg>
+        </span>
+      </div>
+      <div className="queue-header">
+        <div className="queue-title">
+          <span className="queue-title-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 8h12M6 12h12M6 16h12" />
+            </svg>
+          </span>
+          <div>
+            <div className="queue-title-text">Tickets Queue</div>
+          </div>
+        </div>
+        {!queueCollapsed && (
+          <button
+            className="queue-collapse-btn"
+            title="Hide Menu"
+            onClick={() => setQueueCollapsed(true)}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+        )}
+      </div>
+      <div className="queue-list">
+        <div className="queue-item">
+          <div className="queue-avatar queue-avatar-dark">U</div>
+          <div className="queue-name">Unassigned</div>
+          <div className="queue-count">{countUnassigned}</div>
+        </div>
+        {agents.map((a) => (
+          <div key={`agent-${a.id}`} className="queue-item">
+            <div className="queue-avatar">{getInitials(a.name || a.email || 'U')}</div>
+            <div className="queue-name">{a.name || a.email}</div>
+            <div className="queue-count">
+              {openIncidents.filter((i) => {
+                const byId = String(i.assignedAgentId || '') === String(a.id)
+                const byName = i.assignedAgentName && a.name && i.assignedAgentName === a.name
+                return byId || byName
+              }).length}
+            </div>
+          </div>
+        ))}
+        <div className="queue-item">
+          <div className="queue-avatar queue-avatar-accent">S</div>
+          <div className="queue-name">With Supplier</div>
+          <div className="queue-count">{countWithSupplier}</div>
+        </div>
+      </div>
+    </aside>,
+    queueRoot
+  ) : null
+
+  function getInitials(name: string) {
     const safe = String(name || '').trim()
     if (!safe) return 'NA'
     const parts = safe.split(' ').filter(Boolean)
     if (parts.length === 0) return 'NA'
     return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase()
-  }
-
-  const isOpenStatus = (status: string) => {
-    const s = (status || '').toLowerCase()
-    return s !== 'closed' && s !== 'resolved'
   }
 
   const handleAccept = () => {
@@ -874,12 +1006,6 @@ export default function TicketsView() {
   const totalTickets = filteredCount
   const rangeStart = filteredCount > 0 ? 1 : 0
   const rangeEnd = filteredCount
-  const openIncidents = incidents.filter((i) => isOpenStatus(i.status))
-  const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
-  const countWithSupplier = openIncidents.filter((i) => {
-    const s = (i.status || '').toLowerCase()
-    return s.includes('supplier') || s.includes('vendor')
-  }).length
 
   const mainContent = showDetailView && selectedTicket ? (
     <div className="detail-view-container">
@@ -1103,68 +1229,6 @@ export default function TicketsView() {
     </div>
   ) : (
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
-      {!queueCollapsed && queueRoot && createPortal(
-      <aside className="ticket-queue-sidebar">
-        <div className="queue-search">
-          <input placeholder="Search Tickets..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} />
-          <span className="queue-search-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="7" />
-              <line x1="16.5" y1="16.5" x2="21" y2="21" />
-            </svg>
-          </span>
-        </div>
-        <div className="queue-header">
-          <div className="queue-title">
-            <span className="queue-title-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M6 8h12M6 12h12M6 16h12" />
-              </svg>
-            </span>
-            <div>
-              <div className="queue-title-text">Tickets Queue</div>
-            </div>
-          </div>
-          {!queueCollapsed && (
-            <button
-              className="queue-collapse-btn"
-              title="Hide Menu"
-              onClick={() => setQueueCollapsed(true)}
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-            </button>
-          )}
-        </div>
-        <div className="queue-list">
-          <div className="queue-item">
-            <div className="queue-avatar queue-avatar-dark">U</div>
-            <div className="queue-name">Unassigned</div>
-            <div className="queue-count">{countUnassigned}</div>
-          </div>
-          {agents.map((a) => (
-            <div key={`agent-${a.id}`} className="queue-item">
-              <div className="queue-avatar">{getInitials(a.name || a.email || 'U')}</div>
-              <div className="queue-name">{a.name || a.email}</div>
-              <div className="queue-count">
-                {openIncidents.filter((i) => {
-                  const byId = String(i.assignedAgentId || '') === String(a.id)
-                  const byName = i.assignedAgentName && a.name && i.assignedAgentName === a.name
-                  return byId || byName
-                }).length}
-              </div>
-            </div>
-          ))}
-          <div className="queue-item">
-            <div className="queue-avatar queue-avatar-accent">S</div>
-            <div className="queue-name">With Supplier</div>
-            <div className="queue-count">{countWithSupplier}</div>
-          </div>
-        </div>
-      </aside>,
-      queueRoot
-      )}
       <div className="tickets-main">
         <div className="tickets-table-bar">
           <div className="tickets-table-left">
@@ -1343,6 +1407,7 @@ export default function TicketsView() {
 
   return (
     <div className="tickets-view">
+      {queueSidebar}
       {mainContent}
 
       {showNewIncidentModal && (

@@ -1,0 +1,949 @@
+docker :  Image itsm-backend Building 
+At line:1 char:1
++ docker compose up --build 2>&1 | tee build.log
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ( Image itsm-backend Building :Str 
+   ing) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ Image itsm-frontend Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.04kB 0.0s done
+#1 DONE 0.0s
+
+#2 [frontend internal] load build definition from Dockerfile
+#2 transferring dockerfile: 464B 0.1s done
+#2 DONE 0.2s
+
+#3 [backend internal] load build definition from Dockerfile
+#3 transferring dockerfile: 959B 0.1s done
+#3 DONE 0.2s
+
+#4 [backend internal] load metadata for docker.io/library/node:20-bullseye
+#4 ...
+
+#5 [auth] library/node:pull token for registry-1.docker.io
+#5 DONE 0.0s
+
+#6 [auth] library/nginx:pull token for registry-1.docker.io
+#6 DONE 0.0s
+
+#7 [backend internal] load metadata for docker.io/library/node:20-bullseye-slim
+#7 ...
+
+#8 [frontend internal] load metadata for docker.io/library/node:20-alpine
+#8 DONE 2.7s
+
+#4 [backend internal] load metadata for docker.io/library/node:20-bullseye
+#4 DONE 2.6s
+
+#7 [backend internal] load metadata for docker.io/library/node:20-bullseye-slim
+#7 DONE 2.7s
+
+#9 [backend internal] load .dockerignore
+#9 transferring context:
+#9 transferring context: 84B 0.1s done
+#9 DONE 0.2s
+
+#10 [frontend internal] load metadata for docker.io/library/nginx:stable-alpine
+#10 DONE 3.2s
+
+#11 [backend internal] load build context
+#11 DONE 0.0s
+
+#12 [backend builder 1/6] FROM docker.io/library/node:20-bullseye@sha256:d731fd7036d2742cf20814223c1005429871b0af6efbe7ce091aa29b12a13a3d
+#12 resolve docker.io/library/node:20-bullseye@sha256:d731fd7036d2742cf20814223c1005429871b0af6efbe7ce091aa29b12a13a3d
+#12 resolve docker.io/library/node:20-bullseye@sha256:d731fd7036d2742cf20814223c1005429871b0af6efbe7ce091aa29b12a13a3d 0.2s done
+#12 DONE 0.2s
+
+#13 [backend runner 1/7] FROM docker.io/library/node:20-bullseye-slim@sha256:be08b7dfa11af5daa0757d12160117e02587f28a746f4cbffe20b46896e50608
+#13 resolve docker.io/library/node:20-bullseye-slim@sha256:be08b7dfa11af5daa0757d12160117e02587f28a746f4cbffe20b46896e50608 0.2s done
+#13 DONE 0.2s
+
+#14 [frontend internal] load .dockerignore
+#14 transferring context: 84B 0.1s done
+#14 DONE 0.1s
+
+#11 [backend internal] load build context
+#11 transferring context: 15.65kB 0.1s done
+#11 DONE 0.1s
+
+#15 [frontend internal] load build context
+#15 transferring context: 1.81kB 0.0s done
+#15 DONE 0.1s
+
+#16 [frontend builder 1/6] FROM docker.io/library/node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec71132750ec8
+#16 resolve docker.io/library/node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec71132750ec8
+#16 resolve docker.io/library/node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec71132750ec8 0.2s done
+#16 DONE 0.2s
+
+#17 [backend builder 2/6] WORKDIR /app
+#17 CACHED
+
+#18 [backend runner 2/7] WORKDIR /app
+#18 CACHED
+
+#19 [backend builder 5/6] COPY . .
+#19 CACHED
+
+#20 [backend builder 6/6] RUN npm run prisma:generate && npm run build
+#20 CACHED
+
+#21 [backend runner 3/7] RUN apt-get update && apt-get install -y --no-install-recommends libssl1.1 ca-certificates && rm -rf /var/lib/apt/lists/*
+#21 CACHED
+
+#22 [backend runner 6/7] COPY --from=builder /app/dist ./dist
+#22 CACHED
+
+#23 [backend builder 3/6] COPY package*.json ./
+#23 CACHED
+
+#24 [backend builder 4/6] RUN npm ci --no-audit --no-fund
+#24 CACHED
+
+#25 [backend runner 5/7] COPY --from=builder /app/node_modules ./node_modules
+#25 CACHED
+
+#26 [backend runner 4/7] COPY --from=builder /app/package*.json ./
+#26 CACHED
+
+#27 [backend runner 7/7] COPY --from=builder /app/prisma ./prisma
+#27 CACHED
+
+#28 [frontend stage-1 1/3] FROM docker.io/library/nginx:stable-alpine@sha256:15e96e59aa3b0aada3a121296e3bce117721f42d88f5f64217ef4b18f458c6ab
+#28 resolve docker.io/library/nginx:stable-alpine@sha256:15e96e59aa3b0aada3a121296e3bce117721f42d88f5f64217ef4b18f458c6ab 0.2s done
+#28 DONE 0.2s
+
+#29 [frontend stage-1 2/3] COPY --from=builder /app/dist /usr/share/nginx/html
+#29 CACHED
+
+#30 [frontend builder 3/6] COPY package*.json ./
+#30 CACHED
+
+#31 [frontend builder 5/6] COPY . .
+#31 CACHED
+
+#32 [frontend builder 2/6] WORKDIR /app
+#32 CACHED
+
+#33 [frontend builder 6/6] RUN npm run build
+#33 CACHED
+
+#34 [frontend builder 4/6] RUN npm ci
+#34 CACHED
+
+#35 [frontend stage-1 3/3] COPY nginx.conf /etc/nginx/conf.d/default.conf
+#35 CACHED
+
+#36 [frontend] exporting to image
+#36 exporting layers
+#36 exporting layers done
+#36 exporting manifest sha256:4b2eb932f171559eb521feb8f1ec944d269fea1badcdc3f5bdcfbeb9d8157dc5 0.0s done
+#36 exporting config sha256:940e1015241744d7f66cd4a12929f45efa9b3315ddd03760d82201a990e54120 0.1s done
+#36 exporting attestation manifest sha256:257ba5d0534f405745ad2ed4aae982731b815b2c700c94bf1e3bf9a60e7f4deb 0.1s done
+#36 exporting manifest list sha256:673386b34e53c86b2fcfb7f1f00dedf74c35181db0cd77f79ecc6694c4dc4c6c
+#36 exporting manifest list sha256:673386b34e53c86b2fcfb7f1f00dedf74c35181db0cd77f79ecc6694c4dc4c6c 0.1s done
+#36 naming to docker.io/library/itsm-frontend:latest 0.0s done
+#36 unpacking to docker.io/library/itsm-frontend:latest
+#36 unpacking to docker.io/library/itsm-frontend:latest 0.1s done
+#36 DONE 0.6s
+
+#37 [backend] exporting to image
+#37 exporting layers 0.1s done
+#37 exporting manifest sha256:a8fcf67700494c8b9ce6a0be6a04759acf7db554617814d58e3340115dfaf8df 0.0s done
+#37 exporting config sha256:47832efe74355991ac2d9bb3d543687aac90e9970cfafb6c658df00486e49192 0.1s done
+#37 exporting attestation manifest sha256:b4bb73a6b7c3ba054a83ed9510f0ce896c8795585c695210d4c71f9170366639 0.1s done
+#37 exporting manifest list sha256:e0108ac85fbe3e26c5ae0d8a09b3280e73b2b4f326d1fe9d313bb5362366a39d 0.1s done
+#37 naming to docker.io/library/itsm-backend:latest 0.0s done
+#37 unpacking to docker.io/library/itsm-backend:latest 0.1s done
+#37 DONE 0.7s
+
+#38 [frontend] resolving provenance for metadata file
+#38 DONE 0.1s
+
+#39 [backend] resolving provenance for metadata file
+#39 DONE 0.1s
+ Image itsm-frontend Built 
+ Image itsm-backend Built 
+ Network itsm_default Creating 
+ Network itsm_default Created 
+ Container itsm-redis-1 Creating 
+ Container itsm-postgres-1 Creating 
+ Container itsm-postgres-1 Created 
+ Container itsm-redis-1 Created 
+ Container itsm-backend-1 Creating 
+ Container itsm-backend-1 Created 
+ Container itsm-frontend-1 Creating 
+ Container itsm-frontend-1 Created 
+Attaching to backend-1, frontend-1, postgres-1, redis-1
+ Container itsm-redis-1 Starting 
+ Container itsm-postgres-1 Starting 
+redis-1  | 1:C 08 Feb 2026 12:30:44.802 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+redis-1  | 1:C 08 Feb 2026 12:30:44.802 * Redis version=7.4.7, bits=64, commit=00000000, modified=0, pid=1, just started
+redis-1  | 1:C 08 Feb 2026 12:30:44.802 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+redis-1  | 1:M 08 Feb 2026 12:30:44.815 * monotonic clock: POSIX clock_gettime
+redis-1  | 1:M 08 Feb 2026 12:30:44.819 * Running mode=standalone, port=6379.
+redis-1  | 1:M 08 Feb 2026 12:30:44.843 * Server initialized
+redis-1  | 1:M 08 Feb 2026 12:30:44.843 * Ready to accept connections tcp
+postgres-1  | 
+postgres-1  | PostgreSQL Database directory appears to contain a database; Skipping initialization
+postgres-1  | 
+ Container itsm-redis-1 Started 
+ Container itsm-postgres-1 Started 
+ Container itsm-postgres-1 Waiting 
+postgres-1  | 2026-02-08 12:30:45.249 UTC [1] LOG:  starting PostgreSQL 15.15 
+(Debian 15.15-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 
+14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-02-08 12:30:45.255 UTC [1] LOG:  listening on IPv4 address 
+"0.0.0.0", port 5432
+postgres-1  | 2026-02-08 12:30:45.255 UTC [1] LOG:  listening on IPv6 address 
+"::", port 5432
+postgres-1  | 2026-02-08 12:30:45.276 UTC [1] LOG:  listening on Unix socket 
+"/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-02-08 12:30:45.332 UTC [29] LOG:  database system was shut 
+down at 2026-02-08 12:27:00 UTC
+postgres-1  | 2026-02-08 12:30:45.387 UTC [1] LOG:  database system is ready 
+to accept connections
+ Container itsm-postgres-1 Healthy 
+ Container itsm-backend-1 Starting 
+ Container itsm-backend-1 Started 
+ Container itsm-frontend-1 Starting 
+frontend-1  | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+frontend-1  | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+frontend-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+frontend-1  | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+ Container itsm-frontend-1 Started 
+frontend-1  | 10-listen-on-ipv6-by-default.sh: info: /etc/nginx/conf.d/default.conf differs from the packaged version
+frontend-1  | /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+frontend-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+frontend-1  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+frontend-1  | /docker-entrypoint.sh: Configuration complete; ready for start up
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: using the "epoll" event method
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: nginx/1.28.2
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: built by gcc 15.2.0 (Alpine 
+15.2.0) 
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: OS: Linux 
+6.6.87.2-microsoft-standard-WSL2
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: getrlimit(RLIMIT_NOFILE): 
+1048576:1048576
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: start worker processes
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: start worker process 29
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: start worker process 30
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: start worker process 31
+frontend-1  | 2026/02/08 12:30:57 [notice] 1#1: start worker process 32
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 615ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Want to react to database changes in your app as they happen? Discover how with Pulse: https://pris.ly/tip-1-pulse
+backend-1   | 
+backend-1   | npm notice
+backend-1   | npm notice New major version of npm available! 10.8.2 -> 11.9.0
+backend-1   | npm notice Changelog: 
+https://github.com/npm/cli/releases/tag/v11.9.0
+backend-1   | npm notice To update run: npm install -g npm@11.9.0
+backend-1   | npm notice
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+postgres-1  | 2026-02-08 12:31:02.723 UTC [42] LOG:  could not receive data 
+from client: Connection reset by peer
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | Applying migration `0_init`
+backend-1   | Applying migration `1_add_slaStart`
+backend-1   | Applying migration `2_add_slaBreach`
+backend-1   | Applying migration `3_add_service_models`
+backend-1   | Applying migration `4_add_ticket_resolution_fields`
+backend-1   | Applying migration `5_add_sla_warning_flag`
+backend-1   | Applying migration `6_make_category_nullable`
+backend-1   | 
+backend-1   | The following migration(s) have been applied:
+backend-1   | 
+backend-1   | migrations/
+backend-1   |   GööGöÇ 0_init/
+backend-1   |     GööGöÇ migration.sql
+backend-1   |   GööGöÇ 1_add_slaStart/
+backend-1   |     GööGöÇ migration.sql
+backend-1   |   GööGöÇ 2_add_slaBreach/
+backend-1   |     GööGöÇ migration.sql
+backend-1   |   GööGöÇ 3_add_service_models/
+backend-1   |     GööGöÇ migration.sql
+backend-1   |   GööGöÇ 4_add_ticket_resolution_fields/
+backend-1   |     GööGöÇ migration.sql
+backend-1   |   GööGöÇ 5_add_sla_warning_flag/
+backend-1   |     GööGöÇ migration.sql
+backend-1   |   GööGöÇ 6_make_category_nullable/
+backend-1   |     GööGöÇ migration.sql
+backend-1   |       
+backend-1   | All migrations have been successfully applied.
+backend-1   | GöîGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGö
+ÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÉ
+backend-1   | Göé  Update available 5.22.0 -> 7.3.0                       Göé
+backend-1   | Göé                                                         Göé
+backend-1   | Göé  This is a major update - please follow the guide at    Göé
+backend-1   | Göé  https://pris.ly/d/major-version-upgrade                Göé
+backend-1   | Göé                                                         Göé
+backend-1   | Göé  Run the following to update                            Göé
+backend-1   | Göé    npm i --save-dev prisma@latest                       Göé
+backend-1   | Göé    npm i @prisma/client@latest                          Göé
+backend-1   | GööGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGö
+ÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÿ
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, 
+diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; 
+assetType: string; name: string; category: string; status: string; Supplier: 
+string; purchaseDate: Date; }' is not assignable to type 
+'(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & 
+AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' 
+does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> 
+& AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; 
+assetType: string; name: string; serial: string; category: string; status: 
+string; Supplier: string; purchaseDate: Date; }' is not assignable to type 
+'(Without<AssetCreateInput, AssetUncheckedCreateInput> & 
+AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' 
+does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> 
+& AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError 
+(/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError 
+(/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile 
+(/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile 
+(/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js 
+(node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] 
+(/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load 
+(node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] 
+(node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 734ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Easily identify and fix slow SQL queries in your app. Optimize helps you enhance your visibility: https://pris.ly/--optimize
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 647ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Easily identify and fix slow SQL queries in your app. Optimize helps you enhance your visibility: https://pris.ly/--optimize
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+postgres-1  | 2026-02-08 12:31:26.533 UTC [71] LOG:  could not receive data 
+from client: Connection reset by peer
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 569ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Curious about the SQL queries Prisma ORM generates? Optimize helps you enhance your visibility: https://pris.ly/tip-2-optimize
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 649ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Want to turn off tips and other hints? https://pris.ly/tip-4-nohints
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 662ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Easily identify and fix slow SQL queries in your app. Optimize helps you enhance your visibility: https://pris.ly/--optimize
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 630ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Want to react to database changes in your app as they happen? Discover how with Pulse: https://pris.ly/tip-1-pulse
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+postgres-1  | 2026-02-08 12:32:01.399 UTC [105] LOG:  could not receive data 
+from client: Connection reset by peer
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 620ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Need your database queries to be 1000x faster? Accelerate offers you that and more: https://pris.ly/tip-2-accelerate
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+postgres-1  | 2026-02-08 12:32:11.277 UTC [115] LOG:  could not receive data 
+from client: Connection reset by peer
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 740ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Want to react to database changes in your app as they happen? Discover how with Pulse: https://pris.ly/tip-1-pulse
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+postgres-1  | 2026-02-08 12:32:22.183 UTC [126] LOG:  could not receive data 
+from client: Connection reset by peer
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 612ms
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Tip: Easily identify and fix slow SQL queries in your app. Optimize helps you enhance your visibility: https://pris.ly/--optimize
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+postgres-1  | 2026-02-08 12:32:36.536 UTC [137] LOG:  could not receive data 
+from client: Connection reset by peer
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 1.05s
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Help us improve the Prisma ORM for everyone. Share your feedback in a short 2-min survey: https://pris.ly/orm/survey/release-5-22
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+backend-1   | /app/node_modules/ts-node/src/index.ts:859
+backend-1   |     return new TSError(diagnosticText, diagnosticCodes, diagnostics);
+backend-1   |            ^
+backend-1   | TSError: G¿» Unable to compile TypeScript:
+backend-1   | prisma/seed.ts(68,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetUpdateInput, AssetUncheckedUpdateInput> & AssetUncheckedUpdateInput) | (Without<...> & AssetUpdateInput)'.
+backend-1   | prisma/seed.ts(81,9): error TS2322: Type '{ assetId: string; assetType: string; name: string; serial: string; category: string; status: string; Supplier: string; purchaseDate: Date; }' is not assignable to type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   |   Object literal may only specify known properties, and 'Supplier' does not exist in type '(Without<AssetCreateInput, AssetUncheckedCreateInput> & AssetUncheckedCreateInput) | (Without<...> & AssetCreateInput)'.
+backend-1   | 
+backend-1   |     at createTSError (/app/node_modules/ts-node/src/index.ts:859:12)
+backend-1   |     at reportTSError (/app/node_modules/ts-node/src/index.ts:863:19)
+backend-1   |     at getOutput (/app/node_modules/ts-node/src/index.ts:1077:36)
+backend-1   |     at Object.compile (/app/node_modules/ts-node/src/index.ts:1433:41)
+backend-1   |     at Module.m._compile (/app/node_modules/ts-node/src/index.ts:1617:30)
+backend-1   |     at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+backend-1   |     at Object.require.extensions.<computed> [as .ts] (/app/node_modules/ts-node/src/index.ts:1621:12)
+backend-1   |     at Module.load (node:internal/modules/cjs/loader:1266:32)
+backend-1   |     at Function.Module._load (node:internal/modules/cjs/loader:1091:12)
+backend-1   |     at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:164:12) {
+backend-1   |   diagnosticCodes: [ 2322, 2322 ]
+backend-1   | }
+
+[Kbackend-1 exited with code 1 (restarting)
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:generate
+backend-1   | > prisma generate --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+frontend-1  | 2026/02/08 12:33:15 [error] 29#29: *1 connect() failed (111: 
+Connection refused) while connecting to upstream, client: 172.18.0.1, server: 
+_, request: "POST /api/v1/auth/login HTTP/1.1", upstream: 
+"http://172.18.0.4:5000/api/v1/auth/login", host: "localhost:3000", referrer: 
+"http://localhost:3000/login"
+frontend-1  | 172.18.0.1 - - [08/Feb/2026:12:33:15 +0000] "POST /api/v1/auth/login HTTP/1.1" 502 559 "http://localhost:3000/login" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36" "-"
+backend-1   | 
+backend-1   | G£ö Generated Prisma Client (v5.22.0) to ./node_modules/@prisma/client in 2.59s
+backend-1   | 
+backend-1   | Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+backend-1   | 
+backend-1   | Help us improve the Prisma ORM for everyone. Share your feedback in a short 2-min survey: https://pris.ly/orm/survey/release-5-22
+backend-1   | 
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:migrate
+backend-1   | > prisma migrate deploy --schema=./prisma/schema.prisma
+backend-1   | 
+backend-1   | Prisma schema loaded from prisma/schema.prisma
+backend-1   | Datasource "db": PostgreSQL database "itsm", schema "public" at "postgres:5432"
+postgres-1  | 2026-02-08 12:33:24.113 UTC [183] LOG:  could not receive data 
+from client: Connection reset by peer
+backend-1   | 
+backend-1   | 7 migrations found in prisma/migrations
+backend-1   | 
+backend-1   | 
+backend-1   | No pending migrations to apply.
+backend-1   | 
+backend-1   | > cmdb-backend@0.1.0 prisma:seed
+backend-1   | > ts-node ./prisma/seed.ts
+backend-1   | 
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: signal 3 (SIGQUIT) received, 
+shutting down
+frontend-1  | 2026/02/08 12:33:28 [notice] 29#29: gracefully shutting down
+frontend-1  | 2026/02/08 12:33:28 [notice] 30#30: gracefully shutting down
+frontend-1  | 2026/02/08 12:33:28 [notice] 31#31: gracefully shutting down
+frontend-1  | 2026/02/08 12:33:28 [notice] 31#31: exiting
+frontend-1  | 2026/02/08 12:33:28 [notice] 32#32: gracefully shutting down
+frontend-1  | 2026/02/08 12:33:28 [notice] 29#29: exiting
+frontend-1  | 2026/02/08 12:33:28 [notice] 31#31: exit
+frontend-1  | 2026/02/08 12:33:28 [notice] 30#30: exiting
+frontend-1  | 2026/02/08 12:33:28 [notice] 32#32: exiting
+frontend-1  | 2026/02/08 12:33:28 [notice] 30#30: exit
+frontend-1  | 2026/02/08 12:33:28 [notice] 29#29: exit
+frontend-1  | 2026/02/08 12:33:28 [notice] 32#32: exit
+redis-1     | 1:signal-handler (1770554008) Received SIGTERM scheduling shutdown...
+redis-1     | 1:M 08 Feb 2026 12:33:28.319 * User requested shutdown...
+redis-1     | 1:M 08 Feb 2026 12:33:28.319 * Saving the final RDB snapshot before exiting.
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: signal 17 (SIGCHLD) received 
+from 30
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: worker process 30 exited with 
+code 0
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: signal 29 (SIGIO) received
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: signal 17 (SIGCHLD) received 
+from 29
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: worker process 29 exited with 
+code 0
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: worker process 31 exited with 
+code 0
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: signal 29 (SIGIO) received
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: signal 17 (SIGCHLD) received 
+from 32
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: worker process 32 exited with 
+code 0
+frontend-1  | 2026/02/08 12:33:28 [notice] 1#1: exit
+redis-1     | 1:M 08 Feb 2026 12:33:28.424 * DB saved on disk
+redis-1     | 1:M 08 Feb 2026 12:33:28.425 # Redis is now ready to exit, bye bye...
+
+[Kredis-1 exited with code 0
+
+[Kfrontend-1 exited with code 0
+
+[Kbackend-1 exited with code 137
+postgres-1  | 2026-02-08 12:33:34.389 UTC [1] LOG:  received fast shutdown 
+request
+postgres-1  | 2026-02-08 12:33:34.421 UTC [1] LOG:  aborting any active 
+transactions
+postgres-1  | 2026-02-08 12:33:34.437 UTC [1] LOG:  background worker "logical 
+replication launcher" (PID 32) exited with exit code 1
+postgres-1  | 2026-02-08 12:33:34.448 UTC [27] LOG:  shutting down
+postgres-1  | 2026-02-08 12:33:34.463 UTC [27] LOG:  checkpoint starting: 
+shutdown immediate
+
+[Kpostgres-1 exited with code 137

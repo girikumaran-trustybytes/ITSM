@@ -14,14 +14,14 @@ export default function Dashboard() {
     const fetchDashboardData = async () => {
       try {
         setLoading(true)
-        const ticketsRes = await api.get('/v1/tickets?pageSize=500')
+        const ticketsRes = await api.get('/tickets?pageSize=500')
         const ticketsData = ticketsRes.data
         const allTickets = ticketsData.items || []
         setTickets(allTickets)
 
         if (user?.role !== 'USER') {
           try {
-            const assetsRes = await api.get('/v1/assets?pageSize=500')
+            const assetsRes = await api.get('/assets?pageSize=500')
             const assetsData = assetsRes.data
             const allAssets = assetsData.items || []
             setAssets(allAssets)
@@ -57,7 +57,7 @@ export default function Dashboard() {
     }).length
     const withSupplier = tickets.filter((t) => {
       const s = (t.status || '').toLowerCase()
-      return s.includes('supplier') || s.includes('vendor')
+      return s.includes('supplier')
     }).length
     const closed = tickets.filter((t) => (t.status || '').toLowerCase() === 'closed').length
     return { total, open, withSupplier, closed, byStatus }

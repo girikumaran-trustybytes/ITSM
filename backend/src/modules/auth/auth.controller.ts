@@ -4,13 +4,18 @@ import * as authService from './auth.service'
 function isDbError(err: any): boolean {
   const name = err?.constructor?.name ?? ''
   const msg = (err?.message ?? '').toLowerCase()
+  const code = err?.code ?? ''
   return (
-    name === 'PrismaClientInitializationError' ||
-    name === 'PrismaClientKnownRequestError' ||
-    name === 'PrismaClientUnknownRequestError' ||
-    msg.includes('prisma') ||
-    msg.includes('database server') ||
-    msg.includes('can\'t reach database')
+    name.includes('Postgres') ||
+    msg.includes('database') ||
+    msg.includes('postgres') ||
+    msg.includes('db connection') ||
+    code === 'ECONNREFUSED' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ENOTFOUND' ||
+    code === '57P01' || // admin shutdown
+    code === '57P03' || // cannot connect now
+    code === '53300' // too many connections
   )
 }
 

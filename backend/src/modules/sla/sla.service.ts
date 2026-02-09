@@ -1,18 +1,18 @@
-import prisma from '../../prisma/client'
+import { query, queryOne } from '../../db'
 
 export async function listSlaConfigs(opts: { q?: string } = {}) {
-  const where: any = {}
+  const conditions: string[] = []
+  const params: any[] = []
   if (opts.q) {
-    where.OR = [
-      { name: { contains: opts.q, mode: 'insensitive' } },
-      { priority: { contains: opts.q, mode: 'insensitive' } },
-    ]
+    params.push(`%${opts.q}%`)
+    conditions.push(`("name" ILIKE $${params.length} OR "priority" ILIKE $${params.length})`)
   }
-  return prisma.slaConfig.findMany({ where, orderBy: { createdAt: 'desc' } })
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  return query(`SELECT * FROM "SlaConfig" ${where} ORDER BY "createdAt" DESC`, params)
 }
 
 export async function getSlaConfig(id: number) {
-  return prisma.slaConfig.findUnique({ where: { id } })
+  return queryOne('SELECT * FROM "SlaConfig" WHERE "id" = $1', [id])
 }
 
 export async function createSlaConfig(payload: any) {
@@ -25,16 +25,18 @@ export async function createSlaConfig(payload: any) {
   if (!Number.isFinite(responseTimeMin) || responseTimeMin < 0) throw { status: 400, message: 'Invalid response time' }
   if (!Number.isFinite(resolutionTimeMin) || resolutionTimeMin < 0) throw { status: 400, message: 'Invalid resolution time' }
 
-  return prisma.slaConfig.create({
-    data: {
+  const rows = await query(
+    'INSERT INTO "SlaConfig" ("name", "priority", "responseTimeMin", "resolutionTimeMin", "businessHours", "active", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING *',
+    [
       name,
       priority,
       responseTimeMin,
       resolutionTimeMin,
-      businessHours: Boolean(payload.businessHours),
-      active: payload.active === undefined ? true : Boolean(payload.active),
-    },
-  })
+      Boolean(payload.businessHours),
+      payload.active === undefined ? true : Boolean(payload.active),
+    ]
+  )
+  return rows[0]
 }
 
 export async function updateSlaConfig(id: number, payload: any) {
@@ -47,18 +49,33 @@ export async function updateSlaConfig(id: number, payload: any) {
   if (payload.active !== undefined) data.active = Boolean(payload.active)
 
   try {
-    return await prisma.slaConfig.update({ where: { id }, data })
+    const setParts: string[] = []
+    const params: any[] = []
+    for (const [key, value] of Object.entries(data)) {
+      params.push(value)
+      setParts.push(`"${key}" = $${params.length}`)
+    }
+    setParts.push('"updatedAt" = NOW()')
+    params.push(id)
+    const rows = await query(
+      `UPDATE "SlaConfig" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING *`,
+      params
+    )
+    if (!rows[0]) throw { status: 404, message: 'SLA config not found' }
+    return rows[0]
   } catch (err: any) {
-    if (err?.code === 'P2025') throw { status: 404, message: 'SLA config not found' }
+    if (err?.status === 404) throw err
     throw err
   }
 }
 
 export async function deleteSlaConfig(id: number) {
   try {
-    return await prisma.slaConfig.delete({ where: { id } })
+    const rows = await query('DELETE FROM "SlaConfig" WHERE "id" = $1 RETURNING *', [id])
+    if (!rows[0]) throw { status: 404, message: 'SLA config not found' }
+    return rows[0]
   } catch (err: any) {
-    if (err?.code === 'P2025') throw { status: 404, message: 'SLA config not found' }
+    if (err?.status === 404) throw err
     throw err
   }
 }

@@ -319,7 +319,7 @@ export default function AssetsView() {
           <div className="assets-col serial">Serial</div>
           <div className="assets-col category">Category</div>
           <div className="assets-col status">Status</div>
-          <div className="assets-col vendor">Model</div>
+          <div className="assets-col supplier">Model</div>
           <div className="assets-col assigned">Assigned To</div>
           <div className="assets-col date">Purchase</div>
           <div className="assets-col actions">Actions</div>
@@ -335,7 +335,7 @@ export default function AssetsView() {
             <div className="assets-col status">
               <span className={`asset-status ${asset.status.toLowerCase().replace(/\s+/g, '-')}`}>{asset.status}</span>
             </div>
-            <div className="assets-col vendor">{asset.model || '-'}</div>
+            <div className="assets-col supplier">{asset.model || '-'}</div>
             <div className="assets-col assigned">
               {asset.assignedTo ? (asset.assignedTo.name || asset.assignedTo.email) : (asset.assignedToId ? `User #${asset.assignedToId}` : 'Unassigned')}
             </div>
