@@ -4,8 +4,32 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
-const v1_routes_1 = __importDefault(require("./v1.routes"));
+const routes_1 = __importDefault(require("../modules/tickets/routes"));
+const routes_2 = __importDefault(require("../modules/assets/routes"));
+const auth_routes_1 = __importDefault(require("../modules/auth/auth.routes"));
+const routes_3 = __importDefault(require("../modules/approvals/routes"));
+const routes_4 = __importDefault(require("../modules/tasks/routes"));
+const routes_5 = __importDefault(require("../modules/webhooks/routes"));
+const routes_6 = __importDefault(require("../modules/suppliers/routes"));
+const routes_7 = __importDefault(require("../modules/users/routes"));
+const sla_routes_1 = __importDefault(require("../modules/sla/sla.routes"));
+const changes_routes_1 = __importDefault(require("../modules/changes/changes.routes"));
+const problems_routes_1 = __importDefault(require("../modules/problems/problems.routes"));
+const services_routes_1 = __importDefault(require("../modules/services/services.routes"));
+const routes_8 = __importDefault(require("../modules/incidents/routes"));
 const router = (0, express_1.Router)();
-// Mount versioned API under /v1 so endpoints become /api/v1/...
-router.use('/v1', v1_routes_1.default);
+router.use('/auth', auth_routes_1.default);
+router.use('/tickets', routes_1.default);
+router.use('/assets', routes_2.default);
+// approvals and tasks use ticket-scoped paths under /tickets/:ticketId
+router.use('/', routes_3.default);
+router.use('/', routes_4.default);
+router.use('/webhooks', routes_5.default);
+router.use('/suppliers', routes_6.default);
+router.use('/users', routes_7.default);
+router.use('/sla', sla_routes_1.default);
+router.use('/changes', changes_routes_1.default);
+router.use('/problems', problems_routes_1.default);
+router.use('/services', services_routes_1.default);
+router.use('/incidents', routes_8.default);
 exports.default = router;

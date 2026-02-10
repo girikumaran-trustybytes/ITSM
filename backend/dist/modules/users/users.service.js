@@ -4,33 +4,27 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.listUsers = void 0;
-const client_1 = __importDefault(require("../../prisma/client"));
+const db_1 = require("../../db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 async function listUsers(opts = {}) {
-    const where = {};
+    const conditions = [];
+    const params = [];
     if (opts.role) {
-        where.role = opts.role;
+        params.push(opts.role);
+        conditions.push(`"role" = $${params.length}`);
     }
     if (opts.q) {
-        where.OR = [
-            { name: { contains: opts.q, mode: 'insensitive' } },
-            { email: { contains: opts.q, mode: 'insensitive' } },
-        ];
+        params.push(`%${opts.q}%`);
+        conditions.push(`("name" ILIKE $${params.length} OR "email" ILIKE $${params.length})`);
     }
     const take = opts.limit && opts.limit > 0 ? opts.limit : 50;
-    return client_1.default.user.findMany({
-        where,
-        take,
-        orderBy: { name: 'asc' },
-        select: { id: true, name: true, email: true, role: true, status: true, createdAt: true },
-    });
+    params.push(take);
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    return (0, db_1.query)(`SELECT "id", "name", "email", "role", "status", "createdAt" FROM "User" ${where} ORDER BY "name" ASC LIMIT $${params.length}`, params);
 }
 exports.listUsers = listUsers;
 async function getUserById(id) {
-    return client_1.default.user.findUnique({
-        where: { id },
-        select: { id: true, name: true, email: true, role: true, phone: true, client: true, site: true, accountManager: true, status: true, createdAt: true, updatedAt: true },
-    });
+    return (0, db_1.queryOne)('SELECT "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt" FROM "User" WHERE "id" = $1', [id]);
 }
 exports.getUserById = getUserById;
 async function createUser(payload) {
@@ -40,7 +34,7 @@ async function createUser(payload) {
         throw { status: 400, message: 'Email is required' };
     if (!password || password.length < 6)
         throw { status: 400, message: 'Password must be at least 6 characters' };
-    const existing = await client_1.default.user.findUnique({ where: { email } });
+    const existing = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "email" = $1', [email]);
     if (existing)
         throw { status: 409, message: 'Email already exists' };
     const hashed = await bcrypt_1.default.hash(password, 12);
@@ -55,10 +49,8 @@ async function createUser(payload) {
         role: payload.role || 'USER',
         status: payload.status || 'ACTIVE',
     };
-    return client_1.default.user.create({
-        data,
-        select: { id: true, name: true, email: true, role: true, phone: true, client: true, site: true, accountManager: true, status: true, createdAt: true, updatedAt: true },
-    });
+    const rows = await (0, db_1.query)('INSERT INTO "User" ("email", "password", "name", "phone", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt"', [data.email, data.password, data.name, data.phone, data.client, data.site, data.accountManager, data.role, data.status]);
+    return rows[0];
 }
 exports.createUser = createUser;
 async function updateUser(id, payload) {
@@ -85,16 +77,23 @@ async function updateUser(id, payload) {
         data.password = await bcrypt_1.default.hash(String(payload.password), 12);
     }
     try {
-        return await client_1.default.user.update({
-            where: { id },
-            data,
-            select: { id: true, name: true, email: true, role: true, phone: true, client: true, site: true, accountManager: true, status: true, createdAt: true, updatedAt: true },
-        });
+        const setParts = [];
+        const params = [];
+        for (const [key, value] of Object.entries(data)) {
+            params.push(value);
+            setParts.push(`"${key}" = $${params.length}`);
+        }
+        setParts.push('"updatedAt" = NOW()');
+        params.push(id);
+        const rows = await (0, db_1.query)(`UPDATE "User" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, params);
+        if (!rows[0])
+            throw { status: 404, message: 'User not found' };
+        return rows[0];
     }
     catch (err) {
-        if (err?.code === 'P2025')
-            throw { status: 404, message: 'User not found' };
-        if (err?.code === 'P2002')
+        if (err?.status === 404)
+            throw err;
+        if (err?.code === '23505')
             throw { status: 409, message: 'Email already exists' };
         throw err;
     }
@@ -102,14 +101,14 @@ async function updateUser(id, payload) {
 exports.updateUser = updateUser;
 async function deleteUser(id) {
     try {
-        return await client_1.default.user.delete({
-            where: { id },
-            select: { id: true, name: true, email: true },
-        });
+        const rows = await (0, db_1.query)('DELETE FROM "User" WHERE "id" = $1 RETURNING "id", "name", "email"', [id]);
+        if (!rows[0])
+            throw { status: 404, message: 'User not found' };
+        return rows[0];
     }
     catch (err) {
-        if (err?.code === 'P2025')
-            throw { status: 404, message: 'User not found' };
+        if (err?.status === 404)
+            throw err;
         throw err;
     }
 }

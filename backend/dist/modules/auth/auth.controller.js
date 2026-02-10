@@ -28,12 +28,18 @@ const authService = __importStar(require("./auth.service"));
 function isDbError(err) {
     const name = err?.constructor?.name ?? '';
     const msg = (err?.message ?? '').toLowerCase();
-    return (name === 'PrismaClientInitializationError' ||
-        name === 'PrismaClientKnownRequestError' ||
-        name === 'PrismaClientUnknownRequestError' ||
-        msg.includes('prisma') ||
-        msg.includes('database server') ||
-        msg.includes('can\'t reach database'));
+    const code = err?.code ?? '';
+    return (name.includes('Postgres') ||
+        msg.includes('database') ||
+        msg.includes('postgres') ||
+        msg.includes('db connection') ||
+        code === 'ECONNREFUSED' ||
+        code === 'ETIMEDOUT' ||
+        code === 'ENOTFOUND' ||
+        code === '57P01' || // admin shutdown
+        code === '57P03' || // cannot connect now
+        code === '53300' // too many connections
+    );
 }
 async function login(req, res) {
     const { email, password } = req.body;

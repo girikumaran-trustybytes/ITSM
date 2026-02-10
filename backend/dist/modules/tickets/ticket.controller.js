@@ -25,7 +25,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteTicket = exports.updateTicket = exports.unassignAsset = exports.assignAsset = exports.resolveTicket = exports.privateNote = exports.respond = exports.addHistory = exports.transitionTicket = exports.createTicket = exports.getTicket = exports.listTickets = void 0;
 const ticketService = __importStar(require("./ticket.service"));
-const ticket_validator_1 = require("./ticket.validator");
 const listTickets = async (req, res) => {
     const page = Number(req.query.page || 1);
     const pageSize = Number(req.query.pageSize || 20);
@@ -49,10 +48,7 @@ const getTicket = async (req, res) => {
 exports.getTicket = getTicket;
 const createTicket = async (req, res) => {
     try {
-        const payload = req.body;
-        const check = (0, ticket_validator_1.validateCreate)(payload);
-        if (!check.ok)
-            return res.status(400).json({ error: check.message });
+        const payload = req.validated?.body || req.body;
         const creator = req.user?.id || 'system';
         const role = req.user?.role;
         if (role === 'USER') {
@@ -69,10 +65,7 @@ const createTicket = async (req, res) => {
 exports.createTicket = createTicket;
 const transitionTicket = async (req, res) => {
     const id = req.params.id;
-    const check = (0, ticket_validator_1.validateTransition)(req.body);
-    if (!check.ok)
-        return res.status(400).json({ error: check.message });
-    const { to } = req.body;
+    const { to } = req.validated?.body || req.body;
     const user = req.user?.id || 'system';
     try {
         const t = await ticketService.transitionTicket(id, to, user);
@@ -85,7 +78,7 @@ const transitionTicket = async (req, res) => {
 exports.transitionTicket = transitionTicket;
 const addHistory = async (req, res) => {
     const id = req.params.id;
-    const payload = req.body || {};
+    const payload = req.validated?.body || req.body || {};
     const note = String(payload.note || '');
     if (!note || !note.trim())
         return res.status(400).json({ error: 'Note is required' });
@@ -101,7 +94,7 @@ const addHistory = async (req, res) => {
 exports.addHistory = addHistory;
 const respond = async (req, res) => {
     const id = req.params.id;
-    const { message, sendEmail } = req.body || {};
+    const { message, sendEmail } = req.validated?.body || req.body || {};
     if (!message || !message.trim())
         return res.status(400).json({ error: 'Message is required' });
     const user = req.user?.id || 'system';
@@ -116,7 +109,7 @@ const respond = async (req, res) => {
 exports.respond = respond;
 const privateNote = async (req, res) => {
     const id = req.params.id;
-    const { note } = req.body || {};
+    const { note } = req.validated?.body || req.body || {};
     if (!note || !note.trim())
         return res.status(400).json({ error: 'Note is required' });
     const user = req.user?.id || 'system';
@@ -131,7 +124,7 @@ const privateNote = async (req, res) => {
 exports.privateNote = privateNote;
 const resolveTicket = async (req, res) => {
     const id = req.params.id;
-    const { resolution, resolutionCategory, sendEmail } = req.body || {};
+    const { resolution, resolutionCategory, sendEmail } = req.validated?.body || req.body || {};
     if (!resolution || !resolution.trim())
         return res.status(400).json({ error: 'Resolution details are required' });
     const user = req.user?.id || 'system';
@@ -146,7 +139,7 @@ const resolveTicket = async (req, res) => {
 exports.resolveTicket = resolveTicket;
 const assignAsset = async (req, res) => {
     const id = req.params.id;
-    const { assetId } = req.body || {};
+    const { assetId } = req.validated?.body || req.body || {};
     if (!assetId)
         return res.status(400).json({ error: 'assetId is required' });
     const user = req.user?.id || 'system';
@@ -173,10 +166,7 @@ const unassignAsset = async (req, res) => {
 exports.unassignAsset = unassignAsset;
 const updateTicket = async (req, res) => {
     const id = req.params.id;
-    const payload = req.body || {};
-    const check = (0, ticket_validator_1.validateUpdate)(payload);
-    if (!check.ok)
-        return res.status(400).json({ error: check.message });
+    const payload = req.validated?.body || req.body || {};
     const user = req.user?.id || 'system';
     try {
         const updated = await ticketService.updateTicket(id, payload, user);

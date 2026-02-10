@@ -27,6 +27,7 @@ export default function TicketsView() {
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('queue-sidebar-root') : null
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [filterType, setFilterType] = useState('Open Tickets')
+  const [queueFilter, setQueueFilter] = useState<{ type: 'all' | 'unassigned' | 'supplier' | 'agent'; agentId?: string; agentName?: string }>({ type: 'all' })
   const [showFilterMenu, setShowFilterMenu] = useState(false)
   const [showSearchBar, setShowSearchBar] = useState(false)
   const [selectAll, setSelectAll] = useState(false)
@@ -200,6 +201,18 @@ export default function TicketsView() {
   }, [])
 
   React.useEffect(() => {
+    const handler = (ev: any) => {
+      const q = String(ev?.detail?.query ?? '')
+      setGlobalSearch(q)
+      if (queueCollapsed) {
+        setShowSearchBar(false)
+      }
+    }
+    window.addEventListener('global-search', handler as EventListener)
+    return () => window.removeEventListener('global-search', handler as EventListener)
+  }, [queueCollapsed])
+
+  React.useEffect(() => {
     const handleResize = () => {
       if (window.innerWidth <= 1100) {
         setQueueCollapsed(true)
@@ -270,6 +283,7 @@ export default function TicketsView() {
   const paddingHorizontal = 32 // left+right padding from .table-header/.table-row (16px each)
   const initialTableWidth = Math.ceil(Object.values(baseColWidths).reduce((s, v) => s + (v as number), 0) + gapTotal + paddingHorizontal)
   const [tableWidth, setTableWidth] = useState<number>(initialTableWidth)
+  const tableRef = React.useRef<HTMLDivElement | null>(null)
   // per-column widths used for gridTemplateColumns. Keep `summary` key because
   // the template references `columnWidths.summary` (subject text cell).
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
@@ -445,6 +459,20 @@ export default function TicketsView() {
     return user.name || user.email || user.username || user.id || 'You'
   }
 
+  const getAgentDisplayName = (a: any) => {
+    const name = a?.name || ''
+    if (name.trim()) return name
+    const username = a?.username || a?.userName || ''
+    if (String(username || '').trim()) return String(username).trim()
+    const email = String(a?.email || '').trim()
+    if (email) {
+      const local = email.split('@')[0] || email
+      const first = local.split(/[._-]/).filter(Boolean)[0] || local
+      return first ? first[0].toUpperCase() + first.slice(1) : email
+    }
+    return 'User'
+  }
+
   const addTicketComment = (ticketId: string, text: string) => {
     const now = new Date().toLocaleString()
     const author = getCurrentAgentName()
@@ -585,6 +613,7 @@ export default function TicketsView() {
     const s = (i.status || '').toLowerCase()
     return s.includes('supplier')
   }).length
+  const queueTotal = incidents.length
 
   const queueSidebar = (!queueCollapsed && queueRoot) ? createPortal(
     <aside className="ticket-queue-sidebar">
@@ -598,48 +627,66 @@ export default function TicketsView() {
         </span>
       </div>
       <div className="queue-header">
+        <button
+          className="queue-collapse-btn"
+          title="Hide Menu"
+          onClick={() => setQueueCollapsed(true)}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
         <div className="queue-title">
-          <span className="queue-title-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 8h12M6 12h12M6 16h12" />
-            </svg>
-          </span>
-          <div>
-            <div className="queue-title-text">Tickets Queue</div>
-          </div>
-        </div>
-        {!queueCollapsed && (
           <button
-            className="queue-collapse-btn"
-            title="Hide Menu"
-            onClick={() => setQueueCollapsed(true)}
+            className="queue-title-btn"
+            onClick={() => setQueueFilter({ type: 'all' })}
+            title="Show all tickets"
           >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
+            <div className="queue-title-text">Tickets Queue</div>
           </button>
-        )}
+        </div>
+        <div className="queue-total" title="Total tickets">{queueTotal}</div>
       </div>
       <div className="queue-list">
-        <div className="queue-item">
+        <div
+          className={`queue-item${queueFilter.type === 'unassigned' ? ' queue-item-active' : ''}`}
+          onClick={() => {
+            setQueueFilter(prev => prev.type === 'unassigned' ? { type: 'all' } : { type: 'unassigned' })
+          }}
+        >
           <div className="queue-avatar queue-avatar-dark">U</div>
           <div className="queue-name">Unassigned</div>
           <div className="queue-count">{countUnassigned}</div>
         </div>
         {agents.map((a) => (
-          <div key={`agent-${a.id}`} className="queue-item">
-            <div className="queue-avatar">{getInitials(a.name || a.email || 'U')}</div>
-            <div className="queue-name">{a.name || a.email}</div>
+          <div
+            key={`agent-${a.id}`}
+            className={`queue-item${queueFilter.type === 'agent' && String(queueFilter.agentId || '') === String(a.id) ? ' queue-item-active' : ''}`}
+            onClick={() => {
+              const displayName = getAgentDisplayName(a)
+              setQueueFilter(prev => {
+                if (prev.type === 'agent' && String(prev.agentId || '') === String(a.id)) return { type: 'all' }
+                return { type: 'agent', agentId: String(a.id), agentName: displayName }
+              })
+            }}
+          >
+            <div className="queue-avatar">{getInitials(getAgentDisplayName(a) || 'U')}</div>
+            <div className="queue-name">{getAgentDisplayName(a)}</div>
             <div className="queue-count">
               {openIncidents.filter((i) => {
                 const byId = String(i.assignedAgentId || '') === String(a.id)
-                const byName = i.assignedAgentName && a.name && i.assignedAgentName === a.name
+                const byName = i.assignedAgentName && getAgentDisplayName(a) && i.assignedAgentName === getAgentDisplayName(a)
                 return byId || byName
               }).length}
             </div>
           </div>
         ))}
-        <div className="queue-item">
+        <div
+          className={`queue-item${queueFilter.type === 'supplier' ? ' queue-item-active' : ''}`}
+          onClick={() => {
+            setQueueFilter(prev => prev.type === 'supplier' ? { type: 'all' } : { type: 'supplier' })
+          }}
+        >
           <div className="queue-avatar queue-avatar-accent">S</div>
           <div className="queue-name">With Supplier</div>
           <div className="queue-count">{countWithSupplier}</div>
@@ -926,8 +973,20 @@ export default function TicketsView() {
       if (searchValues.status && !incident.status.toLowerCase().includes(searchValues.status.toLowerCase())) return false
       if (searchValues.type && !incident.type.toLowerCase().includes(searchValues.type.toLowerCase())) return false
       if (searchValues.endUser && !incident.endUser.toLowerCase().includes(searchValues.endUser.toLowerCase())) return false
-      if (searchValues.lastAction && !incident.lastAction.toLowerCase().includes(searchValues.lastAction.toLowerCase())) return false
-      if (searchValues.dateReported && !incident.dateReported.toLowerCase().includes(searchValues.dateReported.toLowerCase())) return false
+    if (searchValues.lastAction && !incident.lastAction.toLowerCase().includes(searchValues.lastAction.toLowerCase())) return false
+    if (searchValues.dateReported && !incident.dateReported.toLowerCase().includes(searchValues.dateReported.toLowerCase())) return false
+
+    // Filter by queue selection (unassigned / agent / supplier)
+    if (queueFilter.type === 'unassigned') {
+      if (incident.assignedAgentId || incident.assignedAgentName) return false
+    } else if (queueFilter.type === 'supplier') {
+      const s = (incident.status || '').toLowerCase()
+      if (!s.includes('supplier')) return false
+    } else if (queueFilter.type === 'agent') {
+      const byId = queueFilter.agentId && String(incident.assignedAgentId || '') === String(queueFilter.agentId)
+      const byName = queueFilter.agentName && incident.assignedAgentName && incident.assignedAgentName === queueFilter.agentName
+      if (!byId && !byName) return false
+    }
 
     return true
   })
@@ -939,15 +998,58 @@ export default function TicketsView() {
   }
 
   const handleMouseDown = (e: React.MouseEvent, column: string) => {
+    const toKey = (c: string) => (c === 'subject' ? 'summary' : c)
     // Column order used for resizing logic (status moved after checkbox)
-    const order = ['checkbox','status','id','subject','category','priority','type','lastAction','date']
-    const idx = order.indexOf(column)
+    const colKey = toKey(column)
     // Disable resizing of the checkbox column
-    if (column === 'checkbox') return
-    // We only want to resize the current column without affecting neighbors
-    setResizingColumn(column)
+    if (colKey === 'checkbox') return
+    setResizingColumn(colKey)
     setResizingNeighbor(null)
     setResizeStartX(e.clientX)
+  }
+
+  const handleAutoFit = (column: string) => {
+    const toKey = (c: string) => (c === 'subject' ? 'summary' : c)
+    const key = toKey(column) as keyof typeof columnWidths
+    if (key === 'checkbox' || !tableRef.current) return
+
+    const classMap: Record<string, string> = {
+      checkbox: 'checkbox',
+      status: 'status',
+      id: 'id',
+      summary: 'subject',
+      category: 'category',
+      priority: 'priority',
+      type: 'type',
+      lastAction: 'lastAction',
+      date: 'date',
+      endUser: 'endUser'
+    }
+    const className = classMap[key] || String(key)
+    const nodes = Array.from(tableRef.current.querySelectorAll<HTMLElement>(`.col-${className}`))
+    if (nodes.length === 0) return
+
+    const maxContent = nodes.reduce((max, el) => Math.max(max, el.scrollWidth), 0)
+    const padding = 18
+    const desired = maxContent + padding
+    const minWidth = (columnMinWidths as any)[key] ?? 50
+    const maxWidth = 2000
+
+    setColumnWidths(prev => {
+      const next = { ...prev }
+      let newCurrent = Math.max(minWidth, Math.min(maxWidth, desired))
+      next[key] = newCurrent as any
+      return next
+    })
+
+    setTableWidth(prevTable => {
+      const cols = Object.keys(columnWidths).length
+      const gapTotal = (cols - 1) * 12
+      const paddingHorizontal = 32
+      const sumCols = Object.values(columnWidths).reduce((s, v) => s + (v as number), 0)
+      const totalNeeded = sumCols + gapTotal + paddingHorizontal
+      return Math.max(prevTable, Math.ceil(totalNeeded))
+    })
   }
 
   React.useEffect(() => {
@@ -959,16 +1061,12 @@ export default function TicketsView() {
         const newWidths = { ...prev }
         const maxWidth = 2000
 
-        // Only adjust the current column; do not modify neighbors
         const colKey = resizingColumn as keyof typeof prev
         const currentVal = prev[colKey] as number
-
         let newCurrent = currentVal + diff
-        // apply per-column min width if available
-        const minWidth = (columnMinWidths as any)[colKey] ?? 50
-        // snap to defined step
+        const minCurrent = (columnMinWidths as any)[colKey] ?? 50
         newCurrent = Math.round(newCurrent / widthSnap) * widthSnap
-        newCurrent = Math.max(minWidth, Math.min(maxWidth, newCurrent))
+        newCurrent = Math.max(minCurrent, Math.min(maxWidth, newCurrent))
         newWidths[colKey] = newCurrent as any
 
         // compute total needed width (sum of all column pixel widths + gaps + padding)
@@ -1081,26 +1179,6 @@ export default function TicketsView() {
         <div className="detail-sidebar-wrap">
           <div className="detail-sidebar">
             <div className="sidebar-stack">
-              <div className="sla-card">
-                <h3 className="sidebar-title">Service Level Agreement</h3>
-                <div className="sla-pill">
-                  <span>Incident SLA</span>
-                  <span>Medium</span>
-                </div>
-                <div className="sla-bar">
-                  <span>-119:45</span>
-                </div>
-                <div className="sla-row">
-                  <span>Response Target</span>
-                  <span>1/16/2026 15:14</span>
-                  <span className="sla-x">âœ–</span>
-                </div>
-                <div className="sla-row">
-                  <span>Resolution Target</span>
-                  <span>1/19/2026 09:14</span>
-                  <span className="sla-x">âœ–</span>
-                </div>
-              </div>
               <div className="ticket-info-card">
                 <h3 className="sidebar-title">Ticket information</h3>
                 <div className="sidebar-field">
@@ -1149,38 +1227,58 @@ export default function TicketsView() {
                   <span>{ticketAsset ? `${ticketAsset.name} (${ticketAsset.serial || 'no-serial'})` : 'None'}</span>
                 </div>
               </div>
-            </div>
-            <div className="enduser-card">
-              <h3 className="sidebar-title" style={{ marginTop: 0, marginBottom: 8 }}>End-User details</h3>
-              <div className="enduser-header" style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-                <div className="enduser-avatar">{(endUser && endUser.name ? endUser.name.split(' ').map((n:string)=>n[0]).slice(0,2).join('') : 'EU')}</div>
-                <div>
-                  <div className="enduser-name" style={{ fontWeight: 700 }}>{endUser?.name || 'Not set'}</div>
-                  <div className="enduser-client" style={{ color: '#6b7280', fontSize: 13 }}>{endUser?.client || 'Not set'}</div>
+              <div className="sla-card">
+                <h3 className="sidebar-title">Service Level Agreement</h3>
+                <div className="sla-pill">
+                  <span>Incident SLA</span>
+                  <span>Medium</span>
+                </div>
+                <div className="sla-bar">
+                  <span>-119:45</span>
+                </div>
+                <div className="sla-row">
+                  <span>Response Target</span>
+                  <span>1/16/2026 15:14</span>
+                  <span className="sla-x">âœ–</span>
+                </div>
+                <div className="sla-row">
+                  <span>Resolution Target</span>
+                  <span>1/19/2026 09:14</span>
+                  <span className="sla-x">âœ–</span>
                 </div>
               </div>
-              <div className="sidebar-field">
-                <label>User Name</label>
-                <span>{endUser?.name || 'Not set'}</span>
-              </div>
-              <div className="sidebar-field">
-                <label>Email Address</label>
-                <span>{endUser?.email || 'Not set'}</span>
-              </div>
-              <div className="sidebar-field">
-                <label>Phone Number</label>
-                <span>{endUser?.phone || 'Not set'}</span>
-              </div>
-              <div className="sidebar-field">
-                <label>Site</label>
-                <span>{endUser?.site || 'Not set'}</span>
-              </div>
-              <div className="sidebar-field">
-                <label>Reporting Manager</label>
-                <span>{endUser?.accountManager || 'Not set'}</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button className="message-button" onClick={handleOpenGChat}>Message Directly on GChat</button>
+              <div className="enduser-card">
+                <h3 className="sidebar-title" style={{ marginTop: 0, marginBottom: 8 }}>End-User details</h3>
+                <div className="enduser-header" style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                  <div className="enduser-avatar">{(endUser && endUser.name ? endUser.name.split(' ').map((n:string)=>n[0]).slice(0,2).join('') : 'EU')}</div>
+                  <div>
+                    <div className="enduser-name" style={{ fontWeight: 700 }}>{endUser?.name || 'Not set'}</div>
+                    <div className="enduser-client" style={{ color: '#6b7280', fontSize: 13 }}>{endUser?.client || 'Not set'}</div>
+                  </div>
+                </div>
+                <div className="sidebar-field">
+                  <label>User Name</label>
+                  <span>{endUser?.name || 'Not set'}</span>
+                </div>
+                <div className="sidebar-field">
+                  <label>Email Address</label>
+                  <span>{endUser?.email || 'Not set'}</span>
+                </div>
+                <div className="sidebar-field">
+                  <label>Phone Number</label>
+                  <span>{endUser?.phone || 'Not set'}</span>
+                </div>
+                <div className="sidebar-field">
+                  <label>Site</label>
+                  <span>{endUser?.site || 'Not set'}</span>
+                </div>
+                <div className="sidebar-field">
+                  <label>Reporting Manager</label>
+                  <span>{endUser?.accountManager || 'Not set'}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="message-button" onClick={handleOpenGChat}>Message Directly on GChat</button>
+                </div>
               </div>
             </div>
           </div>
@@ -1232,17 +1330,21 @@ export default function TicketsView() {
       <div className="tickets-main">
         <div className="tickets-table-bar">
           <div className="tickets-table-left">
-            <button
-              className="table-icon-btn"
-              title={queueCollapsed ? 'Show Menu' : 'Hide Menu'}
-              onClick={() => setQueueCollapsed(!queueCollapsed)}
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="5" cy="12" r="1" />
-                <circle cx="12" cy="12" r="1" />
-                <circle cx="19" cy="12" r="1" />
-              </svg>
-            </button>
+            {queueCollapsed && (
+              <button
+                className="table-icon-btn"
+                title="Show Menu"
+                onClick={() => {
+                  setQueueCollapsed(false)
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="4" y1="7" x2="20" y2="7" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="4" y1="17" x2="20" y2="17" />
+                </svg>
+              </button>
+            )}
             <div className="filter-dropdown">
               <button 
                 className="filter-button"
@@ -1298,7 +1400,7 @@ export default function TicketsView() {
         </div>
       </div>
       <div className="tickets-content">
-        <div className="incidents-table" style={{ width: tableWidth ? `${tableWidth}px` : undefined }}>
+        <div className="incidents-table" ref={tableRef} style={{ width: tableWidth ? `${tableWidth}px` : undefined }}>
           <div className="table-header" style={{
             gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.endUser}px`
           }}>
@@ -1307,39 +1409,39 @@ export default function TicketsView() {
           <div className="col-resize-handle"></div>
         </div>
         <div className="col-header col-status">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'checkbox')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')}></div>
           Status
         </div>
         <div className="col-header col-id">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')}></div>
           ID
         </div>
         <div className="col-header col-subject">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')}></div>
           Subject
         </div>
         <div className="col-header col-category">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')}></div>
           Category
         </div>
         <div className="col-header col-priority">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')}></div>
           Priority
         </div>
         <div className="col-header col-type">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')}></div>
           Type
         </div>
         <div className="col-header col-lastAction">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')}></div>
           Last Action
         </div>
         <div className="col-header col-date">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onDoubleClick={() => handleAutoFit('date')}></div>
           Date Reported
         </div>
         <div className="col-header col-endUser">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')}></div>
+          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')}></div>
           End User
         </div>
       </div>

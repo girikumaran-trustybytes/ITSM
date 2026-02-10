@@ -4,48 +4,78 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.unassignAsset = exports.assignAsset = exports.deleteTicket = exports.updateTicket = exports.resolveTicketWithDetails = exports.addPrivateNote = exports.addResponse = exports.createHistoryEntry = exports.transitionTicket = exports.createTicket = exports.getTicketById = exports.getTickets = void 0;
-const client_1 = __importDefault(require("../../prisma/client"));
+const db_1 = require("../../db");
 const workflow_service_1 = require("../workflows/workflow.service");
 const logger_1 = require("../../common/logger/logger");
 const mailer_service_1 = __importDefault(require("../../services/mailer.service"));
+const isNumericId = (value) => /^\d+$/.test(value);
+function buildTicketWhere(idOrTicketId, alias = 't', startIndex = 1) {
+    if (isNumericId(idOrTicketId)) {
+        return { clause: `${alias}."id" = $${startIndex}`, params: [Number(idOrTicketId)] };
+    }
+    return { clause: `${alias}."ticketId" = $${startIndex}`, params: [idOrTicketId] };
+}
+async function getTicketRecord(idOrTicketId) {
+    const where = buildTicketWhere(idOrTicketId, 't', 1);
+    return (0, db_1.queryOne)(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params);
+}
+function buildInsert(table, data) {
+    const keys = Object.keys(data).filter((k) => data[k] !== undefined);
+    const cols = keys.map((k) => `"${k}"`);
+    const params = keys.map((_, i) => `$${i + 1}`);
+    const values = keys.map((k) => data[k]);
+    const text = `INSERT INTO "${table}" (${cols.join(', ')}, "createdAt", "updatedAt") VALUES (${params.join(', ')}, NOW(), NOW()) RETURNING *`;
+    return { text, values };
+}
 const getTickets = async (opts = {}, viewer) => {
     const page = opts.page ?? 1;
     const pageSize = opts.pageSize ?? 20;
-    const where = {};
+    const conditions = [];
+    const params = [];
     if (opts.q) {
-        where.OR = [
-            { ticketId: { contains: opts.q } },
-            { subject: { contains: opts.q } },
-            { description: { contains: opts.q } },
-            { category: { contains: opts.q } },
-        ];
+        params.push(`%${opts.q}%`);
+        conditions.push(`(t."ticketId" ILIKE $${params.length} OR t."subject" ILIKE $${params.length} OR t."description" ILIKE $${params.length} OR t."category" ILIKE $${params.length})`);
     }
     if (viewer?.role === 'USER' && viewer?.id) {
-        where.requesterId = Number(viewer.id);
+        params.push(Number(viewer.id));
+        conditions.push(`t."requesterId" = $${params.length}`);
     }
-    const [items, total] = await Promise.all([
-        client_1.default.ticket.findMany({
-            where,
-            orderBy: { createdAt: 'desc' },
-            skip: (page - 1) * pageSize,
-            take: pageSize,
-            include: { requester: true, assignee: true },
-        }),
-        client_1.default.ticket.count({ where }),
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const offset = (page - 1) * pageSize;
+    const [items, totalRow] = await Promise.all([
+        (0, db_1.query)(`SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee"
+       FROM "Ticket" t
+       LEFT JOIN "User" r ON r."id" = t."requesterId"
+       LEFT JOIN "User" a ON a."id" = t."assigneeId"
+       ${where}
+       ORDER BY t."createdAt" DESC
+       OFFSET $${params.length + 1}
+       LIMIT $${params.length + 2}`, [...params, offset, pageSize]),
+        (0, db_1.queryOne)(`SELECT COUNT(*)::text AS count FROM "Ticket" t ${where}`, params),
     ]);
+    const total = Number(totalRow?.count || 0);
     return { items, total, page, pageSize };
 };
 exports.getTickets = getTickets;
-const isNumericId = (value) => /^\d+$/.test(value);
-const resolveTicketWhere = (idOrTicketId) => isNumericId(idOrTicketId) ? { id: Number(idOrTicketId) } : { ticketId: idOrTicketId };
 const getTicketById = async (id, viewer) => {
-    const t = await client_1.default.ticket.findUnique({
-        where: resolveTicketWhere(id),
-        include: { attachments: true, history: true, requester: true, assignee: true, asset: true },
-    });
+    const where = buildTicketWhere(id, 't', 1);
+    const t = await (0, db_1.queryOne)(`SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee", row_to_json(asset) AS "asset"
+     FROM "Ticket" t
+     LEFT JOIN "User" r ON r."id" = t."requesterId"
+     LEFT JOIN "User" a ON a."id" = t."assigneeId"
+     LEFT JOIN "Asset" asset ON asset."id" = t."assetId"
+     WHERE ${where.clause}`, where.params);
     if (t && viewer?.role === 'USER' && viewer?.id && t.requesterId !== Number(viewer.id)) {
         return null;
     }
+    if (!t)
+        return null;
+    const [attachments, history] = await Promise.all([
+        (0, db_1.query)('SELECT * FROM "Attachment" WHERE "ticketId" = $1', [t.id]),
+        (0, db_1.query)('SELECT * FROM "TicketHistory" WHERE "ticketId" = $1', [t.id]),
+    ]);
+    t.attachments = attachments;
+    t.history = history;
     return t;
 };
 exports.getTicketById = getTicketById;
@@ -104,10 +134,12 @@ const createTicket = async (payload, creator = 'system') => {
         data.requesterId = payload.requesterId;
     if (payload.assigneeId)
         data.assigneeId = payload.assigneeId;
-    const created = await client_1.default.ticket.create({ data });
+    const { text, values } = buildInsert('Ticket', data);
+    const createdRows = await (0, db_1.query)(text, values);
+    const created = createdRows[0];
     // start SLA tracking record
     try {
-        await client_1.default.slaTracking.create({ data: { ticketId: created.id, slaName: `${created.priority} SLA`, startTime: now, breachTime: computeSlaBreachTime(now, priority), status: 'running' } });
+        await (0, db_1.query)('INSERT INTO "SlaTracking" ("ticketId", "slaName", "startTime", "breachTime", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())', [created.id, `${created.priority} SLA`, now, computeSlaBreachTime(now, priority), 'running']);
     }
     catch (e) {
         console.warn('Failed creating SLA tracking record', e);
@@ -126,26 +158,24 @@ const createTicket = async (payload, creator = 'system') => {
 };
 exports.createTicket = createTicket;
 const transitionTicket = async (ticketId, toState, user = 'system') => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
     const can = workflow_service_1.workflowEngine.canTransition(t.type, t.status, toState);
     if (!can)
         throw { status: 400, message: `Invalid transition from ${t.status} to ${toState}` };
     const from = t.status;
-    const updated = await client_1.default.ticket.update({
-        where: resolveTicketWhere(ticketId),
-        data: { status: toState },
-    });
-    await client_1.default.ticketHistory.create({
-        data: {
-            ticketId: t.id,
-            fromStatus: from,
-            toStatus: toState,
-            changedById: typeof user === 'number' ? user : parseInt(String(user)) || undefined,
-            note: '',
-        },
-    });
+    const where = buildTicketWhere(ticketId, 't', 2);
+    const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [toState, ...where.params]);
+    const updated = updatedRows[0];
+    await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
+        t.id,
+        from,
+        toState,
+        typeof user === 'number' ? user : parseInt(String(user)) || null,
+        '',
+        false,
+    ]);
     await (0, logger_1.auditLog)({
         action: 'transition',
         ticketId: updated.ticketId,
@@ -154,8 +184,8 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
     });
     // notify requester/assignee
     try {
-        const requester = await client_1.default.user.findUnique({ where: { id: updated.requesterId || undefined } });
-        const assignee = await client_1.default.user.findUnique({ where: { id: updated.assigneeId || undefined } });
+        const requester = updated.requesterId ? await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [updated.requesterId]) : null;
+        const assignee = updated.assigneeId ? await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [updated.assigneeId]) : null;
         if (requester && requester.email)
             await mailer_service_1.default.sendStatusUpdated(requester.email, updated);
         if (assignee && assignee.email)
@@ -169,18 +199,18 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
 };
 exports.transitionTicket = transitionTicket;
 const createHistoryEntry = async (ticketId, opts) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
-    const created = await client_1.default.ticketHistory.create({
-        data: {
-            ticketId: t.id,
-            fromStatus: t.status,
-            toStatus: t.status,
-            changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined,
-            note: opts.note,
-        },
-    });
+    const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
+        t.id,
+        t.status,
+        t.status,
+        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+        opts.note,
+        false,
+    ]);
+    const created = rows[0];
     await (0, logger_1.auditLog)({
         action: 'add_history',
         ticketId: t.ticketId,
@@ -191,22 +221,21 @@ const createHistoryEntry = async (ticketId, opts) => {
 };
 exports.createHistoryEntry = createHistoryEntry;
 const addResponse = async (ticketId, opts) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
-    const created = await client_1.default.ticketHistory.create({
-        data: {
-            ticketId: t.id,
-            fromStatus: t.status,
-            toStatus: t.status,
-            changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined,
-            note: opts.message,
-            internal: false,
-        },
-    });
+    const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
+        t.id,
+        t.status,
+        t.status,
+        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+        opts.message,
+        false,
+    ]);
+    const created = rows[0];
     await (0, logger_1.auditLog)({ action: 'respond', ticketId: t.ticketId, user: opts.user, meta: { message: opts.message } });
     if (opts.sendEmail && t.requesterId) {
-        const requester = await client_1.default.user.findUnique({ where: { id: t.requesterId } });
+        const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
         if (requester?.email)
             await mailer_service_1.default.sendTicketResponse(requester.email, t, opts.message);
     }
@@ -214,36 +243,44 @@ const addResponse = async (ticketId, opts) => {
 };
 exports.addResponse = addResponse;
 const addPrivateNote = async (ticketId, opts) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
-    const created = await client_1.default.ticketHistory.create({
-        data: {
-            ticketId: t.id,
-            fromStatus: t.status,
-            toStatus: t.status,
-            changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined,
-            note: opts.note,
-            internal: true,
-        },
-    });
+    const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
+        t.id,
+        t.status,
+        t.status,
+        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+        opts.note,
+        true,
+    ]);
+    const created = rows[0];
     await (0, logger_1.auditLog)({ action: 'private_note', ticketId: t.ticketId, user: opts.user, meta: { note: opts.note } });
     return created;
 };
 exports.addPrivateNote = addPrivateNote;
 const resolveTicketWithDetails = async (ticketId, opts) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
     const from = t.status;
-    const updated = await client_1.default.ticket.update({
-        where: resolveTicketWhere(ticketId),
-        data: { status: 'Resolved', resolution: opts.resolution, resolutionCategory: opts.resolutionCategory || undefined, resolvedAt: new Date() },
-    });
-    await client_1.default.ticketStatusHistory.create({ data: { ticketId: t.id, oldStatus: from, newStatus: 'Resolved', changedById: typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || undefined } });
+    const where = buildTicketWhere(ticketId, 't', 4);
+    const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "resolution" = $2, "resolutionCategory" = $3, "resolvedAt" = NOW(), "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [
+        'Resolved',
+        opts.resolution,
+        opts.resolutionCategory || null,
+        ...where.params,
+    ]);
+    const updated = updatedRows[0];
+    await (0, db_1.query)('INSERT INTO "TicketStatusHistory" ("ticketId", "oldStatus", "newStatus", "changedById", "changedAt") VALUES ($1, $2, $3, $4, NOW())', [
+        t.id,
+        from,
+        'Resolved',
+        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+    ]);
     await (0, logger_1.auditLog)({ action: 'resolve', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } });
     if (opts.sendEmail && t.requesterId) {
-        const requester = await client_1.default.user.findUnique({ where: { id: t.requesterId } });
+        const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
         if (requester?.email)
             await mailer_service_1.default.sendTicketResolved(requester.email, updated);
     }
@@ -251,7 +288,7 @@ const resolveTicketWithDetails = async (ticketId, opts) => {
 };
 exports.resolveTicketWithDetails = resolveTicketWithDetails;
 const updateTicket = async (ticketId, payload, user) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
     const data = {};
@@ -271,48 +308,75 @@ const updateTicket = async (ticketId, payload, user) => {
         data.assigneeId = payload.assigneeId || null;
     if (payload.requesterId !== undefined)
         data.requesterId = payload.requesterId || null;
-    const updated = await client_1.default.ticket.update({ where: resolveTicketWhere(ticketId), data });
-    await client_1.default.ticketHistory.create({ data: { ticketId: t.id, fromStatus: t.status, toStatus: updated.status, changedById: typeof user === 'number' ? user : parseInt(String(user)) || undefined, note: 'ticket updated' } });
+    const setParts = [];
+    const params = [];
+    for (const [key, value] of Object.entries(data)) {
+        params.push(value);
+        setParts.push(`"${key}" = $${params.length}`);
+    }
+    setParts.push('"updatedAt" = NOW()');
+    const where = buildTicketWhere(ticketId, 't', params.length + 1);
+    const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET ${setParts.join(', ')} WHERE ${where.clause} RETURNING *`, [...params, ...where.params]);
+    const updated = updatedRows[0];
+    await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
+        t.id,
+        t.status,
+        updated.status,
+        typeof user === 'number' ? user : parseInt(String(user)) || null,
+        'ticket updated',
+        false,
+    ]);
     await (0, logger_1.auditLog)({ action: 'update_ticket', ticketId: updated.ticketId, user, meta: { changes: data } });
     return updated;
 };
 exports.updateTicket = updateTicket;
 const deleteTicket = async (ticketId, user) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
     // hard delete for now
-    const deleted = await client_1.default.ticket.delete({ where: resolveTicketWhere(ticketId) });
-    await client_1.default.ticketHistory.create({ data: { ticketId: t.id, fromStatus: t.status, toStatus: 'Deleted', changedById: typeof user === 'number' ? user : parseInt(String(user)) || undefined, note: 'deleted' } });
+    const where = buildTicketWhere(ticketId, 't', 1);
+    const deletedRows = await (0, db_1.query)(`DELETE FROM "Ticket" t WHERE ${where.clause} RETURNING *`, where.params);
+    const deleted = deletedRows[0];
+    await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
+        t.id,
+        t.status,
+        'Deleted',
+        typeof user === 'number' ? user : parseInt(String(user)) || null,
+        'deleted',
+        false,
+    ]);
     await (0, logger_1.auditLog)({ action: 'delete_ticket', ticketId: t.ticketId, user });
     return deleted;
 };
 exports.deleteTicket = deleteTicket;
 const assignAsset = async (ticketId, assetId, user) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
-    const asset = await client_1.default.asset.findUnique({ where: { id: assetId } });
+    const asset = await (0, db_1.queryOne)('SELECT * FROM "Asset" WHERE "id" = $1', [assetId]);
     if (!asset)
         throw { status: 404, message: 'Asset not found' };
-    const updated = await client_1.default.ticket.update({
-        where: resolveTicketWhere(ticketId),
-        data: { assetId: asset.id },
-        include: { asset: true },
-    });
+    const where = buildTicketWhere(ticketId, 't', 2);
+    await (0, db_1.query)(`UPDATE "Ticket" t SET "assetId" = $1, "updatedAt" = NOW() WHERE ${where.clause}`, [asset.id, ...where.params]);
+    const updated = await (0, db_1.queryOne)(`SELECT t.*, row_to_json(a) AS "asset"
+     FROM "Ticket" t
+     LEFT JOIN "Asset" a ON a."id" = t."assetId"
+     WHERE t."id" = $1`, [t.id]);
     await (0, logger_1.auditLog)({ action: 'assign_asset', ticketId: updated.ticketId, user, meta: { assetId: asset.id } });
     return updated;
 };
 exports.assignAsset = assignAsset;
 const unassignAsset = async (ticketId, user) => {
-    const t = await client_1.default.ticket.findUnique({ where: resolveTicketWhere(ticketId) });
+    const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
-    const updated = await client_1.default.ticket.update({
-        where: resolveTicketWhere(ticketId),
-        data: { assetId: null },
-        include: { asset: true },
-    });
+    const where = buildTicketWhere(ticketId, 't', 1);
+    await (0, db_1.query)(`UPDATE "Ticket" t SET "assetId" = NULL, "updatedAt" = NOW() WHERE ${where.clause}`, where.params);
+    const updated = await (0, db_1.queryOne)(`SELECT t.*, row_to_json(a) AS "asset"
+     FROM "Ticket" t
+     LEFT JOIN "Asset" a ON a."id" = t."assetId"
+     WHERE t."id" = $1`, [t.id]);
     await (0, logger_1.auditLog)({ action: 'unassign_asset', ticketId: updated.ticketId, user });
     return updated;
 };

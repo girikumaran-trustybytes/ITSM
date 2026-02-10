@@ -1,23 +1,20 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteChange = exports.updateChange = exports.createChange = exports.getChange = exports.listChanges = void 0;
-const client_1 = __importDefault(require("../../prisma/client"));
+const db_1 = require("../../db");
 async function listChanges(opts = {}) {
-    const where = {};
+    const conditions = [];
+    const params = [];
     if (opts.q) {
-        where.OR = [
-            { code: { contains: opts.q, mode: 'insensitive' } },
-            { title: { contains: opts.q, mode: 'insensitive' } },
-        ];
+        params.push(`%${opts.q}%`);
+        conditions.push(`("code" ILIKE $${params.length} OR "title" ILIKE $${params.length})`);
     }
-    return client_1.default.change.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    return (0, db_1.query)(`SELECT * FROM "Change" ${where} ORDER BY "createdAt" DESC`, params);
 }
 exports.listChanges = listChanges;
 async function getChange(id) {
-    return client_1.default.change.findUnique({ where: { id } });
+    return (0, db_1.queryOne)('SELECT * FROM "Change" WHERE "id" = $1', [id]);
 }
 exports.getChange = getChange;
 async function createChange(payload) {
@@ -27,7 +24,8 @@ async function createChange(payload) {
         throw { status: 400, message: 'Code is required' };
     if (!title)
         throw { status: 400, message: 'Title is required' };
-    return client_1.default.change.create({ data: { code, title, status: payload.status || null } });
+    const rows = await (0, db_1.query)('INSERT INTO "Change" ("code", "title", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *', [code, title, payload.status || null]);
+    return rows[0];
 }
 exports.createChange = createChange;
 async function updateChange(id, payload) {
@@ -39,22 +37,36 @@ async function updateChange(id, payload) {
     if (payload.status !== undefined)
         data.status = payload.status;
     try {
-        return await client_1.default.change.update({ where: { id }, data });
+        const setParts = [];
+        const params = [];
+        for (const [key, value] of Object.entries(data)) {
+            params.push(value);
+            setParts.push(`"${key}" = $${params.length}`);
+        }
+        setParts.push('"updatedAt" = NOW()');
+        params.push(id);
+        const rows = await (0, db_1.query)(`UPDATE "Change" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING *`, params);
+        if (!rows[0])
+            throw { status: 404, message: 'Change not found' };
+        return rows[0];
     }
     catch (err) {
-        if (err?.code === 'P2025')
-            throw { status: 404, message: 'Change not found' };
+        if (err?.status === 404)
+            throw err;
         throw err;
     }
 }
 exports.updateChange = updateChange;
 async function deleteChange(id) {
     try {
-        return await client_1.default.change.delete({ where: { id } });
+        const rows = await (0, db_1.query)('DELETE FROM "Change" WHERE "id" = $1 RETURNING *', [id]);
+        if (!rows[0])
+            throw { status: 404, message: 'Change not found' };
+        return rows[0];
     }
     catch (err) {
-        if (err?.code === 'P2025')
-            throw { status: 404, message: 'Change not found' };
+        if (err?.status === 404)
+            throw err;
         throw err;
     }
 }

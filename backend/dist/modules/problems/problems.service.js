@@ -1,23 +1,20 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteProblem = exports.updateProblem = exports.createProblem = exports.getProblem = exports.listProblems = void 0;
-const client_1 = __importDefault(require("../../prisma/client"));
+const db_1 = require("../../db");
 async function listProblems(opts = {}) {
-    const where = {};
+    const conditions = [];
+    const params = [];
     if (opts.q) {
-        where.OR = [
-            { code: { contains: opts.q, mode: 'insensitive' } },
-            { title: { contains: opts.q, mode: 'insensitive' } },
-        ];
+        params.push(`%${opts.q}%`);
+        conditions.push(`("code" ILIKE $${params.length} OR "title" ILIKE $${params.length})`);
     }
-    return client_1.default.problem.findMany({ where, orderBy: { createdAt: 'desc' } });
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    return (0, db_1.query)(`SELECT * FROM "Problem" ${where} ORDER BY "createdAt" DESC`, params);
 }
 exports.listProblems = listProblems;
 async function getProblem(id) {
-    return client_1.default.problem.findUnique({ where: { id } });
+    return (0, db_1.queryOne)('SELECT * FROM "Problem" WHERE "id" = $1', [id]);
 }
 exports.getProblem = getProblem;
 async function createProblem(payload) {
@@ -27,7 +24,8 @@ async function createProblem(payload) {
         throw { status: 400, message: 'Code is required' };
     if (!title)
         throw { status: 400, message: 'Title is required' };
-    return client_1.default.problem.create({ data: { code, title, status: payload.status || null } });
+    const rows = await (0, db_1.query)('INSERT INTO "Problem" ("code", "title", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *', [code, title, payload.status || null]);
+    return rows[0];
 }
 exports.createProblem = createProblem;
 async function updateProblem(id, payload) {
@@ -39,22 +37,36 @@ async function updateProblem(id, payload) {
     if (payload.status !== undefined)
         data.status = payload.status;
     try {
-        return await client_1.default.problem.update({ where: { id }, data });
+        const setParts = [];
+        const params = [];
+        for (const [key, value] of Object.entries(data)) {
+            params.push(value);
+            setParts.push(`"${key}" = $${params.length}`);
+        }
+        setParts.push('"updatedAt" = NOW()');
+        params.push(id);
+        const rows = await (0, db_1.query)(`UPDATE "Problem" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING *`, params);
+        if (!rows[0])
+            throw { status: 404, message: 'Problem not found' };
+        return rows[0];
     }
     catch (err) {
-        if (err?.code === 'P2025')
-            throw { status: 404, message: 'Problem not found' };
+        if (err?.status === 404)
+            throw err;
         throw err;
     }
 }
 exports.updateProblem = updateProblem;
 async function deleteProblem(id) {
     try {
-        return await client_1.default.problem.delete({ where: { id } });
+        const rows = await (0, db_1.query)('DELETE FROM "Problem" WHERE "id" = $1 RETURNING *', [id]);
+        if (!rows[0])
+            throw { status: 404, message: 'Problem not found' };
+        return rows[0];
     }
     catch (err) {
-        if (err?.code === 'P2025')
-            throw { status: 404, message: 'Problem not found' };
+        if (err?.status === 404)
+            throw err;
         throw err;
     }
 }
