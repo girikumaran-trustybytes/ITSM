@@ -13,7 +13,7 @@ export const userIdParamsSchema = z.object({
 
 export const usersCreateBodySchema = z.object({
   email: z.string().email(),
-  password: z.string().min(6),
+  password: z.string().min(6).optional(),
   name: z.string().optional(),
   phone: z.string().optional(),
   client: z.string().optional(),

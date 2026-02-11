@@ -163,6 +163,36 @@ export default function AssetsView() {
   }
 
   const filtered = useMemo(() => assets, [assets])
+  const assetVisuals = useMemo(() => {
+    const totalCount = assets.length
+    const inUse = assets.filter((a) => String(a.status || '').toLowerCase() === 'in use').length
+    const available = assets.filter((a) => String(a.status || '').toLowerCase() === 'available').length
+    const retired = assets.filter((a) => String(a.status || '').toLowerCase() === 'retired').length
+    const byCategory = assets.reduce<Record<string, number>>((acc, a) => {
+      const key = a.category || 'Unknown'
+      acc[key] = (acc[key] || 0) + 1
+      return acc
+    }, {})
+    const topCategories = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4)
+    return { totalCount, inUse, available, retired, topCategories }
+  }, [assets])
+
+  const buildDonutSegments = (parts: { value: number; color: string }[]) => {
+    const totalCount = parts.reduce((sum, p) => sum + p.value, 0) || 1
+    const radius = 32
+    const circumference = 2 * Math.PI * radius
+    let offset = 0
+    return parts.map((p) => {
+      const length = (p.value / totalCount) * circumference
+      const seg = {
+        color: p.color,
+        dasharray: `${length} ${circumference - length}`,
+        dashoffset: -offset,
+      }
+      offset += length
+      return seg
+    })
+  }
 
   const openCreate = () => {
     setEditing(null)
@@ -310,6 +340,57 @@ export default function AssetsView() {
             }}
           />
           <button className="assets-primary-btn" onClick={openCreate}>+ New Asset</button>
+        </div>
+      </div>
+      <div className="visuals-row assets-visuals">
+        <div className="visual-card">
+          <div className="visual-title">Lifecycle Mix</div>
+          <div className="donut">
+            <svg viewBox="0 0 90 90" role="img" aria-label="Asset lifecycle mix">
+              <circle cx="45" cy="45" r="32" stroke="#e5e7eb" strokeWidth="12" fill="none" />
+              {buildDonutSegments([
+                { value: assetVisuals.inUse, color: '#22c55e' },
+                { value: assetVisuals.available, color: '#60a5fa' },
+                { value: assetVisuals.retired, color: '#f97316' },
+              ]).map((seg, idx) => (
+                <circle
+                  key={`asset-${idx}`}
+                  cx="45"
+                  cy="45"
+                  r="32"
+                  stroke={seg.color}
+                  strokeWidth="12"
+                  fill="none"
+                  strokeDasharray={seg.dasharray}
+                  strokeDashoffset={seg.dashoffset}
+                  strokeLinecap="round"
+                />
+              ))}
+            </svg>
+          </div>
+          <div className="visual-kpis">
+            <span>In Use: {assetVisuals.inUse}</span>
+            <span>Available: {assetVisuals.available}</span>
+            <span>Retired: {assetVisuals.retired}</span>
+          </div>
+        </div>
+        <div className="visual-card">
+          <div className="visual-title">Top Categories</div>
+          <div className="mini-barlist">
+            {assetVisuals.topCategories.map(([k, v]) => {
+              const w = Math.min(100, (v / Math.max(1, assetVisuals.totalCount)) * 100)
+              return (
+                <div key={k} className="mini-bar-row">
+                  <span>{k}</span>
+                  <div className="mini-bar-track">
+                    <div className="mini-bar-fill medium" style={{ width: `${w}%` }} />
+                  </div>
+                  <strong>{v}</strong>
+                </div>
+              )
+            })}
+            {assetVisuals.topCategories.length === 0 && <div className="users-empty">No data</div>}
+          </div>
         </div>
       </div>
 

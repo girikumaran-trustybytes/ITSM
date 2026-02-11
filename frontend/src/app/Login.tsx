@@ -21,7 +21,7 @@ export default function Login() {
     try {
       await login(values.email, values.password)
       refreshUser()
-      navigate('/')
+      navigate('/dashboard')
     } catch (e: any) {
       alert(e?.response?.data?.error || e.message || 'Login failed')
     }

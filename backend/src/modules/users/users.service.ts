@@ -30,9 +30,12 @@ export async function getUserById(id: number) {
 
 export async function createUser(payload: any) {
   const email = String(payload.email || '').trim().toLowerCase()
-  const password = String(payload.password || '')
   if (!email) throw { status: 400, message: 'Email is required' }
-  if (!password || password.length < 6) throw { status: 400, message: 'Password must be at least 6 characters' }
+  let password = String(payload.password || '')
+  if (password && password.length < 6) throw { status: 400, message: 'Password must be at least 6 characters' }
+  if (!password) {
+    password = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
+  }
 
   const existing = await queryOne('SELECT "id" FROM "User" WHERE "email" = $1', [email])
   if (existing) throw { status: 409, message: 'Email already exists' }

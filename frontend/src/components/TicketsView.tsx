@@ -1,5 +1,6 @@
 ﻿import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import * as ticketService from '../services/ticket.service'
 import * as ticketSvc from '../services/ticket.service'
 import * as assetService from '../services/asset.service'
@@ -24,6 +25,8 @@ export type Incident = {
 
 export default function TicketsView() {
   const { user } = useAuth()
+  const { ticketId } = useParams()
+  const navigate = useNavigate()
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('queue-sidebar-root') : null
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [filterType, setFilterType] = useState('Open Tickets')
@@ -156,6 +159,53 @@ export default function TicketsView() {
     }
   }, [showDetailView])
 
+  React.useEffect(() => {
+    const id = ticketId ? decodeURIComponent(ticketId) : ''
+    if (!id) {
+      setShowDetailView(false)
+      return
+    }
+    const existing = incidents.find((i) => String(i.id) === String(id))
+    if (existing) {
+      setSelectedTicket(existing)
+      setShowDetailView(true)
+      return
+    }
+    ticketService.getTicket(id).then((d: any) => {
+      const mapped: Incident = {
+        id: d.ticketId || String(d.id || id),
+        slaTimeLeft: '00:00',
+        subject: d.subject || d.description || 'Ticket',
+        category: d.category || '',
+        priority: d.priority || 'Low',
+        status: d.status || 'New',
+        type: d.type || 'Incident',
+        endUser: d.requester?.name || d.requester?.email || '',
+        dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : '',
+        lastAction: '',
+        lastActionTime: '',
+        assignedAgentId: d.assignedTo?.id || d.assignee?.id,
+        assignedAgentName: d.assignedTo?.name || d.assignee?.name,
+      }
+      setSelectedTicket(mapped)
+      setShowDetailView(true)
+    }).catch(() => {
+      setSelectedTicket({
+        id: id,
+        slaTimeLeft: '00:00',
+        subject: 'Ticket',
+        category: '',
+        priority: 'Low',
+        status: 'New',
+        type: 'Incident',
+        endUser: '',
+        dateReported: new Date().toLocaleString(),
+        lastAction: '',
+        lastActionTime: '',
+      })
+      setShowDetailView(true)
+    })
+  }, [ticketId, incidents])
   React.useEffect(() => {
     if (!showDetailView) {
       Promise.all([
@@ -430,6 +480,7 @@ export default function TicketsView() {
   const handleTicketClick = (ticket: Incident) => {
     setSelectedTicket(ticket)
     setShowDetailView(true)
+    navigate(`/tickets/${encodeURIComponent(ticket.id)}`)
 
     // fetch full ticket details (including requester/end-user) from backend if available
     import('../services/ticket.service').then(svc => {
@@ -505,18 +556,23 @@ export default function TicketsView() {
     return v === 'incident' || v === 'fault'
   }
 
+  const closeDetail = () => {
+    setShowDetailView(false)
+    navigate('/tickets')
+  }
+
   const getActionButtons = () => {
     if (!selectedTicket) return []
     if (!isIncidentOrFault(selectedTicket.type)) return []
     if (user?.role === 'USER') {
-      return [{ label: 'Back', onClick: () => setShowDetailView(false) }]
+      return [{ label: 'Back', onClick: closeDetail }]
     }
 
     const status = (selectedTicket.status || '').toLowerCase()
     const buttons: { label: string; onClick: () => void; className?: string }[] = []
 
     // Always include back
-    buttons.push({ label: 'Back', onClick: () => setShowDetailView(false) })
+    buttons.push({ label: 'Back', onClick: closeDetail })
 
     if (status === 'new') {
       buttons.push({ label: 'Accept', onClick: handleAccept })
@@ -898,7 +954,7 @@ export default function TicketsView() {
     try {
       await ticketService.deleteTicket(selectedTicket.id)
       setIncidents(prev => prev.filter(i => i.id !== selectedTicket.id))
-      setShowDetailView(false)
+      closeDetail()
       setSelectedTicket(null)
       addTicketComment(selectedTicket.id, 'Ticket deleted')
     } catch (err: any) {
@@ -1104,6 +1160,55 @@ export default function TicketsView() {
   const totalTickets = filteredCount
   const rangeStart = filteredCount > 0 ? 1 : 0
   const rangeEnd = filteredCount
+
+  const ticketVisuals = React.useMemo(() => {
+    const total = incidents.length
+    const open = incidents.filter((t) => {
+      const s = String(t.status || '').toLowerCase()
+      return s !== 'closed' && s !== 'resolved'
+    }).length
+    const closed = incidents.filter((t) => String(t.status || '').toLowerCase() === 'closed').length
+    const byPriority = incidents.reduce<Record<string, number>>((acc, t) => {
+      const key = String(t.priority || 'Low')
+      acc[key] = (acc[key] || 0) + 1
+      return acc
+    }, {})
+    const days = 10
+    const today = new Date()
+    const counts = new Array(days).fill(0)
+    const keys: string[] = []
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      d.setHours(0, 0, 0, 0)
+      keys.push(d.toISOString().slice(0, 10))
+    }
+    const indexByKey = new Map(keys.map((k, idx) => [k, idx]))
+    incidents.forEach((t) => {
+      const raw = t.dateReported
+      if (!raw) return
+      const d = new Date(raw)
+      if (Number.isNaN(d.getTime())) return
+      const key = d.toISOString().slice(0, 10)
+      const idx = indexByKey.get(key)
+      if (idx !== undefined) counts[idx] += 1
+    })
+    return { total, open, closed, byPriority, counts }
+  }, [incidents])
+
+  const ticketSparkline = React.useMemo(() => {
+    const width = 180
+    const height = 40
+    const max = Math.max(1, ...ticketVisuals.counts)
+    const points = ticketVisuals.counts
+      .map((v, i) => {
+        const x = (i / Math.max(1, ticketVisuals.counts.length - 1)) * width
+        const y = height - (v / max) * height
+        return `${x},${y}`
+      })
+      .join(' ')
+    return { width, height, points }
+  }, [ticketVisuals])
 
   const mainContent = showDetailView && selectedTicket ? (
     <div className="detail-view-container">
@@ -1398,6 +1503,36 @@ export default function TicketsView() {
             </button>
           </div>
         </div>
+        <div className="visuals-row tickets-visuals">
+          <div className="visual-card">
+            <div className="visual-title">Ticket Flow (10d)</div>
+            <svg className="sparkline" viewBox={`0 0 ${ticketSparkline.width} ${ticketSparkline.height}`}>
+              <polyline points={ticketSparkline.points} fill="none" stroke="#2563eb" strokeWidth="2" />
+            </svg>
+            <div className="visual-kpis">
+              <span>Open: {ticketVisuals.open}</span>
+              <span>Closed: {ticketVisuals.closed}</span>
+            </div>
+          </div>
+          <div className="visual-card">
+            <div className="visual-title">Priority Mix</div>
+            <div className="mini-barlist">
+              {['High', 'Medium', 'Low'].map((p) => {
+                const v = ticketVisuals.byPriority[p] || 0
+                const w = Math.min(100, (v / Math.max(1, ticketVisuals.total)) * 100)
+                return (
+                  <div key={p} className="mini-bar-row">
+                    <span>{p}</span>
+                    <div className="mini-bar-track">
+                      <div className={`mini-bar-fill ${p.toLowerCase()}`} style={{ width: `${w}%` }} />
+                    </div>
+                    <strong>{v}</strong>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
       </div>
       <div className="tickets-content">
         <div className="incidents-table" ref={tableRef} style={{ width: tableWidth ? `${tableWidth}px` : undefined }}>
@@ -1673,6 +1808,11 @@ export default function TicketsView() {
     </div>
   )
 }
+
+
+
+
+
 
 
 
