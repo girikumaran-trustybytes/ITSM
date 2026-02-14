@@ -1,468 +1,1080 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import * as userService from '../services/user.service'
-import * as supplierService from '../services/supplier.service'
-import * as slaService from '../services/sla.service'
+﻿import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { useAuth } from '../contexts/AuthContext'
+import { loadLeftPanelConfig, resetLeftPanelConfig, saveLeftPanelConfig, type LeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
 
-type User = {
-  id: number
-  name?: string | null
-  email: string
-  role: 'ADMIN' | 'AGENT' | 'USER'
-  status?: string | null
-  createdAt?: string
-  phone?: string | null
-  client?: string | null
-  site?: string | null
-  accountManager?: string | null
+type PaginationMeta = {
+  page: number
+  totalPages: number
+  totalRows: number
+  rangeStart: number
+  rangeEnd: number
 }
 
-type Supplier = {
-  id: number
-  companyName: string
-  contactName?: string | null
-  contactEmail?: string | null
-  slaTerms?: string | null
+type AdminViewProps = {
+  initialTab?: string
+  toolbarSearch?: string
+  controlledPage?: number
+  onPageChange?: (nextPage: number) => void
+  onPaginationMetaChange?: (meta: PaginationMeta) => void
 }
 
-type SlaConfig = {
-  id: number
-  name: string
-  priority: string
-  responseTimeMin: number
-  resolutionTimeMin: number
-  businessHours: boolean
-  active: boolean
+type MenuItem = {
+  id: string
+  label: string
+  requiresAdmin?: boolean
 }
 
-const tabs = [
-  { id: 'agents', label: 'Agents' },
-  { id: 'appUsers', label: 'Application Users' },
-  { id: 'externalUsers', label: 'External Users' },
-  { id: 'suppliers', label: 'Suppliers' },
-  { id: 'sla', label: 'SLA Config' },
+type MenuSection = {
+  id: string
+  label: string
+  items: MenuItem[]
+}
+
+const settingsMenu: MenuSection[] = [
+  {
+    id: 'general',
+    label: 'General Settings',
+    items: [
+      { id: 'organization-info', label: 'Organization info' },
+      { id: 'business-hours', label: 'Business hours & holidays' },
+      { id: 'timezone-localization', label: 'Time zone & localization' },
+    ],
+  },
+  {
+    id: 'user-access',
+    label: 'User & Access Management',
+    items: [
+      { id: 'roles-permissions', label: 'Roles & permissions', requiresAdmin: true },
+      { id: 'user-groups', label: 'User groups' },
+      { id: 'sso-configuration', label: 'SSO configuration', requiresAdmin: true },
+      { id: 'mfa-settings', label: 'MFA settings', requiresAdmin: true },
+    ],
+  },
+  {
+    id: 'queue-management',
+    label: 'Queue Management',
+    items: [
+      { id: 'queue-management', label: 'Queue Management', requiresAdmin: true },
+    ],
+  },
+  {
+    id: 'incident',
+    label: 'Incident Management',
+    items: [
+      { id: 'priority-matrix', label: 'Priority matrix' },
+      { id: 'sla-policies', label: 'SLA policies' },
+      { id: 'escalation-rules', label: 'Escalation rules' },
+      { id: 'auto-assignment', label: 'Auto-assignment rules' },
+    ],
+  },
+  {
+    id: 'service-catalog',
+    label: 'Service Catalog',
+    items: [
+      { id: 'categories', label: 'Categories' },
+      { id: 'request-workflows', label: 'Request workflows' },
+      { id: 'approval-matrix', label: 'Approval matrix' },
+    ],
+  },
+  {
+    id: 'change',
+    label: 'Change Management',
+    items: [
+      { id: 'change-types', label: 'Change types' },
+      { id: 'risk-matrix', label: 'Risk matrix' },
+      { id: 'cab-configuration', label: 'CAB configuration' },
+    ],
+  },
+  {
+    id: 'automation',
+    label: 'Automation & Workflows',
+    items: [
+      { id: 'workflow-builder', label: 'Workflow builder' },
+      { id: 'triggers-conditions', label: 'Triggers & conditions' },
+      { id: 'email-templates-automation', label: 'Email templates' },
+      { id: 'webhooks', label: 'Webhooks' },
+    ],
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    items: [
+      { id: 'api-keys', label: 'API keys', requiresAdmin: true },
+      { id: 'third-party-tools', label: 'Third-party tools (Slack, Azure AD, etc.)' },
+      { id: 'monitoring-tools', label: 'Monitoring tools' },
+    ],
+  },
+  {
+    id: 'asset-cmdb',
+    label: 'Asset & CMDB',
+    items: [
+      { id: 'asset-types', label: 'Asset types' },
+      { id: 'ci-relationships', label: 'CI relationships' },
+      { id: 'discovery-settings', label: 'Discovery settings' },
+    ],
+  },
+  {
+    id: 'notifications',
+    label: 'Notifications',
+    items: [
+      { id: 'email-templates-notify', label: 'Email templates' },
+      { id: 'sms-settings', label: 'SMS settings' },
+      { id: 'push-notifications', label: 'Push notifications' },
+    ],
+  },
+  {
+    id: 'audit',
+    label: 'Audit & Compliance',
+    items: [
+      { id: 'audit-logs', label: 'Audit logs', requiresAdmin: true },
+      { id: 'data-retention', label: 'Data retention policy', requiresAdmin: true },
+      { id: 'backup-settings', label: 'Backup settings', requiresAdmin: true },
+    ],
+  },
 ]
 
-export default function AdminView({ initialTab }: { initialTab?: string }) {
-  const [active, setActive] = useState(initialTab || 'agents')
-  const [users, setUsers] = useState<User[]>([])
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [slaConfigs, setSlaConfigs] = useState<SlaConfig[]>([])
-  const [search, setSearch] = useState('')
-  const [showModal, setShowModal] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [editing, setEditing] = useState<any>(null)
-  const [form, setForm] = useState<any>({})
+type Values = Record<string, string | boolean>
+type FieldDef = {
+  key: string
+  label: string
+  type: 'text' | 'textarea' | 'select' | 'toggle'
+  options?: string[]
+  helper?: string
+  adminOnly?: boolean
+}
+type PanelDef = {
+  id: string
+  title: string
+  description: string
+  fields: FieldDef[]
+}
 
-  useEffect(() => {
-    if (initialTab) setActive(initialTab)
-  }, [initialTab])
+const initialValues: Values = {
+  scope: 'Global',
+  ownerRole: 'Admin',
+  approvalMode: 'Manager approval',
+  timezone: 'UTC',
+  locale: 'en-US',
+  runbookLink: '',
+  documentationLink: '',
+  notes: '',
+  ssoEnforced: true,
+  mfaRequired: true,
+  auditLogging: true,
+  backupEnabled: true,
+  autoAssignEnabled: true,
+  notificationsEnabled: true,
+  webhookEnabled: false,
+}
 
-  const roleFilter = useMemo(() => {
-    if (active === 'agents') return 'AGENT'
-    if (active === 'appUsers') return 'ADMIN'
-    if (active === 'externalUsers') return 'USER'
-    return undefined
-  }, [active])
+const settingsTopicPanels: Record<string, PanelDef[]> = {
+  'organization-info': [
+    { id: 'org-profile', title: 'Organization Profile', description: 'Business identity and ownership metadata.', fields: [
+      { key: 'orgName', label: 'Organization name', type: 'text' },
+      { key: 'orgCode', label: 'Organization code', type: 'text' },
+      { key: 'primaryDomain', label: 'Primary domain', type: 'text' },
+      { key: 'ownerRole', label: 'Owner role', type: 'select', options: ['Admin', 'Service Owner', 'Platform Engineer'] },
+    ]},
+  ],
+  'business-hours': [
+    { id: 'hours', title: 'Business Calendar', description: 'Working hours, shifts, and holiday handling.', fields: [
+      { key: 'workWeek', label: 'Work week', type: 'select', options: ['Mon-Fri', 'Sun-Thu', '24x7'] },
+      { key: 'businessHours', label: 'Business hours', type: 'text' },
+      { key: 'holidayCalendar', label: 'Holiday calendar', type: 'select', options: ['Global', 'US', 'EMEA', 'APAC'] },
+      { key: 'afterHoursEscalation', label: 'After-hours escalation enabled', type: 'toggle' },
+    ]},
+  ],
+  'timezone-localization': [
+    { id: 'localization', title: 'Regional Preferences', description: 'Default timezone and locale for records and notifications.', fields: [
+      { key: 'timezone', label: 'Default timezone', type: 'select', options: ['UTC', 'America/New_York', 'Europe/London', 'Asia/Kolkata'] },
+      { key: 'locale', label: 'Localization', type: 'select', options: ['en-US', 'en-GB', 'fr-FR', 'de-DE'] },
+      { key: 'dateFormat', label: 'Date format', type: 'select', options: ['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] },
+      { key: 'weekStart', label: 'Week starts on', type: 'select', options: ['Monday', 'Sunday'] },
+    ]},
+  ],
+  'roles-permissions': [
+    { id: 'rbac', title: 'Role Matrix', description: 'Define role templates and scoped permissions.', fields: [
+      { key: 'defaultRoleTemplate', label: 'Default role template', type: 'select', options: ['Least Privilege', 'Balanced', 'Power User'], adminOnly: true },
+      { key: 'roleApprovalRequired', label: 'Role change requires approval', type: 'toggle', adminOnly: true },
+      { key: 'privilegedSessionTimeout', label: 'Privileged session timeout (minutes)', type: 'text', adminOnly: true },
+      { key: 'permissionNotes', label: 'Permission governance notes', type: 'textarea', adminOnly: true },
+    ]},
+  ],
+  'user-groups': [
+    { id: 'groups', title: 'Group Policies', description: 'Control group ownership, lifecycle, and membership flow.', fields: [
+      { key: 'groupAutoProvision', label: 'Auto-provision groups from directory', type: 'toggle' },
+      { key: 'groupOwnerRole', label: 'Default group owner role', type: 'select', options: ['Manager', 'Team Lead', 'Service Owner'] },
+      { key: 'groupReviewCycle', label: 'Membership review cycle', type: 'select', options: ['30 days', '60 days', '90 days'] },
+      { key: 'groupNamingRule', label: 'Naming rule pattern', type: 'text' },
+    ]},
+  ],
+  'sso-configuration': [
+    { id: 'sso', title: 'SSO Configuration', description: 'Identity provider and sign-in enforcement controls.', fields: [
+      { key: 'ssoEnforced', label: 'Enforce SSO', type: 'toggle', adminOnly: true },
+      { key: 'idpType', label: 'Identity provider', type: 'select', options: ['Azure AD', 'Okta', 'Google Workspace', 'SAML Custom'], adminOnly: true },
+      { key: 'ssoJitProvisioning', label: 'JIT provisioning', type: 'toggle', adminOnly: true },
+      { key: 'ssoMetadataUrl', label: 'Metadata URL', type: 'text', adminOnly: true },
+    ]},
+  ],
+  'mfa-settings': [
+    { id: 'mfa', title: 'MFA Policy', description: 'Second-factor strategy and conditional access rules.', fields: [
+      { key: 'mfaRequired', label: 'MFA required for privileged roles', type: 'toggle', adminOnly: true },
+      { key: 'mfaMethod', label: 'Primary MFA method', type: 'select', options: ['Authenticator App', 'FIDO2 Key', 'SMS OTP'], adminOnly: true },
+      { key: 'mfaGracePeriod', label: 'Enrollment grace period (days)', type: 'text', adminOnly: true },
+      { key: 'mfaBypassEmergency', label: 'Allow emergency bypass', type: 'toggle', adminOnly: true },
+    ]},
+  ],
+  'priority-matrix': [
+    { id: 'priority', title: 'Priority Matrix', description: 'Map impact and urgency to ticket priorities.', fields: [
+      { key: 'matrixModel', label: 'Matrix model', type: 'select', options: ['3x3', '4x4', 'Custom'] },
+      { key: 'defaultPriority', label: 'Default priority', type: 'select', options: ['Low', 'Medium', 'High', 'Critical'] },
+      { key: 'autoDowngrade', label: 'Auto-downgrade stale incidents', type: 'toggle' },
+      { key: 'prioritySlaLink', label: 'Link priority to SLA automatically', type: 'toggle' },
+    ]},
+  ],
+  'sla-policies': [
+    { id: 'sla', title: 'SLA Policies', description: 'Response/resolution targets and business calendar linkage.', fields: [
+      { key: 'slaPolicySet', label: 'Policy set', type: 'select', options: ['Standard', 'Premium', 'Critical Services'] },
+      { key: 'firstResponseTarget', label: 'First response target', type: 'select', options: ['15 min', '30 min', '1 hour', '4 hours'] },
+      { key: 'resolutionTarget', label: 'Resolution target', type: 'select', options: ['4 hours', '8 hours', '24 hours', '72 hours'] },
+      { key: 'slaBreachNotify', label: 'Notify on breach risk', type: 'toggle' },
+    ]},
+  ],
+  'escalation-rules': [
+    { id: 'escalation', title: 'Escalation Rules', description: 'Route aging tickets through support tiers.', fields: [
+      { key: 'escalationTier1', label: 'Tier 1 escalation time', type: 'select', options: ['30 min', '1 hour', '2 hours'] },
+      { key: 'escalationTier2', label: 'Tier 2 escalation time', type: 'select', options: ['2 hours', '4 hours', '8 hours'] },
+      { key: 'escalationOnBreach', label: 'Escalate on SLA breach', type: 'toggle' },
+      { key: 'escalationNotifyManager', label: 'Notify manager on escalation', type: 'toggle' },
+    ]},
+  ],
+  'auto-assignment': [
+    { id: 'auto-assignment', title: 'Auto-Assignment', description: 'Assign work based on load, skills, and queues.', fields: [
+      { key: 'autoAssignEnabled', label: 'Enable auto-assignment', type: 'toggle' },
+      { key: 'assignmentStrategy', label: 'Assignment strategy', type: 'select', options: ['Round Robin', 'Least Loaded', 'Skill Match'] },
+      { key: 'fallbackQueue', label: 'Fallback queue', type: 'text' },
+      { key: 'reassignInactive', label: 'Reassign inactive tickets', type: 'toggle' },
+    ]},
+  ],
+  'categories': [
+    { id: 'catalog-categories', title: 'Catalog Categories', description: 'Taxonomy and ownership for service requests.', fields: [
+      { key: 'catalogRoot', label: 'Root category label', type: 'text' },
+      { key: 'categoryApprovalMode', label: 'Category approval mode', type: 'select', options: ['Auto', 'Manager', 'Service Owner'] },
+      { key: 'categoryVisibility', label: 'Default visibility', type: 'select', options: ['All users', 'By department', 'By group'] },
+      { key: 'categoryArchiveDays', label: 'Archive empty categories (days)', type: 'text' },
+    ]},
+  ],
+  'request-workflows': [
+    { id: 'request-workflows', title: 'Request Workflows', description: 'Workflow templates used by service catalog requests.', fields: [
+      { key: 'requestDefaultWorkflow', label: 'Default workflow template', type: 'select', options: ['Standard Fulfillment', 'Access Request', 'Hardware Provision'] },
+      { key: 'workflowParallelApproval', label: 'Enable parallel approvals', type: 'toggle' },
+      { key: 'workflowSlaBinding', label: 'Bind workflow to SLA', type: 'toggle' },
+      { key: 'workflowNotes', label: 'Workflow design notes', type: 'textarea' },
+    ]},
+  ],
+  'approval-matrix': [
+    { id: 'approval-matrix', title: 'Approval Matrix', description: 'Approval routing based on risk, cost, and requester.', fields: [
+      { key: 'approvalModel', label: 'Approval model', type: 'select', options: ['Manager', 'Manager + Finance', 'CAB'] },
+      { key: 'approvalThreshold', label: 'Cost threshold for additional approvals', type: 'text' },
+      { key: 'approvalEscalation', label: 'Escalate pending approvals', type: 'toggle' },
+      { key: 'approvalSla', label: 'Approval SLA', type: 'select', options: ['4 hours', '8 hours', '24 hours'] },
+    ]},
+  ],
+  'change-types': [
+    { id: 'change-types', title: 'Change Types', description: 'Standard, normal, and emergency change governance.', fields: [
+      { key: 'defaultChangeType', label: 'Default change type', type: 'select', options: ['Standard', 'Normal', 'Emergency'] },
+      { key: 'changeTemplateRequired', label: 'Template required for changes', type: 'toggle' },
+      { key: 'emergencyApprovalBypass', label: 'Emergency approval bypass', type: 'toggle', adminOnly: true },
+      { key: 'changeFreezeWindow', label: 'Change freeze windows', type: 'text' },
+    ]},
+  ],
+  'risk-matrix': [
+    { id: 'risk-matrix', title: 'Risk Matrix', description: 'Risk scoring for change and incident policies.', fields: [
+      { key: 'riskScoringModel', label: 'Scoring model', type: 'select', options: ['Impact x Likelihood', 'Weighted', 'Custom'] },
+      { key: 'riskAutoClassification', label: 'Auto-classify risk from CI tags', type: 'toggle' },
+      { key: 'riskHighThreshold', label: 'High-risk threshold', type: 'text' },
+      { key: 'riskReviewRequired', label: 'Require risk review for high-risk', type: 'toggle' },
+    ]},
+  ],
+  'cab-configuration': [
+    { id: 'cab', title: 'CAB Configuration', description: 'Change Advisory Board composition and cadence.', fields: [
+      { key: 'cabMeetingCadence', label: 'CAB meeting cadence', type: 'select', options: ['Daily', 'Twice Weekly', 'Weekly'] },
+      { key: 'cabQuorum', label: 'Minimum quorum', type: 'text' },
+      { key: 'cabAutoInvite', label: 'Auto-invite service owners', type: 'toggle' },
+      { key: 'cabEmergencyBoard', label: 'Enable emergency CAB', type: 'toggle' },
+    ]},
+  ],
+  'workflow-builder': [
+    { id: 'automation-builder', title: 'Workflow Builder', description: 'Low-code workflow execution settings.', fields: [
+      { key: 'builderVersion', label: 'Builder runtime', type: 'select', options: ['v1 Stable', 'v2 Modern'] },
+      { key: 'builderSandbox', label: 'Sandbox mode for draft workflows', type: 'toggle' },
+      { key: 'builderPublishApproval', label: 'Require publish approval', type: 'toggle' },
+      { key: 'builderTimeout', label: 'Workflow execution timeout (seconds)', type: 'text' },
+    ]},
+  ],
+  'triggers-conditions': [
+    { id: 'triggers', title: 'Triggers & Conditions', description: 'Event predicates and suppression logic.', fields: [
+      { key: 'triggerDeduplication', label: 'Deduplicate repeated triggers', type: 'toggle' },
+      { key: 'triggerWindow', label: 'Deduplication window', type: 'select', options: ['1 min', '5 min', '15 min'] },
+      { key: 'triggerConditionMode', label: 'Condition mode', type: 'select', options: ['All true', 'Any true'] },
+      { key: 'triggerAuditTrail', label: 'Store trigger evaluation trail', type: 'toggle' },
+    ]},
+  ],
+  'email-templates-automation': [
+    { id: 'automation-email', title: 'Automation Email Templates', description: 'System email templates used by workflows.', fields: [
+      { key: 'emailTemplatePack', label: 'Template pack', type: 'select', options: ['Default', 'Enterprise', 'Custom'] },
+      { key: 'emailBranding', label: 'Branding profile', type: 'select', options: ['Global', 'Regional', 'Departmental'] },
+      { key: 'emailFooterLegal', label: 'Include legal footer', type: 'toggle' },
+      { key: 'emailSenderAddress', label: 'Sender address', type: 'text' },
+    ]},
+  ],
+  webhooks: [
+    { id: 'webhooks', title: 'Webhook Delivery', description: 'Outbound integration endpoint and retry controls.', fields: [
+      { key: 'webhookEnabled', label: 'Enable outbound webhooks', type: 'toggle' },
+      { key: 'webhookEndpoint', label: 'Endpoint URL', type: 'text' },
+      { key: 'webhookRetries', label: 'Retry policy', type: 'select', options: ['No retries', '3 retries', '5 retries'] },
+      { key: 'webhookSigning', label: 'Sign webhook payloads', type: 'toggle', adminOnly: true },
+    ]},
+  ],
+  'api-keys': [
+    { id: 'api-keys', title: 'API Keys', description: 'Key lifecycle controls and scopes.', fields: [
+      { key: 'apiKeyRotation', label: 'Rotation interval', type: 'select', options: ['30 days', '60 days', '90 days'], adminOnly: true },
+      { key: 'apiKeyScopeDefault', label: 'Default key scope', type: 'select', options: ['Read only', 'Read/Write', 'Admin'], adminOnly: true },
+      { key: 'apiKeyIpAllowlist', label: 'IP allowlist', type: 'text', adminOnly: true },
+      { key: 'apiKeyAudit', label: 'Audit key usage', type: 'toggle', adminOnly: true },
+    ]},
+  ],
+  'third-party-tools': [
+    { id: 'third-party', title: 'Third-party Tools', description: 'Connected SaaS apps and identity bridge settings.', fields: [
+      { key: 'slackIntegration', label: 'Slack integration enabled', type: 'toggle' },
+      { key: 'azureAdSync', label: 'Azure AD sync mode', type: 'select', options: ['Manual', 'Hourly', 'Real-time'] },
+      { key: 'teamsNotifications', label: 'Microsoft Teams notifications', type: 'toggle' },
+      { key: 'integrationFallback', label: 'Fallback connector', type: 'text' },
+    ]},
+  ],
+  'monitoring-tools': [
+    { id: 'monitoring', title: 'Monitoring Tools', description: 'Integrate observability and alerting systems.', fields: [
+      { key: 'monitoringProvider', label: 'Primary provider', type: 'select', options: ['Datadog', 'Prometheus', 'New Relic', 'CloudWatch'] },
+      { key: 'monitoringAlertSync', label: 'Sync alerts to incidents', type: 'toggle' },
+      { key: 'monitoringSeverityMap', label: 'Severity mapping profile', type: 'select', options: ['Default', 'Strict', 'Custom'] },
+      { key: 'monitoringIngestionKey', label: 'Ingestion key', type: 'text', adminOnly: true },
+    ]},
+  ],
+  'asset-types': [
+    { id: 'asset-types', title: 'Asset Type Catalog', description: 'Asset type schema and ownership for CMDB.', fields: [
+      { key: 'assetTypeModel', label: 'Asset type model', type: 'select', options: ['Hardware + Software', 'CI first', 'Custom'] },
+      { key: 'assetLifecyclePolicy', label: 'Lifecycle policy', type: 'select', options: ['Standard', 'Strict Compliance', 'Flexible'] },
+      { key: 'assetTagPrefix', label: 'Asset tag prefix', type: 'text' },
+      { key: 'assetOwnershipRequired', label: 'Require asset owner', type: 'toggle' },
+    ]},
+  ],
+  'ci-relationships': [
+    { id: 'ci-relationships', title: 'CI Relationships', description: 'Relationship graph and dependency modeling.', fields: [
+      { key: 'ciRelationModel', label: 'Relationship model', type: 'select', options: ['Parent-Child', 'Service Topology', 'Hybrid'] },
+      { key: 'ciAutoLink', label: 'Auto-link discovered CIs', type: 'toggle' },
+      { key: 'ciImpactPropagation', label: 'Impact propagation depth', type: 'select', options: ['1 hop', '2 hops', '3 hops'] },
+      { key: 'ciLinkConfidence', label: 'Minimum confidence threshold', type: 'text' },
+    ]},
+  ],
+  'discovery-settings': [
+    { id: 'discovery', title: 'Discovery Settings', description: 'Network discovery schedule and scanning profile.', fields: [
+      { key: 'discoveryEnabled', label: 'Enable discovery engine', type: 'toggle' },
+      { key: 'discoveryCadence', label: 'Discovery cadence', type: 'select', options: ['Daily', 'Weekly', 'Monthly'] },
+      { key: 'discoveryCredentialProfile', label: 'Credential profile', type: 'select', options: ['Default', 'Privileged', 'Read-only'] },
+      { key: 'discoveryExcludeRanges', label: 'Excluded network ranges', type: 'text' },
+    ]},
+  ],
+  'email-templates-notify': [
+    { id: 'notify-email', title: 'Notification Email Templates', description: 'Notification template set for tickets and changes.', fields: [
+      { key: 'notifyEmailPack', label: 'Template pack', type: 'select', options: ['Default', 'Branded', 'Minimal'] },
+      { key: 'notifyDigestMode', label: 'Digest mode', type: 'select', options: ['Instant', 'Hourly Digest', 'Daily Digest'] },
+      { key: 'notifyEmailFooter', label: 'Include compliance footer', type: 'toggle' },
+      { key: 'notifyReplyTo', label: 'Reply-to address', type: 'text' },
+    ]},
+  ],
+  'sms-settings': [
+    { id: 'sms', title: 'SMS Settings', description: 'SMS gateway and delivery behavior.', fields: [
+      { key: 'smsEnabled', label: 'Enable SMS notifications', type: 'toggle' },
+      { key: 'smsProvider', label: 'SMS provider', type: 'select', options: ['Twilio', 'Azure Communication', 'Custom'] },
+      { key: 'smsCountryPolicy', label: 'Allowed country policy', type: 'select', options: ['Global', 'Restricted', 'Custom list'] },
+      { key: 'smsSenderId', label: 'Sender ID', type: 'text' },
+    ]},
+  ],
+  'push-notifications': [
+    { id: 'push', title: 'Push Notifications', description: 'In-app and mobile push controls.', fields: [
+      { key: 'pushEnabled', label: 'Enable push notifications', type: 'toggle' },
+      { key: 'pushCriticalOnly', label: 'Critical alerts only', type: 'toggle' },
+      { key: 'pushQuietHours', label: 'Quiet hours', type: 'text' },
+      { key: 'pushRetryPolicy', label: 'Retry policy', type: 'select', options: ['No retry', '2 retries', '5 retries'] },
+    ]},
+  ],
+  'audit-logs': [
+    { id: 'audit-logs', title: 'Audit Logs', description: 'Security event and configuration audit retention.', fields: [
+      { key: 'auditLogging', label: 'Enable audit logging', type: 'toggle', adminOnly: true },
+      { key: 'auditExportCadence', label: 'Export cadence', type: 'select', options: ['Daily', 'Weekly', 'Monthly'], adminOnly: true },
+      { key: 'auditImmutableStore', label: 'Immutable log storage', type: 'toggle', adminOnly: true },
+      { key: 'auditLogViewerRole', label: 'Log viewer role', type: 'select', options: ['Admin', 'Security Team'], adminOnly: true },
+    ]},
+  ],
+  'data-retention': [
+    { id: 'retention', title: 'Data Retention Policy', description: 'Retention and purge schedules by data class.', fields: [
+      { key: 'ticketRetentionDays', label: 'Ticket retention (days)', type: 'text', adminOnly: true },
+      { key: 'assetRetentionDays', label: 'Asset record retention (days)', type: 'text', adminOnly: true },
+      { key: 'purgeSchedule', label: 'Purge schedule', type: 'select', options: ['Weekly', 'Monthly', 'Quarterly'], adminOnly: true },
+      { key: 'legalHoldEnabled', label: 'Legal hold override enabled', type: 'toggle', adminOnly: true },
+    ]},
+  ],
+  'backup-settings': [
+    { id: 'backup', title: 'Backup Settings', description: 'Backup schedule, encryption, and recovery targets.', fields: [
+      { key: 'backupEnabled', label: 'Enable daily backups', type: 'toggle', adminOnly: true },
+      { key: 'backupWindow', label: 'Backup window', type: 'text', adminOnly: true },
+      { key: 'backupEncryption', label: 'Backup encryption', type: 'select', options: ['AES-256', 'Provider managed'], adminOnly: true },
+      { key: 'backupRetention', label: 'Backup retention', type: 'select', options: ['30 days', '90 days', '365 days'], adminOnly: true },
+    ]},
+  ],
+}
 
-  const loadUsers = async () => {
-    if (!roleFilter) return
-    try {
-      const data = await userService.listUsers({ q: search, role: roleFilter })
-      setUsers(Array.isArray(data) ? data : [])
-    } catch (e) {
-      console.warn('Failed to fetch users', e)
-      setUsers([])
-    }
-  }
+export default function AdminView(_props: AdminViewProps) {
+  const { user } = useAuth()
+  const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
+  const role = String(user?.role || 'USER')
 
-  const loadSuppliers = async () => {
-    try {
-      const data = await supplierService.listSuppliers({ q: search })
-      setSuppliers(Array.isArray(data) ? data : [])
-    } catch (e) {
-      console.warn('Failed to fetch suppliers', e)
-    }
-  }
+  const [panelQuery, setPanelQuery] = useState('')
+  const [subSidebarQuery, setSubSidebarQuery] = useState('')
+  const [settingsQuery, setSettingsQuery] = useState('')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [recentOnly, setRecentOnly] = useState(false)
+  const [activeSection, setActiveSection] = useState(settingsMenu[0].id)
+  const [activeItem, setActiveItem] = useState(settingsMenu[0].items[0].id)
+  const [values, setValues] = useState<Values>(initialValues)
+  const [savedValues, setSavedValues] = useState<Values>(initialValues)
+  const [showConfirmSave, setShowConfirmSave] = useState(false)
+  const [showConfirmReset, setShowConfirmReset] = useState(false)
+  const [showConfirmRevoke, setShowConfirmRevoke] = useState(false)
+  const [, setLastSavedAt] = useState<string | null>(null)
+  const [, setActivityLog] = useState<string[]>([
+    'Role matrix synced by Platform Admin',
+    'SLA policy update applied to Incident queue',
+    'Webhook endpoint validation completed',
+    'Backup retention adjusted to 90 days',
+  ])
+  const [leftPanelConfig, setLeftPanelConfig] = useState<LeftPanelConfig>(() => loadLeftPanelConfig())
+  const [queuePanelKey, setQueuePanelKey] = useState<'ticketsMyLists' | 'users' | 'assets' | 'suppliers'>('ticketsMyLists')
 
-  const loadSla = async () => {
-    try {
-      const data = await slaService.listSlaConfigs({ q: search })
-      setSlaConfigs(Array.isArray(data) ? data : [])
-    } catch (e) {
-      console.warn('Failed to fetch SLA configs', e)
-    }
-  }
-
-  useEffect(() => {
-    if (roleFilter) {
-      loadUsers()
-    }
-  }, [roleFilter, search])
-
-  useEffect(() => {
-    if (active === 'suppliers') loadSuppliers()
-    if (active === 'sla') loadSla()
-  }, [active, search])
-
-  const openCreate = () => {
-    setEditing(null)
-    if (active === 'suppliers') {
-      setForm({ companyName: '', contactName: '', contactEmail: '', slaTerms: '' })
-    } else if (active === 'sla') {
-      setForm({ name: '', priority: 'Medium', responseTimeMin: 60, resolutionTimeMin: 240, businessHours: false, active: true })
-    } else {
-      setForm({ name: '', email: '', password: '', role: roleFilter, phone: '', client: '', site: '', accountManager: '' })
-    }
-    setShowModal(true)
-  }
-
-  const openEdit = (item: any) => {
-    setEditing(item)
-    if (active === 'suppliers') {
-      setForm({ companyName: item.companyName || '', contactName: item.contactName || '', contactEmail: item.contactEmail || '', slaTerms: item.slaTerms || '' })
-    } else if (active === 'sla') {
-      setForm({
-        name: item.name,
-        priority: item.priority,
-        responseTimeMin: item.responseTimeMin,
-        resolutionTimeMin: item.resolutionTimeMin,
-        businessHours: Boolean(item.businessHours),
-        active: Boolean(item.active),
+  const visibleSections = useMemo(() => {
+    return settingsMenu
+      .map((section) => {
+        const filteredItems = section.items
+        return { ...section, items: filteredItems }
       })
-    } else {
-      userService.getUser(item.id).then((full) => {
-        setForm({
-          name: full?.name || '',
-          email: full?.email || '',
-          password: '',
-          role: full?.role || item.role,
-          phone: full?.phone || '',
-          client: full?.client || '',
-          site: full?.site || '',
-          accountManager: full?.accountManager || '',
-        })
-      }).catch(() => {
-        setForm({
-          name: item.name || '',
-          email: item.email || '',
-          password: '',
-          role: item.role,
-          phone: '',
-          client: '',
-          site: '',
-          accountManager: '',
-        })
-      })
+      .filter((section) => section.items.length > 0)
+  }, [])
+
+  useEffect(() => {
+    const currentSection = visibleSections.find((s) => s.id === activeSection)
+    const hasActiveItem = currentSection?.items.some((i) => i.id === activeItem && !(i.requiresAdmin && role !== 'ADMIN'))
+    if (!currentSection || !hasActiveItem) {
+      const fallbackSection = visibleSections.find((s) => s.items.some((i) => !(i.requiresAdmin && role !== 'ADMIN')))
+      if (!fallbackSection) return
+      const fallbackItem = fallbackSection.items.find((i) => !(i.requiresAdmin && role !== 'ADMIN'))
+      if (!fallbackItem) return
+      setActiveSection(fallbackSection.id)
+      setActiveItem(fallbackItem.id)
     }
-    setShowModal(true)
+  }, [visibleSections, activeSection, activeItem, role])
+  useEffect(() => {
+    const handler = () => setLeftPanelConfig(loadLeftPanelConfig())
+    window.addEventListener('left-panel-config-updated', handler as EventListener)
+    return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
+  }, [])
+
+  const selectedSection = visibleSections.find((s) => s.id === activeSection) || visibleSections[0]
+  const selectedItem = selectedSection?.items.find((i) => i.id === activeItem) || selectedSection?.items[0]
+  const topicPanels = settingsTopicPanels[activeItem] || []
+  const subItems = (selectedSection?.items || []).filter((item) => item.label.toLowerCase().includes(subSidebarQuery.trim().toLowerCase()))
+
+  const hasChanges = JSON.stringify(values) !== JSON.stringify(savedValues)
+  const isRestrictedRole = role !== 'ADMIN'
+
+  const systemHealth = useMemo(() => {
+    if (!values.ssoEnforced && !values.mfaRequired) return { tone: 'red', label: 'Critical risk' }
+    if (!values.auditLogging || !values.backupEnabled) return { tone: 'yellow', label: 'Warning state' }
+    return { tone: 'green', label: 'Healthy' }
+  }, [values])
+
+  const title = selectedItem?.label || 'Settings'
+  const isQueueManagement = activeItem === 'queue-management'
+
+  const matches = (text: string) => {
+    const q = settingsQuery.trim().toLowerCase()
+    if (!q) return true
+    return text.toLowerCase().includes(q)
   }
 
-
-
-  const handleSave = async () => {
-    setIsSaving(true)
-    try {
-      if (active === 'suppliers') {
-        const payload = { ...form }
-        if (editing) {
-          await supplierService.updateSupplier(editing.id, payload)
-        } else {
-          await supplierService.createSupplier(payload)
-        }
-        await loadSuppliers()
-      } else if (active === 'sla') {
-        const payload = {
-          ...form,
-          responseTimeMin: Number(form.responseTimeMin),
-          resolutionTimeMin: Number(form.resolutionTimeMin),
-        }
-        if (editing) {
-          await slaService.updateSlaConfig(editing.id, payload)
-        } else {
-          await slaService.createSlaConfig(payload)
-        }
-        await loadSla()
-      } else {
-        const payload = { ...form }
-        if (editing) {
-          await userService.updateUser(editing.id, payload)
-        } else {
-          await userService.createUser(payload)
-        }
-        await loadUsers()
-      }
-      setShowModal(false)
-      setEditing(null)
-    } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to save')
-    } finally {
-      setIsSaving(false)
-    }
+  const showField = (text: string, key?: string) => {
+    if (!matches(text)) return false
+    if (!recentOnly) return true
+    if (!key) return false
+    return values[key] !== savedValues[key]
   }
 
-  const handleDelete = async (item: any) => {
-    if (!confirm('Delete this item? This cannot be undone.')) return
-    try {
-      if (active === 'suppliers') {
-        await supplierService.deleteSupplier(item.id)
-        setSuppliers(prev => prev.filter(s => s.id !== item.id))
-      } else if (active === 'sla') {
-        await slaService.deleteSlaConfig(item.id)
-        setSlaConfigs(prev => prev.filter(s => s.id !== item.id))
-      } else {
-        await userService.deleteUser(item.id)
-        setUsers(prev => prev.filter(u => u.id !== item.id))
-      }
-    } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to delete')
-    }
-  }
+  const renderField = (field: FieldDef) => {
+    if (!showField(field.label, field.key)) return null
+    const blocked = Boolean((field.adminOnly || selectedItem?.requiresAdmin) && role !== 'ADMIN')
+    const commonTitle = blocked ? 'Restricted Access: Administrator role required' : field.label
 
-
-
-  return (
-    <div className="admin-view">
-      <div className="admin-header">
-        <div>
-          <h2>Admin</h2>
-          <p>Manage agents, users, suppliers, and SLA configuration</p>
-        </div>
-        <div className="admin-actions">
+    if (field.type === 'toggle') {
+      return (
+        <label key={field.key} className="admin-field-row switch-row">
+          <span>
+            {field.label}
+            {field.helper && <em title={field.helper}>?</em>}
+          </span>
           <input
-            className="admin-search"
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            type="checkbox"
+            checked={Boolean(values[field.key])}
+            disabled={blocked}
+            title={commonTitle}
+            onChange={(e) => update(field.key, e.target.checked)}
           />
-          <button className="admin-primary-btn" onClick={openCreate}>+ New</button>
+        </label>
+      )
+    }
+
+    if (field.type === 'select') {
+      const options = field.options || []
+      return (
+        <label key={field.key} className="admin-field-row">
+          <span>
+            {field.label}
+            {field.helper && <em title={field.helper}>?</em>}
+          </span>
+          <select
+            value={String(values[field.key] ?? options[0] ?? '')}
+            disabled={blocked}
+            title={commonTitle}
+            onChange={(e) => update(field.key, e.target.value)}
+          >
+            {options.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        </label>
+      )
+    }
+
+    if (field.type === 'textarea') {
+      return (
+        <label key={field.key} className="admin-field-row grow">
+          <span>
+            {field.label}
+            {field.helper && <em title={field.helper}>?</em>}
+          </span>
+          <textarea
+            value={String(values[field.key] ?? '')}
+            disabled={blocked}
+            title={commonTitle}
+            onChange={(e) => update(field.key, e.target.value)}
+          />
+        </label>
+      )
+    }
+
+    return (
+      <label key={field.key} className="admin-field-row">
+        <span>
+          {field.label}
+          {field.helper && <em title={field.helper}>?</em>}
+        </span>
+        <input
+          value={String(values[field.key] ?? '')}
+          disabled={blocked}
+          title={commonTitle}
+          onChange={(e) => update(field.key, e.target.value)}
+        />
+      </label>
+    )
+  }
+
+  const update = (key: string, next: string | boolean) => {
+    setValues((prev) => ({ ...prev, [key]: next }))
+  }
+
+  const handleSelectSection = (sectionId: string) => {
+    const section = visibleSections.find((s) => s.id === sectionId)
+    if (!section) return
+    const nextItem = section.items.find((i) => !(i.requiresAdmin && role !== 'ADMIN'))
+    if (!nextItem) return
+    setActiveSection(sectionId)
+    setActiveItem(nextItem.id)
+  }
+  const queueRules = leftPanelConfig[queuePanelKey] || []
+  type QueuePanelKey = 'ticketsMyLists' | 'users' | 'assets' | 'suppliers'
+  const persistQueueConfig = (next: LeftPanelConfig) => {
+    setLeftPanelConfig(next)
+    saveLeftPanelConfig(next)
+  }
+  const handleQueueConfigReset = () => {
+    resetLeftPanelConfig()
+    setLeftPanelConfig(loadLeftPanelConfig())
+  }
+
+  const addActivity = (message: string) => {
+    setActivityLog((prev) => [`${message} (${new Date().toLocaleTimeString()})`, ...prev])
+  }
+
+  const handleSave = () => {
+    setSavedValues(values)
+    const now = new Date().toLocaleString()
+    setLastSavedAt(now)
+    addActivity(`${title} configuration saved`)
+    setShowConfirmSave(false)
+  }
+
+  const handleCancel = () => {
+    setValues(savedValues)
+    addActivity('Uncommitted settings reverted')
+  }
+
+  const handleImport = () => {
+    addActivity('Configuration import requested')
+    alert('Import configuration started. Validate uploaded file in audit logs.')
+  }
+
+  const handleExport = () => {
+    addActivity('Configuration export requested')
+    alert('Export package prepared. Download is available in activity log.')
+  }
+
+  const confirmReset = () => {
+    setValues(initialValues)
+    setSavedValues(initialValues)
+    setShowConfirmReset(false)
+    addActivity(`${title} reset to defaults`)
+  }
+
+  const confirmRevoke = () => {
+    setShowConfirmRevoke(false)
+    addActivity('All active API keys revoked')
+    alert('All API keys have been revoked. Regenerate keys for integrations.')
+  }
+
+  const roleBadge = role === 'ADMIN' ? 'Administrator' : role === 'AGENT' ? 'Agent' : 'End User'
+  const queueFieldOptions: Record<'ticketsMyLists' | 'users' | 'assets' | 'suppliers', string[]> = {
+    ticketsMyLists: ['status', 'type', 'category', 'priority', 'sla'],
+    users: ['status', 'workMode', 'department'],
+    assets: ['status', 'assigned', 'category'],
+    suppliers: ['sla', 'contact', 'company'],
+  }
+  const queuePanelLabels: Record<'ticketsMyLists' | 'users' | 'assets' | 'suppliers', string> = {
+    ticketsMyLists: 'Ticket Left Panel',
+    users: 'User Left Panel',
+    assets: 'Asset Left Panel',
+    suppliers: 'Supplier Left Panel',
+  }
+  const normalizePanelInput = (input: string): QueuePanelKey | null => {
+    const key = String(input || '').trim().toLowerCase()
+    if (!key) return null
+    if (key === 'tickets' || key === 'ticket' || key === 'ticketsmylists' || key === 'ticket left panel') return 'ticketsMyLists'
+    if (key === 'users' || key === 'user' || key === 'user left panel') return 'users'
+    if (key === 'assets' || key === 'asset' || key === 'asset left panel') return 'assets'
+    if (key === 'suppliers' || key === 'supplier' || key === 'supplier left panel') return 'suppliers'
+    return null
+  }
+  const promptQueuePanel = (action: string, fallback: QueuePanelKey = queuePanelKey) => {
+    const raw = window.prompt(`${action}: enter panel (tickets/users/assets/suppliers)`, queuePanelLabels[fallback])
+    if (raw == null) return null
+    const parsed = normalizePanelInput(raw)
+    if (!parsed) {
+      alert('Invalid panel. Use one of: tickets, users, assets, suppliers.')
+      return null
+    }
+    return parsed
+  }
+  const handleQueueAdd = () => {
+    const panel = promptQueuePanel('Add New Queue')
+    if (!panel) return
+    const name = window.prompt('Queue name?')
+    if (name == null) return
+    const label = name.trim()
+    if (!label) return
+    const allowedFields = queueFieldOptions[panel]
+    const defaultField = allowedFields[0] || 'status'
+    const fieldInput = window.prompt(`Field for "${label}" (${allowedFields.join(', ')})`, defaultField)
+    if (fieldInput == null) return
+    const field = fieldInput.trim()
+    if (!allowedFields.includes(field)) {
+      alert(`Invalid field for ${queuePanelLabels[panel]}. Allowed: ${allowedFields.join(', ')}`)
+      return
+    }
+    const valueInput = window.prompt(`Value for "${field}"`, 'all')
+    if (valueInput == null) return
+    const value = valueInput.trim()
+    if (!value) return
+    const nextRule: QueueRule = { id: `${panel}-${Date.now()}`, label, field, value }
+    const nextConfig = { ...leftPanelConfig, [panel]: [...leftPanelConfig[panel], nextRule] }
+    persistQueueConfig(nextConfig)
+    setQueuePanelKey(panel)
+  }
+  const handleQueueEdit = () => {
+    const panel = promptQueuePanel('Edit Queue')
+    if (!panel) return
+    const existingNameInput = window.prompt('Queue name to edit?')
+    if (existingNameInput == null) return
+    const existingName = existingNameInput.trim().toLowerCase()
+    if (!existingName) return
+    const list = leftPanelConfig[panel]
+    const existing = list.find((r) => r.label.trim().toLowerCase() === existingName)
+    if (!existing) {
+      alert(`Queue "${existingNameInput}" not found in ${queuePanelLabels[panel]}.`)
+      return
+    }
+    const nextNameInput = window.prompt('New queue name', existing.label)
+    if (nextNameInput == null) return
+    const label = nextNameInput.trim()
+    if (!label) return
+    const allowedFields = queueFieldOptions[panel]
+    const nextFieldInput = window.prompt(`New field (${allowedFields.join(', ')})`, existing.field)
+    if (nextFieldInput == null) return
+    const field = nextFieldInput.trim()
+    if (!allowedFields.includes(field)) {
+      alert(`Invalid field for ${queuePanelLabels[panel]}. Allowed: ${allowedFields.join(', ')}`)
+      return
+    }
+    const nextValueInput = window.prompt('New value', existing.value)
+    if (nextValueInput == null) return
+    const value = nextValueInput.trim()
+    if (!value) return
+    const nextConfig = {
+      ...leftPanelConfig,
+      [panel]: list.map((r) => (r.id === existing.id ? { ...r, label, field, value } : r)),
+    }
+    persistQueueConfig(nextConfig)
+    setQueuePanelKey(panel)
+  }
+  const handleQueueDelete = () => {
+    const panel = promptQueuePanel('Delete Queue')
+    if (!panel) return
+    const targetNameInput = window.prompt('Queue name to delete?')
+    if (targetNameInput == null) return
+    const targetName = targetNameInput.trim().toLowerCase()
+    if (!targetName) return
+    const list = leftPanelConfig[panel]
+    const existing = list.find((r) => r.label.trim().toLowerCase() === targetName)
+    if (!existing) {
+      alert(`Queue "${targetNameInput}" not found in ${queuePanelLabels[panel]}.`)
+      return
+    }
+    if (!window.confirm(`Delete queue "${existing.label}" from ${queuePanelLabels[panel]}?`)) return
+    const nextConfig = { ...leftPanelConfig, [panel]: list.filter((r) => r.id !== existing.id) }
+    persistQueueConfig(nextConfig)
+    setQueuePanelKey(panel)
+  }
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasChanges) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [hasChanges])
+
+  useEffect(() => {
+    const expandedCls = 'admin-queue-expanded'
+    const collapsedCls = 'admin-queue-collapsed'
+    if (!sidebarCollapsed) {
+      document.body.classList.add(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    } else {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.add(collapsedCls)
+    }
+    return () => {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    }
+  }, [sidebarCollapsed])
+
+  useEffect(() => {
+    document.body.classList.add('admin-view-active')
+    return () => document.body.classList.remove('admin-view-active')
+  }, [])
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; target?: string }>).detail
+      if (!detail || detail.target !== 'admin') return
+      if (detail.action === 'toggle-left-panel') {
+        setSidebarCollapsed((v) => !v)
+        return
+      }
+      if (detail.action === 'admin-cancel') {
+        handleCancel()
+        return
+      }
+      if (detail.action === 'admin-save') {
+        if (hasChanges) setShowConfirmSave(true)
+      }
+    }
+    window.addEventListener('shared-toolbar-action', handler as EventListener)
+    return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
+  }, [hasChanges, savedValues, values, title])
+
+  const panelSections = visibleSections.filter((section) => {
+    const q = panelQuery.trim().toLowerCase()
+    if (!q) return true
+    if (section.label.toLowerCase().includes(q)) return true
+    return section.items.some((item) => item.label.toLowerCase().includes(q))
+  })
+  const renderPanelIcon = (sectionId: string) => {
+    if (sectionId === 'user-access') {
+      return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="8" r="3" />
+          <path d="M5 19a7 7 0 0 1 14 0" />
+        </svg>
+      )
+    }
+    if (sectionId === 'incident') {
+      return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 9v4" />
+          <path d="M12 17h.01" />
+          <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+        </svg>
+      )
+    }
+    if (sectionId === 'integrations') {
+      return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M8 7h4a2 2 0 1 1 0 4H9" />
+          <path d="M16 17h-4a2 2 0 1 1 0-4h3" />
+          <line x1="8" y1="12" x2="16" y2="12" />
+        </svg>
+      )
+    }
+    return (
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3h0a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 1 1.5h0a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8v0a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.5 1z" />
+      </svg>
+    )
+  }
+  const adminLeftPanel = (!sidebarCollapsed && queueRoot) ? createPortal(
+    <aside className="admin-left-panel">
+      <div className="queue-search">
+        <input placeholder="Search settings..." value={panelQuery} onChange={(e) => setPanelQuery(e.target.value)} />
+      </div>
+      <div className="queue-header">
+        <button className="queue-collapse-btn" title="Hide Menu" onClick={() => setSidebarCollapsed(true)}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <div className="queue-title">
+          <button className="queue-title-btn" onClick={() => setPanelQuery('')} title="Show all settings sections">
+            <div className="queue-title-text">Admin Settings</div>
+          </button>
         </div>
       </div>
-
-      <div className="admin-tabs">
-        {tabs.map(t => (
-          <button key={t.id} className={`admin-tab ${active === t.id ? 'active' : ''}`} onClick={() => setActive(t.id)}>
-            {t.label}
-          </button>
+      <div className="queue-list">
+        {panelSections.map((section) => (
+          <div
+            key={section.id}
+            className={`queue-item${activeSection === section.id ? ' queue-item-active' : ''}`}
+            onClick={() => handleSelectSection(section.id)}
+          >
+            <div className="queue-avatar">{renderPanelIcon(section.id)}</div>
+            <div className="queue-name">{section.label}</div>
+          </div>
         ))}
       </div>
+    </aside>,
+    queueRoot
+  ) : null
 
-      {roleFilter && (
-        <div className="admin-table admin-users-table">
-          <div className="admin-row admin-head">
-            <div className="admin-col check"><input type="checkbox" /></div>
-            <div className="admin-col name">Full name</div>
-            <div className="admin-col email">Email</div>
-            <div className="admin-col role">Role</div>
-            <div className="admin-col status">Status</div>
-            <div className="admin-col date">Joined date</div>
-            <div className="admin-col twofa">2F Auth</div>
-            <div className="admin-col actions">Actions</div>
-          </div>
-          {users.map((u) => (
-            <div key={u.id} className="admin-row">
-              <div className="admin-col check"><input type="checkbox" /></div>
-              <div className="admin-col name">
-                <div className="user-cell">
-                  <div className="user-avatar">{(u.name || u.email || 'U').split(' ').map(n => n[0]).slice(0,2).join('').toUpperCase()}</div>
-                  <div className="user-name">{u.name || 'Unknown'}</div>
-                </div>
-              </div>
-              <div className="admin-col email">{u.email}</div>
-              <div className="admin-col role">{u.role}</div>
-              <div className="admin-col status">
-                <span className={`user-status ${String(u.status || 'ACTIVE').toLowerCase()}`}>
-                  <span className="status-dot"></span>
-                  {u.status || 'Active'}
+  return (
+    <>
+      {adminLeftPanel}
+      <div className="admin-settings-page">
+      <div className="admin-settings-layout">
+        <main className="admin-settings-main">
+          <div className="admin-settings-main-head">
+            <div>
+              <h2>{title}</h2>
+            </div>
+            {!isQueueManagement && (
+              <div className="admin-settings-head-meta">
+                <span className={`admin-health ${systemHealth.tone}`}>
+                  <i />
+                  System health: {systemHealth.label}
                 </span>
+                <span className="admin-role-pill">Role: {roleBadge}</span>
               </div>
-              <div className="admin-col date">{u.createdAt ? new Date(u.createdAt).toLocaleString() : '-'}</div>
-              <div className="admin-col twofa"><span className="twofa-pill">Enabled</span></div>
-              <div className="admin-col actions">
-                <button className="admin-link-btn" onClick={() => openEdit(u)}>Edit</button>
-                <button className="admin-link-btn danger" onClick={() => handleDelete(u)}>Delete</button>
-              </div>
-            </div>
-          ))}
-          {users.length === 0 && <div className="admin-empty">No users found.</div>}
-        </div>
-      )}
-
-      {active === 'suppliers' && (
-        <div className="admin-table">
-          <div className="admin-row admin-head">
-            <div className="admin-col name">Company</div>
-            <div className="admin-col email">Contact</div>
-            <div className="admin-col role">Email</div>
-            <div className="admin-col actions">Actions</div>
+            )}
           </div>
-          {suppliers.map((s) => (
-            <div key={s.id} className="admin-row">
-              <div className="admin-col name">{s.companyName}</div>
-              <div className="admin-col email">{s.contactName || '-'}</div>
-              <div className="admin-col role">{s.contactEmail || '-'}</div>
-              <div className="admin-col actions">
-                <button className="admin-link-btn" onClick={() => openEdit(s)}>Edit</button>
-                <button className="admin-link-btn danger" onClick={() => handleDelete(s)}>Delete</button>
+
+          {!isQueueManagement && (
+            <div className="admin-settings-toolbar">
+              <div className="admin-settings-inline-search">
+                <input
+                  value={settingsQuery}
+                  onChange={(e) => setSettingsQuery(e.target.value)}
+                  placeholder="Search within selected settings"
+                />
+              </div>
+              <div className="admin-settings-toolbar-actions">
+                <button className={`admin-settings-ghost ${recentOnly ? 'active' : ''}`} onClick={() => setRecentOnly((v) => !v)}>
+                  Recently Modified
+                </button>
+                <button className="admin-settings-ghost" onClick={handleImport}>Import Config</button>
+                <button className="admin-settings-ghost" onClick={handleExport}>Export Config</button>
               </div>
             </div>
-          ))}
-          {suppliers.length === 0 && <div className="admin-empty">No suppliers found.</div>}
-        </div>
-      )}
+          )}
+          {!isQueueManagement && (
+            <div className="admin-settings-topic-strip">
+              <div className="admin-settings-topic-search">
+                <input
+                  value={subSidebarQuery}
+                  onChange={(e) => setSubSidebarQuery(e.target.value)}
+                  placeholder="Search settings topics..."
+                />
+              </div>
+              <div className="admin-settings-topic-items">
+                {subItems.map((item) => (
+                  <button
+                    key={item.id}
+                    className={`admin-left-panel-topic-item ${activeItem === item.id ? 'active' : ''} ${item.requiresAdmin && role !== 'ADMIN' ? 'restricted' : ''}`}
+                    title={item.requiresAdmin && role !== 'ADMIN' ? 'Restricted Access: Administrator role required' : item.label}
+                    disabled={item.requiresAdmin && role !== 'ADMIN'}
+                    onClick={() => setActiveItem(item.id)}
+                  >
+                    <span>{item.label}</span>
+                    <small>
+                      {item.requiresAdmin ? (role === 'ADMIN' ? 'A' : '!') : (settingsTopicPanels[item.id]?.reduce((sum, p) => sum + p.fields.length, 0) || 0)}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {active === 'sla' && (
-        <div className="admin-table">
-          <div className="admin-row admin-head">
-            <div className="admin-col name">Name</div>
-            <div className="admin-col email">Priority</div>
-            <div className="admin-col role">Response/Resolution</div>
-            <div className="admin-col actions">Actions</div>
+          <div className="admin-settings-grid">
+            {activeItem === 'queue-management' && (
+              <section className="admin-settings-card">
+                <h3>Queue Management</h3>
+                <p>Configure and control left-panel lists for Tickets, Users, Assets, and Suppliers.</p>
+                <div className="admin-settings-toolbar-actions">
+                  {(['ticketsMyLists', 'users', 'assets', 'suppliers'] as const).map((key) => (
+                    <button
+                      key={key}
+                      className={`admin-settings-ghost ${queuePanelKey === key ? 'active' : ''}`}
+                      onClick={() => setQueuePanelKey(key)}
+                    >
+                      {queuePanelLabels[key]}
+                    </button>
+                  ))}
+                </div>
+                <div className="admin-settings-toolbar-actions">
+                  <button className="admin-settings-primary" onClick={handleQueueAdd}>Add New Queue</button>
+                  <button className="admin-settings-ghost" onClick={handleQueueEdit}>Edit Queue</button>
+                  <button className="admin-settings-danger" onClick={handleQueueDelete}>Delete Queue</button>
+                  <button className="admin-settings-ghost" onClick={handleQueueConfigReset}>Reset Defaults</button>
+                </div>
+                <div className="admin-queue-rules-plain">
+                  <h3>{queuePanelLabels[queuePanelKey]} Queues</h3>
+                  {queueRules.length === 0 && <p>No queues configured.</p>}
+                  {queueRules.map((rule) => (
+                    <div key={rule.id} className="admin-queue-rule-row">
+                      <span>{rule.label}</span>
+                      <small>{rule.field} = {rule.value}</small>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+            {topicPanels.map((panel) => {
+              const panelFields = panel.fields
+                .map((field) => renderField(field))
+                .filter(Boolean)
+              if (panelFields.length === 0) return null
+              return (
+                <section key={panel.id} className="admin-settings-card">
+                  <h3>{panel.title}</h3>
+                  <p>{panel.description}</p>
+                  {panelFields}
+                </section>
+              )
+            })}
+
+            {!isQueueManagement && (
+              <section className="admin-settings-card danger-zone">
+                <h3>Danger Zone</h3>
+                <p>Destructive actions require explicit confirmation and are logged for compliance.</p>
+                <div className="admin-danger-actions">
+                  <button className="admin-settings-danger" onClick={() => setShowConfirmReset(true)}>
+                    Reset this setting to defaults
+                  </button>
+                  <button
+                    className="admin-settings-danger"
+                    onClick={() => setShowConfirmRevoke(true)}
+                    disabled={isRestrictedRole}
+                    title={isRestrictedRole ? 'Restricted Access: Administrator role required' : 'Revoke API keys'}
+                  >
+                    Revoke all active API keys
+                  </button>
+                </div>
+              </section>
+            )}
           </div>
-          {slaConfigs.map((s) => (
-            <div key={s.id} className="admin-row">
-              <div className="admin-col name">{s.name}</div>
-              <div className="admin-col email">{s.priority}</div>
-              <div className="admin-col role">{s.responseTimeMin}m / {s.resolutionTimeMin}m</div>
-              <div className="admin-col actions">
-                <button className="admin-link-btn" onClick={() => openEdit(s)}>Edit</button>
-                <button className="admin-link-btn danger" onClick={() => handleDelete(s)}>Delete</button>
-              </div>
-            </div>
-          ))}
-          {slaConfigs.length === 0 && <div className="admin-empty">No SLA configs found.</div>}
-        </div>
-      )}
+        </main>
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{editing ? 'Edit' : 'New'}</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              {active === 'suppliers' && (
-                <>
-                  <div className="form-section">
-                    <label className="form-label">Company Name *</label>
-                    <input className="form-input" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} />
-                  </div>
-                  <div className="form-section">
-                    <label className="form-label">Contact Name</label>
-                    <input className="form-input" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
-                  </div>
-                  <div className="form-section">
-                    <label className="form-label">Contact Email</label>
-                    <input className="form-input" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} />
-                  </div>
-                  <div className="form-section">
-                    <label className="form-label">SLA Terms</label>
-                    <input className="form-input" value={form.slaTerms} onChange={(e) => setForm({ ...form, slaTerms: e.target.value })} />
-                  </div>
-                </>
-              )}
+      </div>
 
-              {active === 'sla' && (
-                <>
-                  <div className="form-section">
-                    <label className="form-label">Name *</label>
-                    <input className="form-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Priority *</label>
-                      <select className="form-select" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                        <option>Low</option>
-                        <option>Medium</option>
-                        <option>High</option>
-                      </select>
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Business Hours</label>
-                      <select className="form-select" value={form.businessHours ? 'yes' : 'no'} onChange={(e) => setForm({ ...form, businessHours: e.target.value === 'yes' })}>
-                        <option value="no">No</option>
-                        <option value="yes">Yes</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Response Time (min)</label>
-                      <input className="form-input" type="number" value={form.responseTimeMin} onChange={(e) => setForm({ ...form, responseTimeMin: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Resolution Time (min)</label>
-                      <input className="form-input" type="number" value={form.resolutionTimeMin} onChange={(e) => setForm({ ...form, resolutionTimeMin: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-section">
-                    <label className="form-label">Active</label>
-                    <select className="form-select" value={form.active ? 'yes' : 'no'} onChange={(e) => setForm({ ...form, active: e.target.value === 'yes' })}>
-                      <option value="yes">Yes</option>
-                      <option value="no">No</option>
-                    </select>
-                  </div>
-                </>
-              )}
-
-              {roleFilter && (
-                <>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Name</label>
-                      <input className="form-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Email *</label>
-                      <input className="form-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Password {editing ? '(leave blank to keep)' : '*'}</label>
-                      <input className="form-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Role</label>
-                      <select className="form-select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-                        <option value="ADMIN">ADMIN</option>
-                        <option value="AGENT">AGENT</option>
-                        <option value="USER">USER</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Phone</label>
-                      <input className="form-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Client</label>
-                      <input className="form-input" value={form.client} onChange={(e) => setForm({ ...form, client: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Site</label>
-                      <input className="form-input" value={form.site} onChange={(e) => setForm({ ...form, site: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Reporting Manager</label>
-                      <input className="form-input" value={form.accountManager} onChange={(e) => setForm({ ...form, accountManager: e.target.value })} />
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn-cancel" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn-submit" disabled={isSaving} onClick={handleSave}>
-                {isSaving ? 'Saving...' : 'Save'}
-              </button>
+      {showConfirmSave && (
+        <div className="admin-settings-modal-backdrop" onClick={() => setShowConfirmSave(false)}>
+          <div className="admin-settings-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Save configuration changes</h4>
+            <p>Confirm applying updates to {title}. This action will be tracked in audit history.</p>
+            <div className="admin-settings-modal-actions">
+              <button className="admin-settings-ghost" onClick={() => setShowConfirmSave(false)}>Cancel</button>
+              <button className="admin-settings-primary" onClick={handleSave}>Save Changes</button>
             </div>
           </div>
         </div>
       )}
-    </div>
+
+      {showConfirmReset && (
+        <div className="admin-settings-modal-backdrop" onClick={() => setShowConfirmReset(false)}>
+          <div className="admin-settings-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Confirm reset</h4>
+            <p>This will reset current settings to default values for {title}. Continue?</p>
+            <div className="admin-settings-modal-actions">
+              <button className="admin-settings-ghost" onClick={() => setShowConfirmReset(false)}>Cancel</button>
+              <button className="admin-settings-danger" onClick={confirmReset}>Confirm Reset</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmRevoke && (
+        <div className="admin-settings-modal-backdrop" onClick={() => setShowConfirmRevoke(false)}>
+          <div className="admin-settings-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Revoke API keys</h4>
+            <p>All currently active integration keys will be revoked immediately. Continue?</p>
+            <div className="admin-settings-modal-actions">
+              <button className="admin-settings-ghost" onClick={() => setShowConfirmRevoke(false)}>Cancel</button>
+              <button className="admin-settings-danger" onClick={confirmRevoke}>Revoke Keys</button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+    </>
   )
 }
+
+

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import * as assetService from '../services/asset.service'
 import * as userService from '../services/user.service'
 import * as ticketService from '../services/ticket.service'
@@ -6,6 +7,9 @@ import * as changeService from '../services/change.service'
 import * as problemService from '../services/problem.service'
 import * as serviceService from '../services/service.service'
 import { useAuth } from '../contexts/AuthContext'
+import { useColumnResize } from '../hooks/useColumnResize'
+import { getRowsPerPage } from '../utils/pagination'
+import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
 
 type Asset = {
   id: number
@@ -93,14 +97,33 @@ const tabs = [
   { id: 'hardware', label: 'Hardware' },
   { id: 'software', label: 'OS & Software' },
   { id: 'financial', label: 'Financial' },
-  { id: 'lifecycle', label: 'Lifecycle' },
-  { id: 'compliance', label: 'Compliance' },
   { id: 'relationships', label: 'Relationships' },
   { id: 'notes', label: 'Notes' },
 ]
 
-export default function AssetsView() {
+type PaginationMeta = {
+  page: number
+  totalPages: number
+  totalRows: number
+  rangeStart: number
+  rangeEnd: number
+}
+
+type AssetsViewProps = {
+  toolbarSearch?: string
+  controlledPage?: number
+  onPageChange?: (nextPage: number) => void
+  onPaginationMetaChange?: (meta: PaginationMeta) => void
+}
+
+export default function AssetsView({
+  toolbarSearch = '',
+  controlledPage,
+  onPageChange,
+  onPaginationMetaChange,
+}: AssetsViewProps) {
   const { user } = useAuth()
+  const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
   const [assets, setAssets] = useState<Asset[]>([])
   const [assetsAll, setAssetsAll] = useState<Asset[]>([])
   const [users, setUsers] = useState<{ id: number; name: string; email: string }[]>([])
@@ -108,19 +131,54 @@ export default function AssetsView() {
   const [changes, setChanges] = useState<any[]>([])
   const [problems, setProblems] = useState<any[]>([])
   const [services, setServices] = useState<any[]>([])
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(toolbarSearch)
   const [showModal, setShowModal] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [editing, setEditing] = useState<Asset | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
   const [activeTab, setActiveTab] = useState('identification')
-  const [page, setPage] = useState(1)
-  const [pageSize] = useState(10)
+  const [showFilters, setShowFilters] = useState(false)
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth <= 1100
+  })
+  const [panelRules, setPanelRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().assets)
+  const [assetQueueView, setAssetQueueView] = useState<'assetType' | 'assetGroup' | 'ownership' | 'allAssets'>('assetGroup')
+  const [showAssetViewSelector, setShowAssetViewSelector] = useState(false)
+  const [assetQueueFilter, setAssetQueueFilter] = useState<{ type: 'all' | 'rule' | 'assetType' | 'assetGroup'; value?: string }>({ type: 'all' })
+  const [expandedAssetGroups, setExpandedAssetGroups] = useState<string[]>(['Computing', 'Mobile', 'Configuration Items'])
+  const [filters, setFilters] = useState({
+    name: '',
+    serial: '',
+    category: '',
+    status: '',
+    model: '',
+    assigned: '',
+    purchase: '',
+  })
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const { widths: columnWidths, startResize } = useColumnResize({
+    initialWidths: [30, 300, 150, 170, 140, 150, 190, 140, 130],
+    minWidth: 0,
+  })
+  const columnTemplate = columnWidths.map((w) => `${w}px`).join(' ')
+  const [internalPage, setInternalPage] = useState(1)
+  const rowsPerPage = getRowsPerPage()
   const [total, setTotal] = useState(0)
+  const currentPage = controlledPage ?? internalPage
+  const setPage = (next: number | ((prev: number) => number)) => {
+    const resolved = typeof next === 'function' ? next(currentPage) : next
+    if (typeof controlledPage === 'number') {
+      onPageChange?.(resolved)
+      return
+    }
+    setInternalPage(resolved)
+  }
+  const totalPages = Math.max(1, Math.ceil(total / rowsPerPage))
 
   const loadAssets = async () => {
     try {
-      const data = await assetService.listAssets({ page, pageSize, q: search })
+      const data = await assetService.listAssets({ page: currentPage, pageSize: rowsPerPage, q: search })
       const items = Array.isArray(data) ? data : (data?.items || [])
       setAssets(items)
       setAssetsAll(items)
@@ -132,7 +190,83 @@ export default function AssetsView() {
 
   useEffect(() => {
     loadAssets()
-  }, [page, search])
+  }, [currentPage, search])
+
+  useEffect(() => {
+    setSearch(toolbarSearch)
+  }, [toolbarSearch])
+
+  useEffect(() => {
+    const expandedCls = 'assets-queue-expanded'
+    const collapsedCls = 'assets-queue-collapsed'
+    if (!leftPanelCollapsed) {
+      document.body.classList.add(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    } else {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.add(collapsedCls)
+    }
+    return () => {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    }
+  }, [leftPanelCollapsed])
+
+  useEffect(() => {
+    document.body.classList.add('assets-view-active')
+    return () => document.body.classList.remove('assets-view-active')
+  }, [])
+  useEffect(() => {
+    const handler = () => setPanelRules(loadLeftPanelConfig().assets)
+    window.addEventListener('left-panel-config-updated', handler as EventListener)
+    return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
+  }, [])
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; target?: string }>).detail
+      if (!detail || detail.target !== 'assets') return
+      if (detail.action === 'new') {
+        setEditing(null)
+        setForm({ ...emptyForm })
+        setShowModal(true)
+      }
+      if (detail.action === 'filter') {
+        setShowFilters((v) => !v)
+      }
+    }
+    window.addEventListener('shared-toolbar-action', handler as EventListener)
+    return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
+  }, [])
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; target?: string }>).detail
+      if (!detail || detail.target !== 'assets') return
+      if (detail.action === 'toggle-left-panel') {
+        setLeftPanelCollapsed((v) => !v)
+      }
+    }
+    window.addEventListener('shared-toolbar-action', handler as EventListener)
+    return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
+  }, [])
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setPage(totalPages)
+    }
+  }, [currentPage, totalPages])
+
+  useEffect(() => {
+    const rangeStart = total === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1
+    const rangeEnd = Math.min(currentPage * rowsPerPage, total)
+    onPaginationMetaChange?.({
+      page: currentPage,
+      totalPages,
+      totalRows: total,
+      rangeStart,
+      rangeEnd,
+    })
+  }, [currentPage, total, rowsPerPage, totalPages, onPaginationMetaChange])
 
   const loadUsers = async (q = '') => {
     try {
@@ -162,7 +296,63 @@ export default function AssetsView() {
     } catch {}
   }
 
-  const filtered = useMemo(() => assets, [assets])
+  const normalizeKey = (value: string) => String(value || '').trim().toLowerCase()
+  const getAssetType = (asset: Asset) => String(asset.assetType || asset.category || 'Unknown').trim()
+  const assetGroupMap: Record<string, string[]> = {
+    Computing: ['Laptop', 'Workstation'],
+    Mobile: ['Mobile Phone', 'Tablet'],
+    Peripherals: ['Monitor', 'Printer'],
+    'Configuration Items': ['Application Server', 'Business Application', 'Database Server', 'Server', 'Virtual Server'],
+    'Other Devices': ['Other Devices'],
+    'Network Equipment': ['Router'],
+  }
+
+  const filtered = useMemo(() => {
+    const match = (value: string | undefined | null, q: string) =>
+      String(value || '').toLowerCase().includes(q.toLowerCase())
+    return assets.filter((asset) => {
+      if (assetQueueFilter.type === 'assetType') {
+        if (normalizeKey(getAssetType(asset)) !== normalizeKey(String(assetQueueFilter.value || ''))) return false
+      } else if (assetQueueFilter.type === 'assetGroup') {
+        const groupTypes = assetGroupMap[String(assetQueueFilter.value || '')] || []
+        if (!groupTypes.some((t) => normalizeKey(t) === normalizeKey(getAssetType(asset)))) return false
+      } else if (assetQueueFilter.type === 'rule') {
+        const rule = panelRules.find((r) => r.id === assetQueueFilter.value)
+        if (rule) {
+          const normalizedStatus = String(asset.status || '').toLowerCase()
+          if (rule.field === 'assigned' && rule.value === 'unassigned' && (asset.assignedTo || asset.assignedToId)) return false
+          if (rule.field === 'assigned' && rule.value === 'assigned' && !(asset.assignedTo || asset.assignedToId)) return false
+          if (rule.field === 'status' && normalizedStatus !== String(rule.value || '').toLowerCase()) return false
+          if (rule.field === 'category' && String(asset.category || '').toLowerCase() !== String(rule.value || '').toLowerCase()) return false
+          if (rule.field === 'status' && String(rule.value || '').toLowerCase() === 'all') {
+            // No-op for explicit all status rules.
+          }
+        }
+      }
+      if (filters.name && !match(`${asset.name} ${asset.assetId || ''}`, filters.name)) return false
+      if (filters.serial && !match(asset.serial, filters.serial)) return false
+      if (filters.category && !match(asset.category, filters.category)) return false
+      if (filters.status && !match(asset.status, filters.status)) return false
+      if (filters.model && !match(asset.model, filters.model)) return false
+      if (filters.assigned) {
+        const assigned = asset.assignedTo ? (asset.assignedTo.name || asset.assignedTo.email) : (asset.assignedToId ? `User #${asset.assignedToId}` : 'Unassigned')
+        if (!match(assigned, filters.assigned)) return false
+      }
+      if (filters.purchase && !match(asset.purchaseDate ? asset.purchaseDate.slice(0, 10) : '', filters.purchase)) return false
+      return true
+    })
+  }, [assets, assetQueueFilter, filters, panelRules])
+  const allSelected = filtered.length > 0 && filtered.every((a) => selectedIds.includes(a.id))
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !filtered.some((a) => a.id === id)))
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...filtered.map((a) => a.id)])))
+    }
+  }
+  const toggleSelectOne = (id: number) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
   const assetVisuals = useMemo(() => {
     const totalCount = assets.length
     const inUse = assets.filter((a) => String(a.status || '').toLowerCase() === 'in use').length
@@ -322,9 +512,239 @@ export default function AssetsView() {
     }
   }
 
+  const countForRule = (rule: QueueRule) => {
+    if (rule.field === 'assigned' && rule.value === 'assigned') return assets.filter((a) => Boolean(a.assignedTo || a.assignedToId)).length
+    if (rule.field === 'assigned' && rule.value === 'unassigned') return assets.filter((a) => !a.assignedTo && !a.assignedToId).length
+    if (rule.field === 'status' && String(rule.value || '').toLowerCase() === 'all') return assets.length
+    if (rule.field === 'status') return assets.filter((a) => String(a.status || '').toLowerCase() === String(rule.value || '').toLowerCase()).length
+    if (rule.field === 'category') return assets.filter((a) => String(a.category || '').toLowerCase() === String(rule.value || '').toLowerCase()).length
+    return 0
+  }
+  const assetTypes = [
+    'Application Server',
+    'Business Application',
+    'Database Server',
+    'Laptop',
+    'Mobile Phone',
+    'Monitor',
+    'Other Devices',
+    'Printer',
+    'Router',
+    'Server',
+    'Tablet',
+    'Virtual Server',
+    'Workstation',
+  ]
+  const countByType = (type: string) => assets.filter((a) => normalizeKey(getAssetType(a)) === normalizeKey(type)).length
+  const countByGroup = (group: string) => {
+    const types = assetGroupMap[group] || []
+    return assets.filter((a) => types.some((t) => normalizeKey(t) === normalizeKey(getAssetType(a)))).length
+  }
+  const renderAssetTypeIcon = (type: string) => {
+    const key = normalizeKey(type)
+    const common = { width: 13, height: 13, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
+    if (key.includes('server') || key.includes('database')) {
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="16" height="6" rx="1.5" />
+          <rect x="4" y="14" width="16" height="6" rx="1.5" />
+          <circle cx="8" cy="7" r="0.8" fill="currentColor" />
+          <circle cx="8" cy="17" r="0.8" fill="currentColor" />
+        </svg>
+      )
+    }
+    if (key.includes('laptop') || key.includes('workstation')) {
+      return (
+        <svg {...common}>
+          <rect x="5" y="5" width="14" height="10" rx="1.5" />
+          <path d="M3 19h18" />
+        </svg>
+      )
+    }
+    if (key.includes('mobile') || key.includes('tablet')) {
+      return (
+        <svg {...common}>
+          <rect x="8" y="3" width="8" height="18" rx="2" />
+          <circle cx="12" cy="17.5" r="0.8" fill="currentColor" />
+        </svg>
+      )
+    }
+    if (key.includes('monitor')) {
+      return (
+        <svg {...common}>
+          <rect x="4" y="5" width="16" height="11" rx="1.5" />
+          <path d="M10 19h4" />
+        </svg>
+      )
+    }
+    if (key.includes('printer')) {
+      return (
+        <svg {...common}>
+          <rect x="7" y="3" width="10" height="5" rx="1" />
+          <rect x="5" y="9" width="14" height="8" rx="1.5" />
+          <rect x="8" y="14" width="8" height="6" rx="1" />
+        </svg>
+      )
+    }
+    if (key.includes('router')) {
+      return (
+        <svg {...common}>
+          <rect x="4" y="12" width="16" height="6" rx="2" />
+          <path d="M9 12a3 3 0 0 1 6 0" />
+          <circle cx="9" cy="15" r="0.8" fill="currentColor" />
+          <circle cx="12" cy="15" r="0.8" fill="currentColor" />
+          <circle cx="15" cy="15" r="0.8" fill="currentColor" />
+        </svg>
+      )
+    }
+    if (key.includes('application') || key.includes('business')) {
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="16" height="16" rx="2" />
+          <path d="M8 8h8M8 12h8M8 16h5" />
+        </svg>
+      )
+    }
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="8" />
+        <path d="M12 8v8M8 12h8" />
+      </svg>
+    )
+  }
+  const assetQueueViews = [
+    { key: 'assetType', label: 'Assets by Asset Type', icon: '💻' },
+    { key: 'assetGroup', label: 'Assets by Asset Group', icon: '📁' },
+    { key: 'ownership', label: 'Assets by Ownership', icon: '▦' },
+    { key: 'allAssets', label: 'All Assets', icon: '⌕' },
+  ] as const
+  const currentAssetQueue = assetQueueViews.find((v) => v.key === assetQueueView) || assetQueueViews[0]
+  const assetLeftPanel = (!leftPanelCollapsed && queueRoot) ? createPortal(
+    <aside className="asset-left-panel">
+      <div className="queue-header">
+        <div className="queue-title-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+          </svg>
+        </div>
+        <div className="queue-title">
+          <div className="queue-title-top">
+            <button className="queue-title-btn" onClick={() => setShowAssetViewSelector(true)} title="Select asset view">
+              <div className="queue-title-text">{currentAssetQueue.label}</div>
+            </button>
+            <button className="queue-edit-btn" onClick={() => setShowAssetViewSelector(true)} title="Change asset queue view">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button className="queue-collapse-btn" title="Hide Menu" onClick={() => setLeftPanelCollapsed(true)}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="13 18 7 12 13 6" />
+            <polyline points="19 18 13 12 19 6" />
+          </svg>
+        </button>
+      </div>
+      <div className="queue-list">
+        {showAssetViewSelector ? (
+          <>
+            {assetQueueViews.map((view) => (
+              <div
+                key={view.key}
+                className={`queue-item${assetQueueView === view.key ? ' queue-item-active' : ''}`}
+                onClick={() => {
+                  setAssetQueueView(view.key)
+                  setAssetQueueFilter({ type: 'all' })
+                  setShowAssetViewSelector(false)
+                }}
+              >
+                <div className="queue-avatar">{view.icon}</div>
+                <div className="queue-name">{view.label}</div>
+              </div>
+            ))}
+          </>
+        ) : assetQueueView === 'assetType' ? (
+          <>
+            {assetTypes.map((type) => (
+              <div
+                key={type}
+                className={`queue-item${assetQueueFilter.type === 'assetType' && assetQueueFilter.value === type ? ' queue-item-active' : ''}`}
+                onClick={() => setAssetQueueFilter((prev) => prev.type === 'assetType' && prev.value === type ? { type: 'all' } : { type: 'assetType', value: type })}
+              >
+                <div className="queue-avatar">{renderAssetTypeIcon(type)}</div>
+                <div className="queue-name">{type}</div>
+                <div className="queue-count">{countByType(type)}</div>
+              </div>
+            ))}
+          </>
+        ) : assetQueueView === 'assetGroup' ? (
+          <>
+            {Object.entries(assetGroupMap).map(([group, types]) => {
+              const expanded = expandedAssetGroups.includes(group)
+              return (
+                <React.Fragment key={group}>
+                  <div
+                    className={`queue-item queue-item-group${assetQueueFilter.type === 'assetGroup' && assetQueueFilter.value === group ? ' queue-item-active' : ''}`}
+                    onClick={() => {
+                      setExpandedAssetGroups((prev) => prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group])
+                      setAssetQueueFilter((prev) => prev.type === 'assetGroup' && prev.value === group ? { type: 'all' } : { type: 'assetGroup', value: group })
+                    }}
+                  >
+                    <div className="queue-avatar">{expanded ? '▼' : '▶'}</div>
+                    <div className="queue-name">{group}</div>
+                    <div className="queue-count">{countByGroup(group)}</div>
+                  </div>
+                  {expanded && types.map((type) => (
+                    <div
+                      key={`${group}-${type}`}
+                      className={`queue-item queue-item-child${assetQueueFilter.type === 'assetType' && assetQueueFilter.value === type ? ' queue-item-active' : ''}`}
+                      onClick={() => setAssetQueueFilter((prev) => prev.type === 'assetType' && prev.value === type ? { type: 'all' } : { type: 'assetType', value: type })}
+                    >
+                      <div className="queue-avatar">{renderAssetTypeIcon(type)}</div>
+                      <div className="queue-name">{type}</div>
+                      <div className="queue-count">{countByType(type)}</div>
+                    </div>
+                  ))}
+                </React.Fragment>
+              )
+            })}
+          </>
+        ) : assetQueueView === 'ownership' ? (
+          <>
+            {panelRules.filter((rule) => rule.field === 'assigned').map((rule) => (
+              <div
+                key={rule.id}
+                className={`queue-item${assetQueueFilter.type === 'rule' && assetQueueFilter.value === rule.id ? ' queue-item-active' : ''}`}
+                onClick={() => setAssetQueueFilter((prev) => prev.type === 'rule' && prev.value === rule.id ? { type: 'all' } : { type: 'rule', value: rule.id })}
+              >
+                <div className="queue-avatar">{rule.label.trim()[0]?.toUpperCase() || 'A'}</div>
+                <div className="queue-name">{rule.label}</div>
+                <div className="queue-count">{countForRule(rule)}</div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div
+            className={`queue-item${assetQueueFilter.type === 'all' ? ' queue-item-active' : ''}`}
+            onClick={() => setAssetQueueFilter({ type: 'all' })}
+          >
+            <div className="queue-avatar">{currentAssetQueue.icon}</div>
+            <div className="queue-name">All Assets</div>
+            <div className="queue-count">{assets.length}</div>
+          </div>
+        )}
+      </div>
+    </aside>,
+    queueRoot
+  ) : null
+
   return (
-    <div className="assets-view">
-      <div className="assets-header">
+    <>
+      {assetLeftPanel}
+      <div className="assets-view">
+        <div className="assets-header">
         <div className="assets-title">
           <h2>Assets</h2>
           <p>Track hardware and lifecycle status</p>
@@ -339,74 +759,115 @@ export default function AssetsView() {
               setPage(1)
             }}
           />
+          <button className="assets-icon-btn" title="Filter" onClick={() => setShowFilters((v) => !v)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+          </button>
           <button className="assets-primary-btn" onClick={openCreate}>+ New Asset</button>
         </div>
       </div>
-      <div className="visuals-row assets-visuals">
-        <div className="visual-card">
-          <div className="visual-title">Lifecycle Mix</div>
-          <div className="donut">
-            <svg viewBox="0 0 90 90" role="img" aria-label="Asset lifecycle mix">
-              <circle cx="45" cy="45" r="32" stroke="#e5e7eb" strokeWidth="12" fill="none" />
-              {buildDonutSegments([
-                { value: assetVisuals.inUse, color: '#22c55e' },
-                { value: assetVisuals.available, color: '#60a5fa' },
-                { value: assetVisuals.retired, color: '#f97316' },
-              ]).map((seg, idx) => (
-                <circle
-                  key={`asset-${idx}`}
-                  cx="45"
-                  cy="45"
-                  r="32"
-                  stroke={seg.color}
-                  strokeWidth="12"
-                  fill="none"
-                  strokeDasharray={seg.dasharray}
-                  strokeDashoffset={seg.dashoffset}
-                  strokeLinecap="round"
-                />
-              ))}
-            </svg>
-          </div>
-          <div className="visual-kpis">
-            <span>In Use: {assetVisuals.inUse}</span>
-            <span>Available: {assetVisuals.available}</span>
-            <span>Retired: {assetVisuals.retired}</span>
-          </div>
-        </div>
-        <div className="visual-card">
-          <div className="visual-title">Top Categories</div>
-          <div className="mini-barlist">
-            {assetVisuals.topCategories.map(([k, v]) => {
-              const w = Math.min(100, (v / Math.max(1, assetVisuals.totalCount)) * 100)
-              return (
-                <div key={k} className="mini-bar-row">
-                  <span>{k}</span>
-                  <div className="mini-bar-track">
-                    <div className="mini-bar-fill medium" style={{ width: `${w}%` }} />
-                  </div>
-                  <strong>{v}</strong>
-                </div>
-              )
-            })}
-            {assetVisuals.topCategories.length === 0 && <div className="users-empty">No data</div>}
-          </div>
-        </div>
-      </div>
-
       <div className="assets-table">
-        <div className="assets-row assets-head">
-          <div className="assets-col name">Asset</div>
-          <div className="assets-col serial">Serial</div>
-          <div className="assets-col category">Category</div>
-          <div className="assets-col status">Status</div>
-          <div className="assets-col supplier">Model</div>
-          <div className="assets-col assigned">Assigned To</div>
-          <div className="assets-col date">Purchase</div>
-          <div className="assets-col actions">Actions</div>
+        <div className="assets-row assets-head" style={{ gridTemplateColumns: columnTemplate }}>
+          <div className="assets-col check">
+            <input type="checkbox" aria-label="Select all assets" checked={allSelected} onChange={toggleSelectAll} />
+          </div>
+          <div className="assets-col name">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(1, e)} />
+            Asset
+          </div>
+          <div className="assets-col serial">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(2, e)} />
+            Serial
+          </div>
+          <div className="assets-col category">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(3, e)} />
+            Category
+          </div>
+          <div className="assets-col status">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(4, e)} />
+            Status
+          </div>
+          <div className="assets-col supplier">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(5, e)} />
+            Model
+          </div>
+          <div className="assets-col assigned">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(6, e)} />
+            Assigned To
+          </div>
+          <div className="assets-col date">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(7, e)} />
+            Purchase
+          </div>
+          <div className="assets-col actions">
+            <span className="col-resize-handle" onMouseDown={(e) => startResize(8, e)} />
+            Actions
+          </div>
         </div>
+        {showFilters && (
+          <div className="assets-row assets-filters" style={{ gridTemplateColumns: columnTemplate }}>
+            <div className="assets-col check">
+              <button
+                className="filter-clear-btn"
+                onClick={() => {
+                  setFilters({
+                    name: '',
+                    serial: '',
+                    category: '',
+                    status: '',
+                    model: '',
+                    assigned: '',
+                    purchase: '',
+                  })
+                  setShowFilters(false)
+                }}
+                title="Clear filters"
+                aria-label="Clear filters"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="assets-col name">
+              <input className="table-filter-input" value={filters.name} onChange={(e) => setFilters({ ...filters, name: e.target.value })} />
+            </div>
+            <div className="assets-col serial">
+              <input className="table-filter-input" value={filters.serial} onChange={(e) => setFilters({ ...filters, serial: e.target.value })} />
+            </div>
+            <div className="assets-col category">
+              <input className="table-filter-input" value={filters.category} onChange={(e) => setFilters({ ...filters, category: e.target.value })} />
+            </div>
+            <div className="assets-col status">
+              <input className="table-filter-input" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} />
+            </div>
+            <div className="assets-col supplier">
+              <input className="table-filter-input" value={filters.model} onChange={(e) => setFilters({ ...filters, model: e.target.value })} />
+            </div>
+            <div className="assets-col assigned">
+              <input className="table-filter-input" value={filters.assigned} onChange={(e) => setFilters({ ...filters, assigned: e.target.value })} />
+            </div>
+            <div className="assets-col date">
+              <input className="table-filter-input" value={filters.purchase} onChange={(e) => setFilters({ ...filters, purchase: e.target.value })} />
+            </div>
+            <div className="assets-col actions" />
+          </div>
+        )}
         {filtered.map((asset) => (
-          <div key={asset.id} className="assets-row">
+          <div
+            key={asset.id}
+            className="assets-row"
+            style={{ gridTemplateColumns: columnTemplate }}
+          >
+            <div className="assets-col check">
+              <input
+                type="checkbox"
+                aria-label={`Select ${asset.name}`}
+                checked={selectedIds.includes(asset.id)}
+                onChange={() => toggleSelectOne(asset.id)}
+              />
+            </div>
             <div className="assets-col name">
               <div style={{ fontWeight: 700 }}>{asset.name}</div>
               <div style={{ fontSize: 12, color: '#6b7280' }}>{asset.assetId || '-'}</div>
@@ -432,22 +893,9 @@ export default function AssetsView() {
         {filtered.length === 0 && (
           <div className="assets-empty">No assets found.</div>
         )}
-        {filtered.length > 0 && (
-          <div className="assets-pagination">
-            <button className="assets-page-btn" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
-            <span>Page {page}</span>
-            <button
-              className="assets-page-btn"
-              disabled={page * pageSize >= total}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </button>
-          </div>
-        )}
       </div>
 
-      {showModal && (
+        {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal-content asset-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -717,85 +1165,6 @@ export default function AssetsView() {
                 </>
               )}
 
-              {activeTab === 'lifecycle' && (
-                <>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Lifecycle Stage</label>
-                      <input className="form-input" value={form.lifecycleStage} onChange={(e) => setForm({ ...form, lifecycleStage: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Condition</label>
-                      <input className="form-input" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Deployment Date</label>
-                      <input className="form-input" type="date" value={form.deploymentDate} onChange={(e) => setForm({ ...form, deploymentDate: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Last Audit Date</label>
-                      <input className="form-input" type="date" value={form.lastAuditDate} onChange={(e) => setForm({ ...form, lastAuditDate: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">End-of-Life</label>
-                      <input className="form-input" type="date" value={form.endOfLife} onChange={(e) => setForm({ ...form, endOfLife: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Disposal Date</label>
-                      <input className="form-input" type="date" value={form.disposalDate} onChange={(e) => setForm({ ...form, disposalDate: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Disposal Method</label>
-                      <input className="form-input" value={form.disposalMethod} onChange={(e) => setForm({ ...form, disposalMethod: e.target.value })} />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {activeTab === 'compliance' && (
-                <>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Security Classification</label>
-                      <input className="form-input" value={form.securityClassification} onChange={(e) => setForm({ ...form, securityClassification: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Data Sensitivity</label>
-                      <input className="form-input" value={form.dataSensitivity} onChange={(e) => setForm({ ...form, dataSensitivity: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">MDM Enrolled</label>
-                      <select className="form-select" value={form.mdmEnrolled} onChange={(e) => setForm({ ...form, mdmEnrolled: e.target.value })}>
-                        <option value="no">No</option>
-                        <option value="yes">Yes</option>
-                      </select>
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Compliance Status</label>
-                      <input className="form-input" value={form.complianceStatus} onChange={(e) => setForm({ ...form, complianceStatus: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Risk Level</label>
-                      <input className="form-input" value={form.riskLevel} onChange={(e) => setForm({ ...form, riskLevel: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Last Security Scan</label>
-                      <input className="form-input" type="date" value={form.lastSecurityScan} onChange={(e) => setForm({ ...form, lastSecurityScan: e.target.value })} />
-                    </div>
-                  </div>
-                </>
-              )}
-
               {activeTab === 'relationships' && (
                 <>
                   <div className="form-section">
@@ -859,7 +1228,13 @@ export default function AssetsView() {
             </div>
           </div>
         </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   )
 }
+
+
+
+
+

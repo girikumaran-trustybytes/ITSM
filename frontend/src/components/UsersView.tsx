@@ -1,5 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import * as userService from '../services/user.service'
+import { useColumnResize } from '../hooks/useColumnResize'
+import { getRowsPerPage } from '../utils/pagination'
+import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
 
 type UserRow = {
   id: number
@@ -36,17 +40,60 @@ function formatDate(value?: string) {
   return d.toLocaleString()
 }
 
-export default function UsersView() {
+type UsersPaginationMeta = {
+  page: number
+  totalPages: number
+  totalRows: number
+  rangeStart: number
+  rangeEnd: number
+}
+
+type UsersViewProps = {
+  toolbarSearch?: string
+  controlledPage?: number
+  onPageChange?: (nextPage: number) => void
+  onPaginationMetaChange?: (meta: UsersPaginationMeta) => void
+}
+
+export default function UsersView({
+  toolbarSearch = '',
+  controlledPage,
+  onPageChange,
+  onPaginationMetaChange,
+}: UsersViewProps) {
+  const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
   const [activeView, setActiveView] = useState<typeof viewTabs[number]>('Table')
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(toolbarSearch)
   const [users, setUsers] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [editingUser, setEditingUser] = useState<UserRow | null>(null)
-  const [page, setPage] = useState(1)
-  const rowsPerPage = 50
+  const [internalPage, setInternalPage] = useState(1)
+  const rowsPerPage = getRowsPerPage()
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth <= 1100
+  })
+  const [panelRules, setPanelRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().users)
+  const [userQueueView, setUserQueueView] = useState<'allUsers' | 'byProject'>('allUsers')
+  const [showUserViewSelector, setShowUserViewSelector] = useState(false)
+  const [selectedProject, setSelectedProject] = useState('all')
+  const [filters, setFilters] = useState({
+    name: '',
+    personalEmail: '',
+    phone: '',
+    employeeId: '',
+    workEmail: '',
+    designation: '',
+    department: '',
+    manager: '',
+    dateOfJoining: '',
+    employmentType: '',
+    workMode: '',
+  })
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const exportMenuRef = useRef<HTMLDivElement | null>(null)
   const [newUser, setNewUser] = useState({
@@ -62,12 +109,17 @@ export default function UsersView() {
     workMode: 'Onsite',
     designation: '',
   })
+  const { widths: colWidths, startResize } = useColumnResize({
+    initialWidths: [30, 180, 160, 120, 120, 180, 140, 160, 160, 140, 140, 120, 90],
+    minWidth: 0,
+  })
 
   const loadUsers = async () => {
     setLoading(true)
     try {
-      const data = await userService.listUsers({ q: search || undefined })
-      setUsers(Array.isArray(data) ? data : [])
+      const data = await userService.listUsers({ q: search || undefined, role: 'USER' })
+      const list = Array.isArray(data) ? data : []
+      setUsers(list.filter((u: any) => String(u?.role || '').toUpperCase() === 'USER'))
     } catch (e) {
       console.warn('Failed to fetch users', e)
       setUsers([])
@@ -79,6 +131,62 @@ export default function UsersView() {
   useEffect(() => {
     loadUsers()
   }, [search])
+
+  useEffect(() => {
+    setSearch(toolbarSearch)
+  }, [toolbarSearch])
+
+  useEffect(() => {
+    const expandedCls = 'users-queue-expanded'
+    const collapsedCls = 'users-queue-collapsed'
+    if (!leftPanelCollapsed) {
+      document.body.classList.add(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    } else {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.add(collapsedCls)
+    }
+    return () => {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    }
+  }, [leftPanelCollapsed])
+
+  useEffect(() => {
+    document.body.classList.add('users-view-active')
+    return () => document.body.classList.remove('users-view-active')
+  }, [])
+  useEffect(() => {
+    const handler = () => setPanelRules(loadLeftPanelConfig().users)
+    window.addEventListener('left-panel-config-updated', handler as EventListener)
+    return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
+  }, [])
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; target?: string }>).detail
+      if (!detail || detail.target !== 'users') return
+      if (detail.action === 'new') {
+        setEditingUser(null)
+        setShowAddModal(true)
+      }
+      if (detail.action === 'filter') {
+        setShowFilters((v) => !v)
+      }
+    }
+    window.addEventListener('shared-toolbar-action', handler as EventListener)
+    return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
+  }, [])
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; target?: string }>).detail
+      if (!detail || detail.target !== 'users') return
+      if (detail.action === 'toggle-left-panel') {
+        setLeftPanelCollapsed((v) => !v)
+      }
+    }
+    window.addEventListener('shared-toolbar-action', handler as EventListener)
+    return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
+  }, [])
 
   const handleCreateUser = async () => {
     if (!newUser.name.trim()) {
@@ -162,7 +270,7 @@ export default function UsersView() {
     try {
       const workEmail = newUser.workEmail.trim()
       const personalEmail = newUser.personalEmail.trim()
-      await userService.updateUser(editingUser.id, {
+      const updated = await userService.updateUser(editingUser.id, {
         name: newUser.name.trim() || undefined,
         email: workEmail || personalEmail,
         personalEmail: personalEmail || undefined,
@@ -176,6 +284,9 @@ export default function UsersView() {
         workMode: newUser.workMode,
         designation: newUser.designation.trim() || undefined,
       })
+      setUsers((prev) =>
+        prev.map((u) => (u.id === editingUser.id ? { ...u, ...updated, email: updated?.email || workEmail || personalEmail } : u))
+      )
       setShowAddModal(false)
       setEditingUser(null)
       setNewUser({
@@ -199,10 +310,55 @@ export default function UsersView() {
     }
   }
 
-  const filtered = useMemo(() => users, [users])
+  const handleDeleteUser = async (u: UserRow) => {
+    const label = u.name || u.email || 'this user'
+    if (!window.confirm(`Delete ${label}?`)) return
+    setIsSaving(true)
+    try {
+      await userService.deleteUser(u.id)
+      setUsers((prev) => prev.filter((row) => row.id !== u.id))
+      setSelectedIds((prev) => prev.filter((id) => id !== u.id))
+      await loadUsers()
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to delete user')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const match = (value: string | undefined | null, q: string) =>
+      String(value || '').toLowerCase().includes(q.toLowerCase())
+    return users.filter((u) => {
+      if (userQueueView === 'byProject' && selectedProject !== 'all') {
+        if (String(u.department || '').toLowerCase() !== selectedProject.toLowerCase()) return false
+      }
+      if (filters.name && !match(u.name, filters.name) && !match(u.email, filters.name)) return false
+      if (filters.personalEmail && !match(u.personalEmail, filters.personalEmail)) return false
+      if (filters.phone && !match(u.phone, filters.phone)) return false
+      if (filters.employeeId && !match(u.employeeId, filters.employeeId)) return false
+      if (filters.workEmail && !match(u.workEmail || u.email, filters.workEmail)) return false
+      if (filters.designation && !match(u.designation, filters.designation)) return false
+      if (filters.department && !match(u.department, filters.department)) return false
+      if (filters.manager && !match(u.reportingManager, filters.manager)) return false
+      if (filters.dateOfJoining && !match(u.dateOfJoining ? formatDate(u.dateOfJoining) : '', filters.dateOfJoining)) return false
+      if (filters.employmentType && !match(u.employmentType, filters.employmentType)) return false
+      if (filters.workMode && !match(u.workMode, filters.workMode)) return false
+      return true
+    })
+  }, [users, filters, userQueueView, selectedProject])
+  const currentPage = controlledPage ?? internalPage
+  const setPage = (next: number | ((prev: number) => number)) => {
+    const resolved = typeof next === 'function' ? next(currentPage) : next
+    if (typeof controlledPage === 'number') {
+      onPageChange?.(resolved)
+      return
+    }
+    setInternalPage(resolved)
+  }
   const totalRows = filtered.length
   const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage))
-  const safePage = Math.min(page, totalPages)
+  const safePage = Math.min(currentPage, totalPages)
   const pageStart = (safePage - 1) * rowsPerPage
   const pageItems = filtered.slice(pageStart, pageStart + rowsPerPage)
   const pageIds = pageItems.map((u) => u.id)
@@ -227,8 +383,18 @@ export default function UsersView() {
   }, [users])
 
   useEffect(() => {
-    if (page !== safePage) setPage(safePage)
-  }, [safePage, page])
+    if (currentPage !== safePage) setPage(safePage)
+  }, [safePage, currentPage])
+
+  useEffect(() => {
+    onPaginationMetaChange?.({
+      page: safePage,
+      totalPages,
+      totalRows,
+      rangeStart: totalRows === 0 ? 0 : pageStart + 1,
+      rangeEnd: Math.min(pageStart + rowsPerPage, totalRows),
+    })
+  }, [safePage, totalPages, totalRows, pageStart, onPaginationMetaChange])
 
   useEffect(() => {
     if (!showExportMenu) return
@@ -382,8 +548,138 @@ export default function UsersView() {
     setShowExportMenu(false)
   }
 
+  const projectItems = useMemo(() => {
+    const base = users.reduce<Record<string, { label: string; value: string; count: number }>>((acc, u) => {
+      const raw = String(u.department || '').trim() || 'General'
+      const key = raw.toLowerCase()
+      if (!acc[key]) acc[key] = { label: raw, value: raw, count: 0 }
+      acc[key].count += 1
+      return acc
+    }, {})
+    const configured = panelRules.filter((r) => String(r.field || '').toLowerCase() === 'department')
+    configured.forEach((r) => {
+      const value = String(r.value || '').trim()
+      if (!value) return
+      const key = value.toLowerCase()
+      const count = users.filter((u) => String(u.department || '').toLowerCase() === key).length
+      if (base[key]) {
+        base[key] = { ...base[key], label: r.label || base[key].label, value, count }
+      } else {
+        base[key] = { label: r.label || value, value, count }
+      }
+    })
+    return Object.values(base).sort((a, b) => a.label.localeCompare(b.label))
+  }, [users, panelRules])
+  const renderQueueIcon = (kind: 'project' | 'all') => {
+    if (kind === 'project') {
+      return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+        </svg>
+      )
+    }
+    return (
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="11" cy="11" r="7" />
+        <line x1="16.5" y1="16.5" x2="21" y2="21" />
+      </svg>
+    )
+  }
+  const usersLeftPanel = (!leftPanelCollapsed && queueRoot) ? createPortal(
+    <aside className="user-left-panel">
+      <div className="queue-header">
+        <div className="queue-title-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="8" r="3" />
+            <path d="M5 19a7 7 0 0 1 14 0" />
+          </svg>
+        </div>
+        <div className="queue-title">
+          <div className="queue-title-top">
+            <button className="queue-title-btn" onClick={() => setShowUserViewSelector(true)} title="Select user queue view">
+              <div className="queue-title-text">{userQueueView === 'byProject' ? 'Users by Project' : 'All Users'}</div>
+            </button>
+            <button className="queue-edit-btn" onClick={() => setShowUserViewSelector(true)} title="Change user queue view">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button className="queue-collapse-btn" title="Hide Menu" onClick={() => setLeftPanelCollapsed(true)}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="13 18 7 12 13 6" />
+            <polyline points="19 18 13 12 19 6" />
+          </svg>
+        </button>
+      </div>
+      <div className="queue-list">
+        {showUserViewSelector ? (
+          <>
+            <div
+              className={`queue-item${userQueueView === 'byProject' ? ' queue-item-active' : ''}`}
+              onClick={() => {
+                setUserQueueView('byProject')
+                setSelectedProject('all')
+                setShowUserViewSelector(false)
+              }}
+            >
+              <div className="queue-avatar">{renderQueueIcon('project')}</div>
+              <div className="queue-name">Users by Project</div>
+              <div className="queue-count">{users.length}</div>
+            </div>
+            <div
+              className={`queue-item${userQueueView === 'allUsers' ? ' queue-item-active' : ''}`}
+              onClick={() => {
+                setUserQueueView('allUsers')
+                setSelectedProject('all')
+                setShowUserViewSelector(false)
+              }}
+            >
+              <div className="queue-avatar">{renderQueueIcon('all')}</div>
+              <div className="queue-name">All Users</div>
+              <div className="queue-count">{users.length}</div>
+            </div>
+          </>
+        ) : userQueueView === 'byProject' ? (
+          <>
+            <div
+              className={`queue-item${selectedProject === 'all' ? ' queue-item-active' : ''}`}
+              onClick={() => setSelectedProject('all')}
+            >
+              <div className="queue-avatar">{renderQueueIcon('all')}</div>
+              <div className="queue-name">All Projects</div>
+              <div className="queue-count">{users.length}</div>
+            </div>
+            {projectItems.map((project) => (
+              <div
+                key={project.value}
+                className={`queue-item${selectedProject === project.value ? ' queue-item-active' : ''}`}
+                onClick={() => setSelectedProject(project.value)}
+              >
+                <div className="queue-avatar">{renderQueueIcon('project')}</div>
+                <div className="queue-name">{project.label}</div>
+                <div className="queue-count">{project.count}</div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <div className="queue-item queue-item-active">
+            <div className="queue-avatar">{renderQueueIcon('all')}</div>
+            <div className="queue-name">All Users</div>
+            <div className="queue-count">{users.length}</div>
+          </div>
+        )}
+      </div>
+    </aside>,
+    queueRoot
+  ) : null
+
   return (
-    <div className="users-view">
+    <>
+      {usersLeftPanel}
+      <div className="users-view">
       <div className="users-filters-bar">
         <div className="users-filters" />
         <div className="users-toolbar-right">
@@ -478,69 +774,112 @@ export default function UsersView() {
               </div>
             )}
           </div>
+          <button className="users-ghost-btn" title="Filter" onClick={() => setShowFilters((v) => !v)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+          </button>
           <button className="users-primary-btn" onClick={() => { setEditingUser(null); setShowAddModal(true) }}>Add User</button>
         </div>
       </div>
-      <div className="visuals-row users-visuals">
-        <div className="visual-card">
-          <div className="visual-title">Employment Type</div>
-          <div className="mini-barlist">
-            {userVisuals.employment.map(([k, v]) => {
-              const w = Math.min(100, (v / Math.max(1, userVisuals.totalCount)) * 100)
-              return (
-                <div key={k} className="mini-bar-row">
-                  <span>{k}</span>
-                  <div className="mini-bar-track">
-                    <div className="mini-bar-fill low" style={{ width: `${w}%` }} />
-                  </div>
-                  <strong>{v}</strong>
-                </div>
-              )
-            })}
-            {userVisuals.employment.length === 0 && <div className="users-empty">No data</div>}
-          </div>
-        </div>
-        <div className="visual-card">
-          <div className="visual-title">Work Mode</div>
-          <div className="mini-barlist">
-            {userVisuals.workMode.map(([k, v]) => {
-              const w = Math.min(100, (v / Math.max(1, userVisuals.totalCount)) * 100)
-              return (
-                <div key={k} className="mini-bar-row">
-                  <span>{k}</span>
-                  <div className="mini-bar-track">
-                    <div className="mini-bar-fill medium" style={{ width: `${w}%` }} />
-                  </div>
-                  <strong>{v}</strong>
-                </div>
-              )
-            })}
-            {userVisuals.workMode.length === 0 && <div className="users-empty">No data</div>}
-          </div>
-        </div>
-      </div>
-
       {activeView === 'Table' && (
         <div className="users-table">
-          <table className="users-grid">
+          <table
+            className="users-grid"
+            style={{
+              tableLayout: 'fixed',
+              width: '100%',
+              minWidth: `${colWidths.reduce((s, w) => s + w, 0)}px`,
+            }}
+          >
+            <colgroup>
+              {colWidths.map((w, idx) => (
+                <col key={idx} style={{ width: `${w}px` }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 <th className="users-col check">
                   <input type="checkbox" aria-label="Select all" checked={allPageSelected} onChange={toggleSelectAll} />
                 </th>
-                <th className="users-col name">Full name</th>
-                <th className="users-col personalEmail">Personal Email</th>
-                <th className="users-col phone">Phone</th>
-                <th className="users-col employeeId">Employee ID</th>
-                <th className="users-col workEmail">Work Email</th>
-                <th className="users-col designation">Designation</th>
-                <th className="users-col department">Department/Project</th>
-                <th className="users-col manager">Reporting Manager</th>
-                <th className="users-col doj">Date of Joining</th>
-                <th className="users-col employmentType">Employment Type</th>
-                <th className="users-col workMode">Work Mode</th>
-                <th className="users-col actions">Actions</th>
+                <th className="users-col name"><span className="col-resize-handle" onMouseDown={(e) => startResize(1, e)} />Full name</th>
+                <th className="users-col personalEmail"><span className="col-resize-handle" onMouseDown={(e) => startResize(2, e)} />Personal Email</th>
+                <th className="users-col phone"><span className="col-resize-handle" onMouseDown={(e) => startResize(3, e)} />Phone</th>
+                <th className="users-col employeeId"><span className="col-resize-handle" onMouseDown={(e) => startResize(4, e)} />Employee ID</th>
+                <th className="users-col workEmail"><span className="col-resize-handle" onMouseDown={(e) => startResize(5, e)} />Work Email</th>
+                <th className="users-col designation"><span className="col-resize-handle" onMouseDown={(e) => startResize(6, e)} />Designation</th>
+                <th className="users-col department"><span className="col-resize-handle" onMouseDown={(e) => startResize(7, e)} />Department/Project</th>
+                <th className="users-col manager"><span className="col-resize-handle" onMouseDown={(e) => startResize(8, e)} />Reporting Manager</th>
+                <th className="users-col doj"><span className="col-resize-handle" onMouseDown={(e) => startResize(9, e)} />Date of Joining</th>
+                <th className="users-col employmentType"><span className="col-resize-handle" onMouseDown={(e) => startResize(10, e)} />Employment Type</th>
+                <th className="users-col workMode"><span className="col-resize-handle" onMouseDown={(e) => startResize(11, e)} />Work Mode</th>
+                <th className="users-col actions"><span className="col-resize-handle" onMouseDown={(e) => startResize(12, e)} />Actions</th>
               </tr>
+              {showFilters && (
+                <tr className="users-filter-row">
+                  <th className="users-col check">
+                    <button
+                      className="filter-clear-btn"
+                      onClick={() => {
+                        setFilters({
+                          name: '',
+                          personalEmail: '',
+                          phone: '',
+                          employeeId: '',
+                          workEmail: '',
+                          designation: '',
+                          department: '',
+                          manager: '',
+                          dateOfJoining: '',
+                          employmentType: '',
+                          workMode: '',
+                        })
+                        setShowFilters(false)
+                      }}
+                      title="Clear filters"
+                      aria-label="Clear filters"
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </th>
+                  <th className="users-col name">
+                    <input className="table-filter-input" value={filters.name} onChange={(e) => setFilters({ ...filters, name: e.target.value })} />
+                  </th>
+                  <th className="users-col personalEmail">
+                    <input className="table-filter-input" value={filters.personalEmail} onChange={(e) => setFilters({ ...filters, personalEmail: e.target.value })} />
+                  </th>
+                  <th className="users-col phone">
+                    <input className="table-filter-input" value={filters.phone} onChange={(e) => setFilters({ ...filters, phone: e.target.value })} />
+                  </th>
+                  <th className="users-col employeeId">
+                    <input className="table-filter-input" value={filters.employeeId} onChange={(e) => setFilters({ ...filters, employeeId: e.target.value })} />
+                  </th>
+                  <th className="users-col workEmail">
+                    <input className="table-filter-input" value={filters.workEmail} onChange={(e) => setFilters({ ...filters, workEmail: e.target.value })} />
+                  </th>
+                  <th className="users-col designation">
+                    <input className="table-filter-input" value={filters.designation} onChange={(e) => setFilters({ ...filters, designation: e.target.value })} />
+                  </th>
+                  <th className="users-col department">
+                    <input className="table-filter-input" value={filters.department} onChange={(e) => setFilters({ ...filters, department: e.target.value })} />
+                  </th>
+                  <th className="users-col manager">
+                    <input className="table-filter-input" value={filters.manager} onChange={(e) => setFilters({ ...filters, manager: e.target.value })} />
+                  </th>
+                  <th className="users-col doj">
+                    <input className="table-filter-input" value={filters.dateOfJoining} onChange={(e) => setFilters({ ...filters, dateOfJoining: e.target.value })} />
+                  </th>
+                  <th className="users-col employmentType">
+                    <input className="table-filter-input" value={filters.employmentType} onChange={(e) => setFilters({ ...filters, employmentType: e.target.value })} />
+                  </th>
+                  <th className="users-col workMode">
+                    <input className="table-filter-input" value={filters.workMode} onChange={(e) => setFilters({ ...filters, workMode: e.target.value })} />
+                  </th>
+                  <th className="users-col actions" />
+                </tr>
+              )}
             </thead>
             <tbody>
               {loading && (
@@ -576,6 +915,7 @@ export default function UsersView() {
                   <td className="users-col workMode">{u.workMode || '-'}</td>
                   <td className="users-col actions">
                     <button className="users-action-btn" onClick={() => openEdit(u)}>Edit</button>
+                    <button className="users-action-btn" onClick={() => handleDeleteUser(u)}>Delete</button>
                   </td>
                 </tr>
               ))}
@@ -614,6 +954,7 @@ export default function UsersView() {
               </div>
               <div className="users-card-actions">
                 <button className="users-action-btn" onClick={() => openEdit(u)}>Edit</button>
+                <button className="users-action-btn" onClick={() => handleDeleteUser(u)}>Delete</button>
               </div>
             </div>
           ))}
@@ -623,40 +964,7 @@ export default function UsersView() {
         </div>
       )}
 
-      <div className="users-footer">
-        <div className="users-footer-left">
-          <span>{`${totalRows === 0 ? 0 : pageStart + 1}-${Math.min(pageStart + rowsPerPage, totalRows)} of ${totalRows}`}</span>
-        </div>
-        <div className="users-footer-right">
-          <button
-            className="users-page-btn"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={safePage <= 1}
-            aria-label="Previous page"
-          >
-            {'<'}
-          </button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <button
-              key={p}
-              className={`users-page-btn${p === safePage ? ' active' : ''}`}
-              onClick={() => setPage(p)}
-            >
-              {p}
-            </button>
-          ))}
-          <button
-            className="users-page-btn"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={safePage >= totalPages}
-            aria-label="Next page"
-          >
-            {'>'}
-          </button>
-        </div>
-      </div>
-
-      {showAddModal && (
+        {showAddModal && (
         <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -784,7 +1092,9 @@ export default function UsersView() {
             </div>
           </div>
         </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   )
 }
+

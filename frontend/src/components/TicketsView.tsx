@@ -6,6 +6,8 @@ import * as ticketSvc from '../services/ticket.service'
 import * as assetService from '../services/asset.service'
 import * as userService from '../services/user.service'
 import { useAuth } from '../contexts/AuthContext'
+import { getRowsPerPage } from '../utils/pagination'
+import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
 
 export type Incident = {
   id: string
@@ -27,12 +29,16 @@ export default function TicketsView() {
   const { user } = useAuth()
   const { ticketId } = useParams()
   const navigate = useNavigate()
-  const queueRoot = typeof document !== 'undefined' ? document.getElementById('queue-sidebar-root') : null
+  const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [filterType, setFilterType] = useState('Open Tickets')
-  const [queueFilter, setQueueFilter] = useState<{ type: 'all' | 'unassigned' | 'supplier' | 'agent'; agentId?: string; agentName?: string }>({ type: 'all' })
+  const [queueFilter, setQueueFilter] = useState<{ type: 'all' | 'unassigned' | 'supplier' | 'agent' | 'team' | 'teamUnassigned' | 'teamAgent' | 'ticketType' | 'status' | 'myList'; agentId?: string; agentName?: string; value?: string; team?: string }>({ type: 'all' })
+  const [queueView, setQueueView] = useState<'all' | 'team' | 'staff' | 'type' | 'status' | 'myLists'>('team')
+  const [expandedTeams, setExpandedTeams] = useState<string[]>([])
   const [showFilterMenu, setShowFilterMenu] = useState(false)
   const [showSearchBar, setShowSearchBar] = useState(false)
+  const [page, setPage] = useState(1)
+  const rowsPerPage = getRowsPerPage()
   const [selectAll, setSelectAll] = useState(false)
   const [selectedTickets, setSelectedTickets] = useState<string[]>([])
   const [globalSearch, setGlobalSearch] = useState('')
@@ -56,6 +62,7 @@ export default function TicketsView() {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1100
   })
+  const [ticketMyListRules, setTicketMyListRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().ticketsMyLists)
   const [newIncidentForm, setNewIncidentForm] = useState({
     ticketType: 'Fault',
     subject: '',
@@ -243,11 +250,40 @@ export default function TicketsView() {
       document.body.classList.remove('tickets-view-active')
     }
   }, [])
+  React.useEffect(() => {
+    const handler = () => setTicketMyListRules(loadLeftPanelConfig().ticketsMyLists)
+    window.addEventListener('left-panel-config-updated', handler as EventListener)
+    return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
+  }, [])
 
   React.useEffect(() => {
+    const pending = sessionStorage.getItem('openNewTicket')
+    if (pending) {
+      sessionStorage.removeItem('openNewTicket')
+      setShowNewIncidentModal(true)
+    }
     const handler = () => setShowNewIncidentModal(true)
     window.addEventListener('open-new-ticket', handler as EventListener)
     return () => window.removeEventListener('open-new-ticket', handler as EventListener)
+  }, [])
+
+  React.useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; target?: string }>).detail
+      if (!detail || detail.target !== 'tickets') return
+      if (detail.action === 'new') {
+        setShowNewIncidentModal(true)
+      }
+      if (detail.action === 'filter') {
+        setShowSearchBar((v) => {
+          const next = !v
+          if (!next) clearColumnFilters()
+          return next
+        })
+      }
+    }
+    window.addEventListener('shared-toolbar-action', handler as EventListener)
+    return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
   }, [])
 
   React.useEffect(() => {
@@ -349,8 +385,8 @@ export default function TicketsView() {
     date: baseColWidths.date
   })
   const [resizingColumn, setResizingColumn] = useState<string | null>(null)
-  const [resizingNeighbor, setResizingNeighbor] = useState<string | null>(null)
   const [resizeStartX, setResizeStartX] = useState(0)
+  const [resizeStartWidth, setResizeStartWidth] = useState(0)
 
   const filterOptions = [
     'All Tickets',
@@ -664,12 +700,131 @@ export default function TicketsView() {
 
   // Compute queue counts early before queueSidebar JSX uses them
   const openIncidents = incidents.filter((i) => isOpenStatus(i.status))
+  const mapTeam = (incident: Incident) => {
+    const c = String(incident.category || '').toLowerCase()
+    if (c.includes('hardware') || c.includes('network')) return 'Helpdesk (Line1)'
+    if (c.includes('email') || c.includes('monitor')) return 'Monitor queue'
+    if (c.includes('on-site') || c.includes('onsite')) return 'On-Site'
+    return 'Technical Team (Line2)'
+  }
   const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
   const countWithSupplier = openIncidents.filter((i) => {
     const s = (i.status || '').toLowerCase()
     return s.includes('supplier')
   }).length
-  const queueTotal = incidents.length
+  const teamBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
+    const t = mapTeam(i)
+    acc[t] = (acc[t] || 0) + 1
+    return acc
+  }, {})
+  const teamGroups = openIncidents.reduce<Record<string, { total: number; unassigned: number; agents: Record<string, { label: string; count: number }> }>>((acc, i) => {
+    const team = mapTeam(i)
+    if (!acc[team]) acc[team] = { total: 0, unassigned: 0, agents: {} }
+    acc[team].total += 1
+    const agentKey = String(i.assignedAgentId || i.assignedAgentName || '').trim()
+    if (!agentKey) {
+      acc[team].unassigned += 1
+      return acc
+    }
+    const label = i.assignedAgentName || String(i.assignedAgentId)
+    if (!acc[team].agents[agentKey]) acc[team].agents[agentKey] = { label, count: 0 }
+    acc[team].agents[agentKey].count += 1
+    return acc
+  }, {})
+  const typeBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
+    const t = i.type || 'Unknown'
+    acc[t] = (acc[t] || 0) + 1
+    return acc
+  }, {})
+  const statusBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
+    const s = i.status || 'Unknown'
+    acc[s] = (acc[s] || 0) + 1
+    return acc
+  }, {})
+  const myListCounts: Record<string, number> = {
+    all: incidents.length,
+    open: openIncidents.length,
+    closed: incidents.filter((i) => String(i.status || '').toLowerCase() === 'closed').length,
+    breached: incidents.filter((i) => String(i.slaTimeLeft || '').startsWith('-')).length,
+    hold: incidents.filter((i) => {
+      const status = String(i.status || '').toLowerCase()
+      const sla = String(i.slaTimeLeft || '').toLowerCase()
+      return status.includes('hold') || sla.includes('hold')
+    }).length,
+  }
+  const queueViews = [
+    { key: 'myLists', label: 'My Lists', icon: '☰' },
+    { key: 'staff', label: 'Tickets by Staff', icon: '♟' },
+    { key: 'team', label: 'Tickets by Team', icon: '👥' },
+    { key: 'type', label: 'Tickets by Ticket Type', icon: '🎟' },
+    { key: 'status', label: 'Tickets by Status', icon: 'ⓘ' },
+    { key: 'all', label: 'All Tickets', icon: '⌕' },
+  ] as const
+  const queueViewTitle: Record<typeof queueView, string> = {
+    all: 'All Tickets',
+    team: 'Tickets by Team',
+    staff: 'Tickets by Staff',
+    type: 'Tickets by Ticket Type',
+    status: 'Tickets by Status',
+    myLists: 'My Lists',
+  }
+  const renderQueueHeaderIcon = () => {
+    if (queueView === 'staff') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="8.5" cy="7" r="3.5" />
+          <path d="M20 8v6" />
+          <path d="M23 11h-6" />
+        </svg>
+      )
+    }
+    if (queueView === 'team') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="9" cy="7" r="3" />
+          <circle cx="17" cy="8" r="2.5" />
+          <path d="M2 20a7 7 0 0 1 14 0" />
+          <path d="M14 20a5 5 0 0 1 8 0" />
+        </svg>
+      )
+    }
+    if (queueView === 'type') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M20.6 13.4 11 23l-9-9 9.6-9.6a2 2 0 0 1 1.4-.6H20a2 2 0 0 1 2 2v7a2 2 0 0 1-.6 1.4Z" />
+          <circle cx="16" cy="8" r="1" />
+        </svg>
+      )
+    }
+    if (queueView === 'status') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 8v4" />
+          <path d="M12 16h.01" />
+        </svg>
+      )
+    }
+    if (queueView === 'myLists') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="8" y1="6" x2="21" y2="6" />
+          <line x1="8" y1="12" x2="21" y2="12" />
+          <line x1="8" y1="18" x2="21" y2="18" />
+          <line x1="3" y1="6" x2="3.01" y2="6" />
+          <line x1="3" y1="12" x2="3.01" y2="12" />
+          <line x1="3" y1="18" x2="3.01" y2="18" />
+        </svg>
+      )
+    }
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="11" cy="11" r="7" />
+        <line x1="16.5" y1="16.5" x2="21" y2="21" />
+      </svg>
+    )
+  }
 
   const queueSidebar = (!queueCollapsed && queueRoot) ? createPortal(
     <aside className="ticket-queue-sidebar">
@@ -683,70 +838,191 @@ export default function TicketsView() {
         </span>
       </div>
       <div className="queue-header">
+        <div className="queue-title-icon" aria-hidden="true">{renderQueueHeaderIcon()}</div>
+        <div className="queue-title">
+          <div className="queue-title-top">
+            <button className="queue-title-btn" onClick={() => setQueueView('all')} title="Select queue view">
+              <div className="queue-title-text">{queueViewTitle[queueView]}</div>
+            </button>
+            <button className="queue-edit-btn" onClick={() => setQueueView('all')} title="Change ticket queue">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <button
           className="queue-collapse-btn"
           title="Hide Menu"
           onClick={() => setQueueCollapsed(true)}
         >
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="15 18 9 12 15 6" />
+            <polyline points="13 18 7 12 13 6" />
+            <polyline points="19 18 13 12 19 6" />
           </svg>
         </button>
-        <div className="queue-title">
-          <button
-            className="queue-title-btn"
-            onClick={() => setQueueFilter({ type: 'all' })}
-            title="Show all tickets"
-          >
-            <div className="queue-title-text">Tickets Queue</div>
-          </button>
-        </div>
-        <div className="queue-total" title="Total tickets">{queueTotal}</div>
       </div>
       <div className="queue-list">
-        <div
-          className={`queue-item${queueFilter.type === 'unassigned' ? ' queue-item-active' : ''}`}
-          onClick={() => {
-            setQueueFilter(prev => prev.type === 'unassigned' ? { type: 'all' } : { type: 'unassigned' })
-          }}
-        >
-          <div className="queue-avatar queue-avatar-dark">U</div>
-          <div className="queue-name">Unassigned</div>
-          <div className="queue-count">{countUnassigned}</div>
-        </div>
-        {agents.map((a) => (
+        {queueView === 'all' && (
+          <>
+            {queueViews.map((v) => (
+              <div key={v.key} className={`queue-item${queueView === v.key ? ' queue-item-active' : ''}`} onClick={() => setQueueView(v.key)}>
+                <div className="queue-avatar">{v.icon}</div>
+                <div className="queue-name">{v.label}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'team' && (
+          <>
+            {Object.entries(teamGroups).map(([team, group]) => {
+              const isExpanded = expandedTeams.includes(team)
+              return (
+                <React.Fragment key={team}>
+                  <div
+                    className={`queue-item${queueFilter.type === 'team' && queueFilter.value === team ? ' queue-item-active' : ''}`}
+                    onClick={() => {
+                      setExpandedTeams((prev) => prev.includes(team) ? prev.filter((t) => t !== team) : [...prev, team])
+                      setQueueFilter((prev) => prev.type === 'team' && prev.value === team ? { type: 'all' } : { type: 'team', value: team })
+                    }}
+                  >
+                    <div className="queue-avatar">{isExpanded ? '▼' : '▶'}</div>
+                    <div className="queue-name">{team}</div>
+                    <div className="queue-count">{group.total}</div>
+                  </div>
+                  {isExpanded && (
+                    <>
+                      <div
+                        className={`queue-item queue-item-child${queueFilter.type === 'teamUnassigned' && queueFilter.team === team ? ' queue-item-active' : ''}`}
+                        onClick={() => {
+                          setQueueFilter((prev) => prev.type === 'teamUnassigned' && prev.team === team ? { type: 'all' } : { type: 'teamUnassigned', team })
+                        }}
+                      >
+                        <div className="queue-avatar queue-avatar-dark">U</div>
+                        <div className="queue-name">Unassigned</div>
+                        <div className="queue-count">{group.unassigned}</div>
+                      </div>
+                      {Object.entries(group.agents).map(([agentKey, agent]) => (
+                        <div
+                          key={`${team}-${agentKey}`}
+                          className={`queue-item queue-item-child${queueFilter.type === 'teamAgent' && queueFilter.team === team && queueFilter.value === agentKey ? ' queue-item-active' : ''}`}
+                          onClick={() => {
+                            setQueueFilter((prev) =>
+                              prev.type === 'teamAgent' && prev.team === team && prev.value === agentKey
+                                ? { type: 'all' }
+                                : { type: 'teamAgent', team, value: agentKey }
+                            )
+                          }}
+                        >
+                          <div className="queue-avatar">{getInitials(agent.label || 'A')}</div>
+                          <div className="queue-name">{agent.label}</div>
+                          <div className="queue-count">{agent.count}</div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </>
+        )}
+        {queueView === 'staff' && (
+          <>
+            <div className={`queue-item${queueFilter.type === 'unassigned' ? ' queue-item-active' : ''}`} onClick={() => setQueueFilter((prev) => prev.type === 'unassigned' ? { type: 'all' } : { type: 'unassigned' })}>
+              <div className="queue-avatar queue-avatar-dark">U</div>
+              <div className="queue-name">Unassigned</div>
+              <div className="queue-count">{countUnassigned}</div>
+            </div>
+            {agents.map((a) => (
+              <div
+                key={`agent-${a.id}`}
+                className={`queue-item${queueFilter.type === 'agent' && String(queueFilter.agentId || '') === String(a.id) ? ' queue-item-active' : ''}`}
+                onClick={() => {
+                  const displayName = getAgentDisplayName(a)
+                  setQueueFilter((prev) => prev.type === 'agent' && String(prev.agentId || '') === String(a.id) ? { type: 'all' } : { type: 'agent', agentId: String(a.id), agentName: displayName })
+                }}
+              >
+                <div className="queue-avatar">{getInitials(getAgentDisplayName(a) || 'U')}</div>
+                <div className="queue-name">{getAgentDisplayName(a)}</div>
+                <div className="queue-count">
+                  {openIncidents.filter((i) => {
+                    const byId = String(i.assignedAgentId || '') === String(a.id)
+                    const byName = i.assignedAgentName && getAgentDisplayName(a) && i.assignedAgentName === getAgentDisplayName(a)
+                    return byId || byName
+                  }).length}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'type' && (
+          <>
+            {Object.entries(typeBuckets).map(([type, count]) => (
+              <div
+                key={type}
+                className={`queue-item${queueFilter.type === 'ticketType' && queueFilter.value === type ? ' queue-item-active' : ''}`}
+                onClick={() => setQueueFilter((prev) => prev.type === 'ticketType' && prev.value === type ? { type: 'all' } : { type: 'ticketType', value: type })}
+              >
+                <div className="queue-avatar">{type.trim()[0]?.toUpperCase() || 'T'}</div>
+                <div className="queue-name">{type}</div>
+                <div className="queue-count">{count}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'status' && (
+          <>
+            {Object.entries(statusBuckets).map(([status, count]) => (
+              <div
+                key={status}
+                className={`queue-item${queueFilter.type === 'status' && queueFilter.value === status ? ' queue-item-active' : ''}`}
+                onClick={() => setQueueFilter((prev) => prev.type === 'status' && prev.value === status ? { type: 'all' } : { type: 'status', value: status })}
+              >
+                <div className="queue-avatar">{status.trim()[0]?.toUpperCase() || 'S'}</div>
+                <div className="queue-name">{status}</div>
+                <div className="queue-count">{count}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'myLists' && (
+          <>
+            {ticketMyListRules.map((rule) => (
+              <div
+                key={rule.id}
+                className={`queue-item${queueFilter.type === 'myList' && queueFilter.value === rule.id ? ' queue-item-active' : ''}`}
+                onClick={() => setQueueFilter((prev) => prev.type === 'myList' && prev.value === rule.id ? { type: 'all' } : { type: 'myList', value: rule.id })}
+              >
+                <div className="queue-avatar">{rule.label.trim()[0]?.toUpperCase() || 'M'}</div>
+                <div className="queue-name">{rule.label}</div>
+                <div className="queue-count">
+                  {rule.field === 'status' && String(rule.value).toLowerCase() === 'all'
+                    ? myListCounts.all
+                    : rule.field === 'status' && String(rule.value).toLowerCase() === 'open'
+                    ? myListCounts.open
+                    : rule.field === 'status' && String(rule.value).toLowerCase() === 'closed'
+                      ? myListCounts.closed
+                      : rule.field === 'sla'
+                        ? (String(rule.value).toLowerCase() === 'hold' ? myListCounts.hold : myListCounts.breached)
+                        : openIncidents.filter((i) => String((i as any)[rule.field] || '').toLowerCase() === String(rule.value || '').toLowerCase()).length}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'staff' && (
           <div
-            key={`agent-${a.id}`}
-            className={`queue-item${queueFilter.type === 'agent' && String(queueFilter.agentId || '') === String(a.id) ? ' queue-item-active' : ''}`}
+            className={`queue-item${queueFilter.type === 'supplier' ? ' queue-item-active' : ''}`}
             onClick={() => {
-              const displayName = getAgentDisplayName(a)
-              setQueueFilter(prev => {
-                if (prev.type === 'agent' && String(prev.agentId || '') === String(a.id)) return { type: 'all' }
-                return { type: 'agent', agentId: String(a.id), agentName: displayName }
-              })
+              setQueueFilter((prev) => prev.type === 'supplier' ? { type: 'all' } : { type: 'supplier' })
             }}
           >
-            <div className="queue-avatar">{getInitials(getAgentDisplayName(a) || 'U')}</div>
-            <div className="queue-name">{getAgentDisplayName(a)}</div>
-            <div className="queue-count">
-              {openIncidents.filter((i) => {
-                const byId = String(i.assignedAgentId || '') === String(a.id)
-                const byName = i.assignedAgentName && getAgentDisplayName(a) && i.assignedAgentName === getAgentDisplayName(a)
-                return byId || byName
-              }).length}
-            </div>
+            <div className="queue-avatar queue-avatar-accent">S</div>
+            <div className="queue-name">With Supplier</div>
+            <div className="queue-count">{countWithSupplier}</div>
           </div>
-        ))}
-        <div
-          className={`queue-item${queueFilter.type === 'supplier' ? ' queue-item-active' : ''}`}
-          onClick={() => {
-            setQueueFilter(prev => prev.type === 'supplier' ? { type: 'all' } : { type: 'supplier' })
-          }}
-        >
-          <div className="queue-avatar queue-avatar-accent">S</div>
-          <div className="queue-name">With Supplier</div>
-          <div className="queue-count">{countWithSupplier}</div>
-        </div>
+        )}
       </div>
     </aside>,
     queueRoot
@@ -1042,10 +1318,59 @@ export default function TicketsView() {
       const byId = queueFilter.agentId && String(incident.assignedAgentId || '') === String(queueFilter.agentId)
       const byName = queueFilter.agentName && incident.assignedAgentName && incident.assignedAgentName === queueFilter.agentName
       if (!byId && !byName) return false
+    } else if (queueFilter.type === 'team') {
+      if (mapTeam(incident) !== queueFilter.value) return false
+    } else if (queueFilter.type === 'teamUnassigned') {
+      if (mapTeam(incident) !== queueFilter.team) return false
+      if (incident.assignedAgentId || incident.assignedAgentName) return false
+    } else if (queueFilter.type === 'teamAgent') {
+      if (mapTeam(incident) !== queueFilter.team) return false
+      const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
+      if (!agentKey || agentKey !== String(queueFilter.value || '')) return false
+    } else if (queueFilter.type === 'ticketType') {
+      if (String(incident.type || '') !== String(queueFilter.value || '')) return false
+    } else if (queueFilter.type === 'status') {
+      if (String(incident.status || '') !== String(queueFilter.value || '')) return false
+    } else if (queueFilter.type === 'myList') {
+      const rule = ticketMyListRules.find((r) => r.id === queueFilter.value)
+      if (rule) {
+        if (rule.field === 'sla' && rule.value === 'breach' && !String(incident.slaTimeLeft || '').startsWith('-')) return false
+        if (rule.field === 'sla' && String(rule.value).toLowerCase() === 'hold') {
+          const status = String(incident.status || '').toLowerCase()
+          const sla = String(incident.slaTimeLeft || '').toLowerCase()
+          if (!status.includes('hold') && !sla.includes('hold')) return false
+        }
+        if (rule.field === 'status' && rule.value.toLowerCase() === 'open') {
+          const s = String(incident.status || '').toLowerCase()
+          if (s === 'closed' || s === 'resolved') return false
+        } else if (rule.field === 'status' && rule.value.toLowerCase() === 'all') {
+          // Show all tickets.
+        } else if (rule.field === 'status' && rule.value.toLowerCase() === 'closed') {
+          if (String(incident.status || '').toLowerCase() !== 'closed') return false
+        } else if (rule.field !== 'sla') {
+          if (String((incident as any)[rule.field] || '').toLowerCase() !== String(rule.value || '').toLowerCase()) return false
+        }
+      }
     }
 
     return true
   })
+
+  const totalTickets = filteredIncidents.length
+  const totalPages = Math.max(1, Math.ceil(totalTickets / rowsPerPage))
+  const safePage = Math.min(page, totalPages)
+  const pageStart = (safePage - 1) * rowsPerPage
+  const pageItems = filteredIncidents.slice(pageStart, pageStart + rowsPerPage)
+  const rangeStart = totalTickets > 0 ? pageStart + 1 : 0
+  const rangeEnd = Math.min(pageStart + rowsPerPage, totalTickets)
+
+  React.useEffect(() => {
+    if (page !== safePage) setPage(safePage)
+  }, [page, safePage])
+
+  React.useEffect(() => {
+    setPage(1)
+  }, [globalSearch, filterType, queueFilter, searchValues])
 
   const handleGlobalSearch = () => {
     // Search is already being filtered in real-time via filteredIncidents
@@ -1055,13 +1380,13 @@ export default function TicketsView() {
 
   const handleMouseDown = (e: React.MouseEvent, column: string) => {
     const toKey = (c: string) => (c === 'subject' ? 'summary' : c)
-    // Column order used for resizing logic (status moved after checkbox)
     const colKey = toKey(column)
-    // Disable resizing of the checkbox column
     if (colKey === 'checkbox') return
+    e.preventDefault()
+    e.stopPropagation()
     setResizingColumn(colKey)
-    setResizingNeighbor(null)
     setResizeStartX(e.clientX)
+    setResizeStartWidth(Number(columnWidths[colKey] || 60))
   }
 
   const handleAutoFit = (column: string) => {
@@ -1088,7 +1413,7 @@ export default function TicketsView() {
     const maxContent = nodes.reduce((max, el) => Math.max(max, el.scrollWidth), 0)
     const padding = 18
     const desired = maxContent + padding
-    const minWidth = (columnMinWidths as any)[key] ?? 50
+    const minWidth = 1
     const maxWidth = 2000
 
     setColumnWidths(prev => {
@@ -1101,7 +1426,7 @@ export default function TicketsView() {
     setTableWidth(prevTable => {
       const cols = Object.keys(columnWidths).length
       const gapTotal = (cols - 1) * 12
-      const paddingHorizontal = 32
+      const paddingHorizontal = 8
       const sumCols = Object.values(columnWidths).reduce((s, v) => s + (v as number), 0)
       const totalNeeded = sumCols + gapTotal + paddingHorizontal
       return Math.max(prevTable, Math.ceil(totalNeeded))
@@ -1118,9 +1443,8 @@ export default function TicketsView() {
         const maxWidth = 2000
 
         const colKey = resizingColumn as keyof typeof prev
-        const currentVal = prev[colKey] as number
-        let newCurrent = currentVal + diff
-        const minCurrent = (columnMinWidths as any)[colKey] ?? 50
+        let newCurrent = resizeStartWidth + diff
+        const minCurrent = 1
         newCurrent = Math.round(newCurrent / widthSnap) * widthSnap
         newCurrent = Math.max(minCurrent, Math.min(maxWidth, newCurrent))
         newWidths[colKey] = newCurrent as any
@@ -1128,7 +1452,7 @@ export default function TicketsView() {
         // compute total needed width (sum of all column pixel widths + gaps + padding)
         const cols = Object.keys(newWidths).length
         const gapTotal = (cols - 1) * 12 // grid gap from CSS
-        const paddingHorizontal = 32 // approx table header padding (16px left + 16px right)
+        const paddingHorizontal = 8 // matches tighter table row/header horizontal padding
         const sumCols = Object.values(newWidths).reduce((s, v) => s + (v as number), 0)
         const totalNeeded = sumCols + gapTotal + paddingHorizontal
 
@@ -1136,30 +1460,24 @@ export default function TicketsView() {
 
         return newWidths
       })
-      setResizeStartX(e.clientX)
     }
 
     const handleMouseUp = () => {
       setResizingColumn(null)
-      setResizingNeighbor(null)
     }
 
     if (resizingColumn) {
+      document.body.classList.add('is-column-resizing')
       document.addEventListener('mousemove', handleMouseMove)
       document.addEventListener('mouseup', handleMouseUp)
       return () => {
+        document.body.classList.remove('is-column-resizing')
         document.removeEventListener('mousemove', handleMouseMove)
         document.removeEventListener('mouseup', handleMouseUp)
       }
     }
-  }, [resizingColumn, resizeStartX])
-
-  // Ticket counts responsive to current filters and category/search
-  const filteredCount = filteredIncidents.length
-  // make total count reflect current filter/category (responsive)
-  const totalTickets = filteredCount
-  const rangeStart = filteredCount > 0 ? 1 : 0
-  const rangeEnd = filteredCount
+    document.body.classList.remove('is-column-resizing')
+  }, [resizingColumn, resizeStartX, resizeStartWidth])
 
   const ticketVisuals = React.useMemo(() => {
     const total = incidents.length
@@ -1209,6 +1527,9 @@ export default function TicketsView() {
       .join(' ')
     return { width, height, points }
   }, [ticketVisuals])
+
+  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px 1fr`
+  const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
 
   const mainContent = showDetailView && selectedTicket ? (
     <div className="detail-view-container">
@@ -1432,7 +1753,7 @@ export default function TicketsView() {
     </div>
   ) : (
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
-      <div className="tickets-main">
+      <div className="work-main">
         <div className="tickets-table-bar">
           <div className="tickets-table-left">
             {queueCollapsed && (
@@ -1475,168 +1796,131 @@ export default function TicketsView() {
                 </div>
               )}
             </div>
-            {queueCollapsed && (
-              <div className="global-search">
-                <input 
-                  type="text" 
-                  placeholder="Search..."
-                  value={globalSearch}
-                  onChange={(e) => setGlobalSearch(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleGlobalSearch()}
-                />
-                <span className="search-icon" onClick={handleGlobalSearch}>
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="11" cy="11" r="7" />
-                    <line x1="16.5" y1="16.5" x2="21" y2="21" />
-                  </svg>
-                </span>
-              </div>
-            )}
+            <div className="global-search tickets-search">
+              <input 
+                type="text" 
+                placeholder="Search..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleGlobalSearch()}
+              />
+              <span className="search-icon" onClick={handleGlobalSearch}>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="16.5" y1="16.5" x2="21" y2="21" />
+                </svg>
+              </span>
+            </div>
           </div>
           <div className="tickets-table-right">
             <span className="pagination">{rangeStart}-{rangeEnd} of {totalTickets}</span>
+            <div className="toolbar-pagination-group">
+              <button
+                className="users-page-btn"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                aria-label="Previous page"
+              >
+                {'<'}
+              </button>
+              <button className="users-page-btn active" aria-label="Current page">
+                {safePage}
+              </button>
+              <button
+                className="users-page-btn"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                aria-label="Next page"
+              >
+                {'>'}
+              </button>
+            </div>
             <button className="table-primary-btn" onClick={() => setShowNewIncidentModal(true)}>+ New</button>
-            <button className="table-icon-btn" title="Filter">
+            <button
+              className="table-icon-btn"
+              title="Filter"
+              onClick={() => {
+                setShowFilterMenu(false)
+                setShowSearchBar((v) => {
+                  const next = !v
+                  if (!next) clearColumnFilters()
+                  return next
+                })
+              }}
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
               </svg>
             </button>
           </div>
         </div>
-        <div className="visuals-row tickets-visuals">
-          <div className="visual-card">
-            <div className="visual-title">Ticket Flow (10d)</div>
-            <svg className="sparkline" viewBox={`0 0 ${ticketSparkline.width} ${ticketSparkline.height}`}>
-              <polyline points={ticketSparkline.points} fill="none" stroke="#2563eb" strokeWidth="2" />
-            </svg>
-            <div className="visual-kpis">
-              <span>Open: {ticketVisuals.open}</span>
-              <span>Closed: {ticketVisuals.closed}</span>
+        <div className="incidents-table" ref={tableRef}>
+          <div className="table-header" style={ticketsGridStyle}>
+            <div className="col-checkbox col-header">
+              <input type="checkbox" checked={selectAll} onChange={handleSelectAll} aria-label="Select all tickets" />
+              <span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'checkbox')} />
             </div>
+            <div className="col-status col-header">Status<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')} /></div>
+            <div className="col-id col-header">Ticket ID<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')} /></div>
+            <div className="col-summary col-header">Summary<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')} /></div>
+            <div className="col-category col-header">Category<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')} /></div>
+            <div className="col-priority col-header">Priority<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')} /></div>
+            <div className="col-type col-header">Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
+            <div className="col-endUser col-header">End User<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
+            <div className="col-lastAction col-header">Last Action<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')} /></div>
+            <div className="col-date col-header">Date Reported<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onDoubleClick={() => handleAutoFit('date')} /></div>
+            <div className="col-spacer col-header" aria-hidden="true" />
           </div>
-          <div className="visual-card">
-            <div className="visual-title">Priority Mix</div>
-            <div className="mini-barlist">
-              {['High', 'Medium', 'Low'].map((p) => {
-                const v = ticketVisuals.byPriority[p] || 0
-                const w = Math.min(100, (v / Math.max(1, ticketVisuals.total)) * 100)
-                return (
-                  <div key={p} className="mini-bar-row">
-                    <span>{p}</span>
-                    <div className="mini-bar-track">
-                      <div className={`mini-bar-fill ${p.toLowerCase()}`} style={{ width: `${w}%` }} />
-                    </div>
-                    <strong>{v}</strong>
-                  </div>
-                )
-              })}
+          {showSearchBar && (
+            <div className="table-row table-search-row" style={ticketsGridStyle}>
+              <div className="col-checkbox">
+                <button className="search-close-btn" onClick={() => { setShowSearchBar(false); clearColumnFilters() }} aria-label="Close search">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="col-status"><input className="table-filter-input" value={searchValues.status} onChange={(e) => handleSearchChange('status', e.target.value)} /></div>
+              <div className="col-id"><input className="table-filter-input" value={searchValues.id} onChange={(e) => handleSearchChange('id', e.target.value)} /></div>
+              <div className="col-summary"><input className="table-filter-input" value={searchValues.subject} onChange={(e) => handleSearchChange('subject', e.target.value)} /></div>
+              <div className="col-category"><input className="table-filter-input" value={searchValues.category} onChange={(e) => handleSearchChange('category', e.target.value)} /></div>
+              <div className="col-priority"><input className="table-filter-input" value={searchValues.priority} onChange={(e) => handleSearchChange('priority', e.target.value)} /></div>
+              <div className="col-type"><input className="table-filter-input" value={searchValues.type} onChange={(e) => handleSearchChange('type', e.target.value)} /></div>
+              <div className="col-endUser"><input className="table-filter-input" value={searchValues.endUser} onChange={(e) => handleSearchChange('endUser', e.target.value)} /></div>
+              <div className="col-lastAction"><input className="table-filter-input" value={searchValues.lastAction} onChange={(e) => handleSearchChange('lastAction', e.target.value)} /></div>
+              <div className="col-date"><input className="table-filter-input" value={searchValues.dateReported} onChange={(e) => handleSearchChange('dateReported', e.target.value)} /></div>
+              <div className="col-spacer" aria-hidden="true" />
             </div>
-          </div>
-        </div>
-      </div>
-      <div className="tickets-content">
-        <div className="incidents-table" ref={tableRef} style={{ width: tableWidth ? `${tableWidth}px` : undefined }}>
-          <div className="table-header" style={{
-            gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.endUser}px`
-          }}>
-        <div className="col-header col-checkbox">
-          <input type="checkbox" checked={selectAll} onChange={handleSelectAll} />
-          <div className="col-resize-handle"></div>
-        </div>
-        <div className="col-header col-status">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')}></div>
-          Status
-        </div>
-        <div className="col-header col-id">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')}></div>
-          ID
-        </div>
-        <div className="col-header col-subject">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')}></div>
-          Subject
-        </div>
-        <div className="col-header col-category">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')}></div>
-          Category
-        </div>
-        <div className="col-header col-priority">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')}></div>
-          Priority
-        </div>
-        <div className="col-header col-type">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')}></div>
-          Type
-        </div>
-        <div className="col-header col-lastAction">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')}></div>
-          Last Action
-        </div>
-        <div className="col-header col-date">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onDoubleClick={() => handleAutoFit('date')}></div>
-          Date Reported
-        </div>
-        <div className="col-header col-endUser">
-          <div className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')}></div>
-          End User
-        </div>
-      </div>
-      {showSearchBar && (
-        <div
-          className="table-search-bar"
-          style={{
-            gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.endUser}px`
-          }}
-        >
-          <button
-            className="search-close-btn"
-            onClick={() => {
-              clearColumnFilters()
-              setShowSearchBar(false)
-            }}
-          >âœ•</button>
-          <input
-            type="text"
-            placeholder=""
-            className="col-status"
-            value={searchValues.status}
-            onChange={(e) => handleSearchChange('status', e.target.value)}
-          />
-          <input type="text" placeholder="" className="col-id" value={searchValues.id} onChange={(e) => handleSearchChange('id', e.target.value)} />
-          <input type="text" placeholder="" className="col-subject" value={searchValues.subject} onChange={(e) => handleSearchChange('subject', e.target.value)} />
-          <input type="text" placeholder="" className="col-category" value={searchValues.category} onChange={(e) => handleSearchChange('category', e.target.value)} />
-          <input type="text" placeholder="" className="col-priority" value={searchValues.priority} onChange={(e) => handleSearchChange('priority', e.target.value)} />
-          <input type="text" placeholder="" className="col-type" value={searchValues.type} onChange={(e) => handleSearchChange('type', e.target.value)} />
-          <input type="text" placeholder="" className="col-lastAction" value={searchValues.lastAction} onChange={(e) => handleSearchChange('lastAction', e.target.value)} />
-          <input type="text" placeholder="" className="col-date" value={searchValues.dateReported} onChange={(e) => handleSearchChange('dateReported', e.target.value)} />
-          <input type="text" placeholder="" className="col-endUser" value={searchValues.endUser} onChange={(e) => handleSearchChange('endUser', e.target.value)} />
-        </div>
-      )}
-      <div className="table-body">
-        {filteredIncidents.map((incident) => (
-          <div key={incident.id} className="table-row" style={{
-            gridTemplateColumns: `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.endUser}px`
-          }} onClick={() => handleTicketClick(incident)}>
-            <div className="col-checkbox" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedTickets.includes(incident.id)} onChange={() => handleSelectTicket(incident.id)} /></div>
-            <div className="col-status">
-              <span className={`status-badge ${statusClass(incident.status)}`}>{incident.status}</span>
+          )}
+          {pageItems.map((incident) => (
+            <div key={incident.id} className="table-row" style={ticketsGridStyle}>
+              <div className="col-checkbox">
+                <input
+                  type="checkbox"
+                  checked={selectedTickets.includes(incident.id)}
+                  onChange={() => handleSelectTicket(incident.id)}
+                  aria-label={`Select ${incident.id}`}
+                />
+              </div>
+              <div className="col-status">
+                <span className={`status-badge ${statusClass(incident.status)}`}>{incident.status}</span>
+              </div>
+              <div className="col-id">{incident.id}</div>
+              <div className="col-summary">
+                <a href="#" onClick={(e) => { e.preventDefault(); handleTicketClick(incident) }}>{incident.subject || '-'}</a>
+              </div>
+              <div className="col-category">{incident.category || '-'}</div>
+              <div className="col-priority">{incident.priority || '-'}</div>
+              <div className="col-type">{incident.type || '-'}</div>
+              <div className="col-endUser">{incident.endUser || '-'}</div>
+              <div className="col-lastAction">{incident.lastAction || '-'}</div>
+              <div className="col-date">{incident.dateReported || '-'}</div>
+              <div className="col-spacer" aria-hidden="true" />
             </div>
-            <div className="col-id">{incident.id}</div>
-            <div className="col-summary">
-              <a href="#" onClick={(e) => e.preventDefault()}>{incident.subject}</a>
-            </div>
-            <div className="col-category">{incident.category}</div>
-            <div className="col-priority">
-              <span className={`priority-badge ${incident.priority.toLowerCase()}`}>{incident.priority}</span>
-            </div>
-            <div className="col-type">{incident.type}</div>
-            <div className="col-lastAction">
-              <span className="last-action-time">{incident.lastActionTime}</span>
-            </div>
-<div className="col-date">{incident.dateReported}</div>            <div className="col-endUser">{incident.endUser || 'â€”'}</div>
-            
-          </div>
-        ))}
-          </div>
+          ))}
+          {pageItems.length === 0 && (
+            <div className="table-empty">No tickets found.</div>
+          )}
         </div>
       </div>
     </div>
@@ -1808,6 +2092,8 @@ export default function TicketsView() {
     </div>
   )
 }
+
+
 
 
 

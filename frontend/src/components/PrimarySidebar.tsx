@@ -66,6 +66,18 @@ const navItems: NavItem[] = [
     )
   },
   {
+    id: 'reports',
+    label: 'Reports',
+    icon: (
+      <svg className="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M4 19h16" />
+        <rect x="6" y="10" width="3" height="6" rx="1" />
+        <rect x="11" y="6" width="3" height="10" rx="1" />
+        <rect x="16" y="12" width="3" height="4" rx="1" />
+      </svg>
+    )
+  },
+  {
     id: 'admin',
     label: 'Admin',
     icon: (
@@ -79,13 +91,13 @@ const navItems: NavItem[] = [
 
 export default function PrimarySidebar({ activeNav, setActiveNav, role }: { activeNav: string; setActiveNav: (id: string) => void; role?: string }) {
   const visibleNavItems = navItems.filter((item) => {
-    if (role === 'ADMIN') return ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'admin'].includes(item.id)
-    if (role === 'AGENT') return ['dashboard', 'tickets', 'assets', 'suppliers'].includes(item.id)
-    if (role === 'USER') return ['tickets'].includes(item.id)
-    return ['tickets'].includes(item.id)
+    if (role === 'ADMIN') return ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'reports', 'admin'].includes(item.id)
+    if (role === 'AGENT') return ['dashboard', 'tickets', 'assets', 'suppliers', 'reports'].includes(item.id)
+    if (role === 'USER') return ['tickets', 'reports'].includes(item.id)
+    return ['tickets', 'reports'].includes(item.id)
   })
   return (
-    <aside className="primary-sidebar">
+    <aside className="primary-left-panel">
       <div className="sidebar-header-text">ITAM</div>
 
       <nav className="nav-items">
@@ -106,3 +118,4 @@ export default function PrimarySidebar({ activeNav, setActiveNav, role }: { acti
     </aside>
   )
 }
+
