@@ -6,21 +6,45 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.listUsers = void 0;
 const db_1 = require("../../db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
+function normalizeRole(input) {
+    const value = String(input || 'USER').trim().toUpperCase();
+    if (['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM'].includes(value))
+        return value;
+    return 'USER';
+}
 async function listUsers(opts = {}) {
     const conditions = [];
     const params = [];
     if (opts.role) {
         params.push(opts.role);
-        conditions.push(`"role" = $${params.length}`);
+        conditions.push(`u."role" = $${params.length}`);
     }
     if (opts.q) {
         params.push(`%${opts.q}%`);
-        conditions.push(`("name" ILIKE $${params.length} OR "email" ILIKE $${params.length})`);
+        conditions.push(`(u."name" ILIKE $${params.length} OR u."email" ILIKE $${params.length})`);
     }
     const take = opts.limit && opts.limit > 0 ? opts.limit : 50;
     params.push(take);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    return (0, db_1.query)(`SELECT "id", "name", "email", "role", "status", "createdAt" FROM "User" ${where} ORDER BY "name" ASC LIMIT $${params.length}`, params);
+    return (0, db_1.query)(`SELECT
+       u."id",
+       u."name",
+       u."email",
+       u."role",
+       u."status",
+       u."createdAt",
+       COALESCE(ui.status, 'none') AS "inviteStatus"
+     FROM "User" u
+     LEFT JOIN LATERAL (
+       SELECT status
+       FROM user_invites
+       WHERE user_id = u."id"
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) ui ON TRUE
+     ${where}
+     ORDER BY u."name" ASC NULLS LAST, u."email" ASC
+     LIMIT $${params.length}`, params);
 }
 exports.listUsers = listUsers;
 async function getUserById(id) {
@@ -29,11 +53,14 @@ async function getUserById(id) {
 exports.getUserById = getUserById;
 async function createUser(payload) {
     const email = String(payload.email || '').trim().toLowerCase();
-    const password = String(payload.password || '');
     if (!email)
         throw { status: 400, message: 'Email is required' };
-    if (!password || password.length < 6)
+    let password = String(payload.password || '');
+    if (password && password.length < 6)
         throw { status: 400, message: 'Password must be at least 6 characters' };
+    if (!password) {
+        password = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+    }
     const existing = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "email" = $1', [email]);
     if (existing)
         throw { status: 409, message: 'Email already exists' };
@@ -46,8 +73,8 @@ async function createUser(payload) {
         client: payload.client ?? null,
         site: payload.site ?? null,
         accountManager: payload.accountManager ?? null,
-        role: payload.role || 'USER',
-        status: payload.status || 'ACTIVE',
+        role: normalizeRole(payload.role),
+        status: String(payload.status || 'ACTIVE').trim().toUpperCase(),
     };
     const rows = await (0, db_1.query)('INSERT INTO "User" ("email", "password", "name", "phone", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt"', [data.email, data.password, data.name, data.phone, data.client, data.site, data.accountManager, data.role, data.status]);
     return rows[0];
@@ -68,9 +95,9 @@ async function updateUser(id, payload) {
     if (payload.accountManager !== undefined)
         data.accountManager = payload.accountManager;
     if (payload.role !== undefined)
-        data.role = payload.role;
+        data.role = normalizeRole(payload.role);
     if (payload.status !== undefined)
-        data.status = payload.status;
+        data.status = String(payload.status).trim().toUpperCase();
     if (payload.password) {
         if (String(payload.password).length < 6)
             throw { status: 400, message: 'Password must be at least 6 characters' };

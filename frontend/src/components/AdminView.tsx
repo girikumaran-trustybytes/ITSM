@@ -2,6 +2,7 @@
 import { createPortal } from 'react-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { loadLeftPanelConfig, resetLeftPanelConfig, saveLeftPanelConfig, type LeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
+import RbacModule from './RbacModule'
 
 type PaginationMeta = {
   page: number
@@ -36,8 +37,6 @@ const settingsMenu: MenuSection[] = [
     id: 'general',
     label: 'General Settings',
     items: [
-      { id: 'organization-info', label: 'Organization info' },
-      { id: 'business-hours', label: 'Business hours & holidays' },
       { id: 'timezone-localization', label: 'Time zone & localization' },
     ],
   },
@@ -46,23 +45,13 @@ const settingsMenu: MenuSection[] = [
     label: 'User & Access Management',
     items: [
       { id: 'roles-permissions', label: 'Roles & permissions', requiresAdmin: true },
-      { id: 'user-groups', label: 'User groups' },
-      { id: 'sso-configuration', label: 'SSO configuration', requiresAdmin: true },
       { id: 'mfa-settings', label: 'MFA settings', requiresAdmin: true },
-    ],
-  },
-  {
-    id: 'queue-management',
-    label: 'Queue Management',
-    items: [
-      { id: 'queue-management', label: 'Queue Management', requiresAdmin: true },
     ],
   },
   {
     id: 'incident',
     label: 'Incident Management',
     items: [
-      { id: 'priority-matrix', label: 'Priority matrix' },
       { id: 'sla-policies', label: 'SLA policies' },
       { id: 'escalation-rules', label: 'Escalation rules' },
       { id: 'auto-assignment', label: 'Auto-assignment rules' },
@@ -435,6 +424,139 @@ const settingsTopicPanels: Record<string, PanelDef[]> = {
   ],
 }
 
+type PermissionSection = {
+  id: string
+  title: string
+  items: { id: string; label: string }[]
+}
+
+const rolePermissionSections: PermissionSection[] = [
+  {
+    id: 'user',
+    title: 'USER Permission',
+    items: [
+      { id: 'viewUser', label: 'View User' },
+      { id: 'editUser', label: 'Edit User' },
+      { id: 'createUser', label: 'Create User' },
+      { id: 'deleteUser', label: 'Delete User' },
+      { id: 'resetUserPassword', label: 'Reset User Password' },
+    ],
+  },
+  {
+    id: 'role',
+    title: 'ROLE Permission',
+    items: [
+      { id: 'viewRole', label: 'View Role' },
+      { id: 'editRole', label: 'Edit Role' },
+      { id: 'createRole', label: 'Create Role' },
+      { id: 'deleteRole', label: 'Delete Role' },
+    ],
+  },
+  {
+    id: 'reports',
+    title: 'REPORTS Permission',
+    items: [{ id: 'viewAllCashReports', label: 'View All Cash Reports' }],
+  },
+  {
+    id: 'pharmacyProduct',
+    title: 'PHARMACY PRODUCT Permission',
+    items: [
+      { id: 'viewProduct', label: 'View Product' },
+      { id: 'editProduct', label: 'Edit Product' },
+      { id: 'createProduct', label: 'Create Product' },
+      { id: 'deleteProduct', label: 'Delete Product' },
+    ],
+  },
+  {
+    id: 'patient',
+    title: 'PATIENT Permission',
+    items: [
+      { id: 'viewPatient', label: 'View Patient' },
+      { id: 'editPatient', label: 'Edit Patient' },
+      { id: 'createPatient', label: 'Create Patient' },
+      { id: 'deletePatient', label: 'Delete Patient' },
+    ],
+  },
+  {
+    id: 'otherService',
+    title: 'OTHER SERVICE Permission',
+    items: [
+      { id: 'viewService', label: 'View Service' },
+      { id: 'editService', label: 'Edit Service' },
+      { id: 'createService', label: 'Create Service' },
+      { id: 'deleteService', label: 'Delete Service' },
+    ],
+  },
+  {
+    id: 'labReport',
+    title: 'LAB REPORT Permission',
+    items: [
+      { id: 'viewLabReport', label: 'View Lab Report' },
+      { id: 'editLabReport', label: 'Edit Lab Report' },
+      { id: 'viewUnit', label: 'View Unit' },
+      { id: 'editUnit', label: 'Edit Unit' },
+      { id: 'viewResultCategory', label: 'View Result Category' },
+      { id: 'editResultCategory', label: 'Edit Result Category' },
+      { id: 'viewTestData', label: 'View Test Data' },
+      { id: 'editTestData', label: 'Edit Test Data' },
+      { id: 'viewTestDataCategory', label: 'View Test Data Category' },
+      { id: 'editTestDataCategory', label: 'Edit Test Data Category' },
+      { id: 'viewPatientLabReport', label: 'View Patient Lab Report' },
+      { id: 'printPatientLabReport', label: 'Print Patient Lab Report' },
+      { id: 'createLabReport', label: 'Create Lab Report' },
+      { id: 'deleteLabReport', label: 'Delete Lab Report' },
+      { id: 'createUnit', label: 'Create Unit' },
+      { id: 'deleteUnit', label: 'Delete Unit' },
+      { id: 'createResultCategory', label: 'Create Result Category' },
+      { id: 'deleteResultCategory', label: 'Delete Result Category' },
+      { id: 'createTestData', label: 'Create Test Data' },
+      { id: 'deleteTestData', label: 'Delete Test Data' },
+      { id: 'createTestDataCategory', label: 'Create Test Data Category' },
+      { id: 'deleteTestDataCategory', label: 'Delete Test Data Category' },
+      { id: 'updatePatientLabReport', label: 'Update Patient Lab Report' },
+    ],
+  },
+  {
+    id: 'invoice',
+    title: 'INVOICE Permission',
+    items: [
+      { id: 'createInvoice', label: 'Create Invoice' },
+      { id: 'reverseInvoice', label: 'Reverse Invoice' },
+    ],
+  },
+  {
+    id: 'doctor',
+    title: 'DOCTOR Permission',
+    items: [
+      { id: 'viewDoctor', label: 'View Doctor' },
+      { id: 'editDoctor', label: 'Edit Doctor' },
+      { id: 'createDoctor', label: 'Create Doctor' },
+      { id: 'deleteDoctor', label: 'Delete Doctor' },
+    ],
+  },
+  {
+    id: 'chanelSession',
+    title: 'CHANEL SESSION Permission',
+    items: [
+      { id: 'viewSession', label: 'View Session' },
+      { id: 'editSession', label: 'Edit Session' },
+      { id: 'createSession', label: 'Create Session' },
+      { id: 'deleteSession', label: 'Delete Session' },
+    ],
+  },
+]
+
+const initiallyCheckedPermissions = new Set([
+  'viewAllCashReports',
+  'viewProduct', 'editProduct', 'createProduct', 'deleteProduct',
+  'viewPatient', 'editPatient', 'createPatient', 'deletePatient',
+  'viewService', 'editService', 'createService', 'deleteService',
+  'viewLabReport',
+  'createInvoice', 'reverseInvoice',
+  'viewDoctor',
+  'viewSession', 'editSession', 'createSession', 'deleteSession',
+])
+
 export default function AdminView(_props: AdminViewProps) {
   const { user } = useAuth()
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
@@ -505,6 +627,7 @@ export default function AdminView(_props: AdminViewProps) {
 
   const title = selectedItem?.label || 'Settings'
   const isQueueManagement = activeItem === 'queue-management'
+  const isRolesPermissionsView = activeItem === 'roles-permissions'
 
   const matches = (text: string) => {
     const q = settingsQuery.trim().toLowerCase()
@@ -682,23 +805,18 @@ export default function AdminView(_props: AdminViewProps) {
     if (key === 'suppliers' || key === 'supplier' || key === 'supplier left panel') return 'suppliers'
     return null
   }
-  const promptQueuePanel = (action: string, fallback: QueuePanelKey = queuePanelKey) => {
-    const raw = window.prompt(`${action}: enter panel (tickets/users/assets/suppliers)`, queuePanelLabels[fallback])
-    if (raw == null) return null
-    const parsed = normalizePanelInput(raw)
-    if (!parsed) {
-      alert('Invalid panel. Use one of: tickets, users, assets, suppliers.')
-      return null
-    }
-    return parsed
-  }
   const handleQueueAdd = () => {
-    const panel = promptQueuePanel('Add New Queue')
-    if (!panel) return
+    const panel = queuePanelKey
     const name = window.prompt('Queue name?')
     if (name == null) return
     const label = name.trim()
     if (!label) return
+    const list = leftPanelConfig[panel]
+    const exists = list.some((r) => r.label.trim().toLowerCase() === label.toLowerCase())
+    if (exists) {
+      alert(`Queue "${label}" already exists in ${queuePanelLabels[panel]}.`)
+      return
+    }
     const allowedFields = queueFieldOptions[panel]
     const defaultField = allowedFields[0] || 'status'
     const fieldInput = window.prompt(`Field for "${label}" (${allowedFields.join(', ')})`, defaultField)
@@ -718,22 +836,31 @@ export default function AdminView(_props: AdminViewProps) {
     setQueuePanelKey(panel)
   }
   const handleQueueEdit = () => {
-    const panel = promptQueuePanel('Edit Queue')
-    if (!panel) return
+    const panel = queuePanelKey
+    const list = leftPanelConfig[panel]
+    if (list.length === 0) {
+      alert(`No queues available in ${queuePanelLabels[panel]}.`)
+      return
+    }
+    const queueNames = list.map((r) => r.label).join(', ')
     const existingNameInput = window.prompt('Queue name to edit?')
     if (existingNameInput == null) return
     const existingName = existingNameInput.trim().toLowerCase()
     if (!existingName) return
-    const list = leftPanelConfig[panel]
     const existing = list.find((r) => r.label.trim().toLowerCase() === existingName)
     if (!existing) {
-      alert(`Queue "${existingNameInput}" not found in ${queuePanelLabels[panel]}.`)
+      alert(`Queue "${existingNameInput}" not found in ${queuePanelLabels[panel]}. Available: ${queueNames}`)
       return
     }
     const nextNameInput = window.prompt('New queue name', existing.label)
     if (nextNameInput == null) return
     const label = nextNameInput.trim()
     if (!label) return
+    const duplicate = list.some((r) => r.id !== existing.id && r.label.trim().toLowerCase() === label.toLowerCase())
+    if (duplicate) {
+      alert(`Queue "${label}" already exists in ${queuePanelLabels[panel]}.`)
+      return
+    }
     const allowedFields = queueFieldOptions[panel]
     const nextFieldInput = window.prompt(`New field (${allowedFields.join(', ')})`, existing.field)
     if (nextFieldInput == null) return
@@ -754,16 +881,20 @@ export default function AdminView(_props: AdminViewProps) {
     setQueuePanelKey(panel)
   }
   const handleQueueDelete = () => {
-    const panel = promptQueuePanel('Delete Queue')
-    if (!panel) return
+    const panel = queuePanelKey
+    const list = leftPanelConfig[panel]
+    if (list.length === 0) {
+      alert(`No queues available in ${queuePanelLabels[panel]}.`)
+      return
+    }
+    const queueNames = list.map((r) => r.label).join(', ')
     const targetNameInput = window.prompt('Queue name to delete?')
     if (targetNameInput == null) return
     const targetName = targetNameInput.trim().toLowerCase()
     if (!targetName) return
-    const list = leftPanelConfig[panel]
     const existing = list.find((r) => r.label.trim().toLowerCase() === targetName)
     if (!existing) {
-      alert(`Queue "${targetNameInput}" not found in ${queuePanelLabels[panel]}.`)
+      alert(`Queue "${targetNameInput}" not found in ${queuePanelLabels[panel]}. Available: ${queueNames}`)
       return
     }
     if (!window.confirm(`Delete queue "${existing.label}" from ${queuePanelLabels[panel]}?`)) return
@@ -905,7 +1036,7 @@ export default function AdminView(_props: AdminViewProps) {
             <div>
               <h2>{title}</h2>
             </div>
-            {!isQueueManagement && (
+            {!isQueueManagement && !isRolesPermissionsView && (
               <div className="admin-settings-head-meta">
                 <span className={`admin-health ${systemHealth.tone}`}>
                   <i />
@@ -916,7 +1047,7 @@ export default function AdminView(_props: AdminViewProps) {
             )}
           </div>
 
-          {!isQueueManagement && (
+          {!isQueueManagement && !isRolesPermissionsView && (
             <div className="admin-settings-toolbar">
               <div className="admin-settings-inline-search">
                 <input
@@ -934,7 +1065,7 @@ export default function AdminView(_props: AdminViewProps) {
               </div>
             </div>
           )}
-          {!isQueueManagement && (
+          {!isQueueManagement && !isRolesPermissionsView && (
             <div className="admin-settings-topic-strip">
               <div className="admin-settings-topic-search">
                 <input
@@ -996,7 +1127,10 @@ export default function AdminView(_props: AdminViewProps) {
                 </div>
               </section>
             )}
-            {topicPanels.map((panel) => {
+            {isRolesPermissionsView && (
+              <RbacModule isAdmin={role === 'ADMIN'} />
+            )}
+            {!isRolesPermissionsView && topicPanels.map((panel) => {
               const panelFields = panel.fields
                 .map((field) => renderField(field))
                 .filter(Boolean)
@@ -1010,7 +1144,7 @@ export default function AdminView(_props: AdminViewProps) {
               )
             })}
 
-            {!isQueueManagement && (
+            {!isQueueManagement && !isRolesPermissionsView && (
               <section className="admin-settings-card danger-zone">
                 <h3>Danger Zone</h3>
                 <p>Destructive actions require explicit confirmation and are logged for compliance.</p>

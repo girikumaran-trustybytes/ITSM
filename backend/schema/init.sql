@@ -266,3 +266,171 @@ CREATE TABLE IF NOT EXISTS "TicketStatusHistory" (
   "changedById" INTEGER REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
   "changedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'Role') THEN
+    ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'SUPPLIER';
+    ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'CUSTOM';
+  END IF;
+END$$;
+
+CREATE TABLE IF NOT EXISTS roles (
+  role_id SERIAL PRIMARY KEY,
+  role_name TEXT NOT NULL UNIQUE,
+  is_system BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ticket_queues (
+  queue_id SERIAL PRIMARY KEY,
+  queue_key TEXT NOT NULL UNIQUE,
+  queue_label TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ticket_queue_actions (
+  action_id SERIAL PRIMARY KEY,
+  queue_id INTEGER NOT NULL REFERENCES ticket_queues(queue_id) ON DELETE CASCADE,
+  action_key TEXT NOT NULL,
+  action_label TEXT NOT NULL,
+  is_custom BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(queue_id, action_key)
+);
+
+CREATE TABLE IF NOT EXISTS permissions (
+  permission_id SERIAL PRIMARY KEY,
+  permission_key TEXT NOT NULL UNIQUE,
+  module TEXT NOT NULL,
+  action TEXT NOT NULL,
+  queue TEXT,
+  label TEXT NOT NULL,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+  permission_id INTEGER NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
+  allowed BOOLEAN NOT NULL DEFAULT false,
+  PRIMARY KEY(role_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_permissions_override (
+  user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  permission_id INTEGER NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
+  allowed BOOLEAN NOT NULL,
+  PRIMARY KEY(user_id, permission_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_invites (
+  invite_id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  token_hash TEXT,
+  expires_at TIMESTAMP(3),
+  status TEXT NOT NULL DEFAULT 'invite_pending',
+  sent_at TIMESTAMP(3),
+  accepted_at TIMESTAMP(3),
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_invites_user_id_created_at ON user_invites(user_id, created_at DESC);
+
+INSERT INTO roles (role_name)
+VALUES
+  ('ADMIN'),
+  ('AGENT'),
+  ('USER'),
+  ('SUPPLIER'),
+  ('CUSTOM')
+ON CONFLICT (role_name) DO NOTHING;
+
+INSERT INTO ticket_queues (queue_key, queue_label)
+VALUES
+  ('helpdesk', 'Helpdesk'),
+  ('l1', 'L1'),
+  ('hr', 'HR'),
+  ('l2', 'L2'),
+  ('l3', 'L3'),
+  ('supplier', 'Supplier')
+ON CONFLICT (queue_key) DO NOTHING;
+
+INSERT INTO ticket_queue_actions (queue_id, action_key, action_label, is_custom)
+SELECT tq.queue_id, src.action_key, src.action_label, false
+FROM ticket_queues tq
+CROSS JOIN (
+  VALUES
+    ('accept', 'Accept'),
+    ('acknowledge', 'Acknowledge'),
+    ('email_user', 'Email User'),
+    ('log_to_supplier', 'Log to Supplier'),
+    ('email_supplier', 'Email Supplier'),
+    ('internal_note', 'Internal Note'),
+    ('note_plus_email', 'Note + Email'),
+    ('resolve', 'Resolve'),
+    ('call_back_supplier', 'Call Back Supplier'),
+    ('approval', 'Approval'),
+    ('close', 'Close')
+) AS src(action_key, action_label)
+ON CONFLICT (queue_id, action_key) DO NOTHING;
+
+INSERT INTO permissions (permission_key, module, action, queue, label)
+VALUES
+  ('dashboard:*:read', 'dashboard', 'read', NULL, 'Dashboard - Read'),
+  ('asset:*:read', 'asset', 'read', NULL, 'Asset - Read'),
+  ('asset:*:create', 'asset', 'create', NULL, 'Asset - Create'),
+  ('asset:*:edit', 'asset', 'edit', NULL, 'Asset - Edit'),
+  ('asset:*:delete', 'asset', 'delete', NULL, 'Asset - Delete'),
+  ('user:*:read', 'user', 'read', NULL, 'User - Read'),
+  ('user:*:create', 'user', 'create', NULL, 'User - Create'),
+  ('user:*:edit', 'user', 'edit', NULL, 'User - Edit'),
+  ('user:*:delete', 'user', 'delete', NULL, 'User - Delete'),
+  ('supplier:*:read', 'supplier', 'read', NULL, 'Supplier - Read'),
+  ('supplier:*:create', 'supplier', 'create', NULL, 'Supplier - Create'),
+  ('supplier:*:edit', 'supplier', 'edit', NULL, 'Supplier - Edit'),
+  ('supplier:*:delete', 'supplier', 'delete', NULL, 'Supplier - Delete'),
+  ('report:*:read', 'report', 'read', NULL, 'Report - Read'),
+  ('report:*:edit', 'report', 'edit', NULL, 'Report - Edit'),
+  ('admin:*:read', 'admin', 'read', NULL, 'Admin - Read'),
+  ('admin:*:create', 'admin', 'create', NULL, 'Admin - Create'),
+  ('admin:*:edit', 'admin', 'edit', NULL, 'Admin - Edit'),
+  ('admin:*:delete', 'admin', 'delete', NULL, 'Admin - Delete')
+ON CONFLICT (permission_key) DO NOTHING;
+
+INSERT INTO permissions (permission_key, module, action, queue, label)
+SELECT
+  'ticket:' || tq.queue_key || ':' || tqa.action_key,
+  'ticket',
+  tqa.action_key,
+  tq.queue_key,
+  'Ticket - ' || tq.queue_label || ' - ' || tqa.action_label
+FROM ticket_queue_actions tqa
+INNER JOIN ticket_queues tq ON tq.queue_id = tqa.queue_id
+ON CONFLICT (permission_key) DO NOTHING;
+
+INSERT INTO role_permissions (role_id, permission_id, allowed)
+SELECT r.role_id, p.permission_id,
+  CASE
+    WHEN r.role_name = 'ADMIN' THEN true
+    WHEN r.role_name = 'AGENT' THEN (
+      (p.module = 'dashboard' AND p.action = 'read')
+      OR (p.module = 'ticket')
+      OR (p.module = 'asset' AND p.action IN ('read','create','edit'))
+      OR (p.module = 'user' AND p.action = 'read')
+      OR (p.module = 'supplier' AND p.action = 'read')
+      OR (p.module = 'report' AND p.action = 'read')
+    )
+    WHEN r.role_name = 'USER' THEN (
+      (p.module = 'dashboard' AND p.action = 'read')
+      OR (p.module = 'ticket' AND p.action IN ('email_user'))
+      OR (p.module = 'asset' AND p.action = 'read')
+    )
+    WHEN r.role_name = 'SUPPLIER' THEN (
+      (p.module = 'ticket' AND p.queue = 'supplier' AND p.action IN ('acknowledge','resolve','close','internal_note'))
+      OR (p.module = 'supplier' AND p.action = 'read')
+      OR (p.module = 'report' AND p.action = 'read')
+    )
+    ELSE false
+  END
+FROM roles r
+CROSS JOIN permissions p
+ON CONFLICT (role_id, permission_id) DO NOTHING;

@@ -23,15 +23,22 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
+exports.markInvitePending = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
 const svc = __importStar(require("./users.service"));
 const logger_1 = require("../../common/logger/logger");
+const rbacSvc = __importStar(require("./rbac.service"));
 async function list(req, res) {
-    const q = req.query.q ? String(req.query.q) : undefined;
-    const limit = req.query.limit ? Number(req.query.limit) : undefined;
-    const role = req.query.role ? String(req.query.role) : undefined;
-    const users = await svc.listUsers({ q, limit, role });
-    res.json(users);
+    try {
+        await rbacSvc.ensureRbacSeeded();
+        const q = req.query.q ? String(req.query.q) : undefined;
+        const limit = req.query.limit ? Number(req.query.limit) : undefined;
+        const role = req.query.role ? String(req.query.role) : undefined;
+        const users = await svc.listUsers({ q, limit, role });
+        res.json(users);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to list users' });
+    }
 }
 exports.list = list;
 async function getOne(req, res) {
@@ -46,8 +53,22 @@ async function getOne(req, res) {
 exports.getOne = getOne;
 async function create(req, res) {
     try {
+        await rbacSvc.ensureRbacSeeded();
         const payload = req.body || {};
         const created = await svc.createUser(payload);
+        if (payload.defaultPermissionTemplate) {
+            await rbacSvc.upsertUserPermissions(created.id, {
+                templateKey: String(payload.defaultPermissionTemplate),
+                autoSwitchCustom: false,
+            }, Number(req.user?.id || 0));
+        }
+        const inviteMode = String(payload.inviteMode || '').toLowerCase();
+        if (inviteMode === 'later') {
+            await rbacSvc.markInvitePending(created.id, Number(req.user?.id || 0));
+        }
+        if (inviteMode === 'now') {
+            await rbacSvc.sendUserInvite(created.id, Number(req.user?.id || 0));
+        }
         await (0, logger_1.auditLog)({ action: 'create_user', entity: 'user', entityId: created.id, user: req.user?.id, meta: { email: created.email, role: created.role } });
         res.status(201).json(created);
     }
@@ -85,3 +106,76 @@ async function remove(req, res) {
     }
 }
 exports.remove = remove;
+async function getPermissions(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        const snapshot = await rbacSvc.getUserPermissionsSnapshot(id);
+        res.json(snapshot);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to load permissions' });
+    }
+}
+exports.getPermissions = getPermissions;
+async function updatePermissions(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        const payload = req.body || {};
+        const snapshot = await rbacSvc.upsertUserPermissions(id, {
+            role: payload.role,
+            templateKey: payload.templateKey,
+            permissions: payload.permissions,
+            autoSwitchCustom: payload.autoSwitchCustom !== false,
+        }, Number(req.user?.id || 0));
+        res.json(snapshot);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to update permissions' });
+    }
+}
+exports.updatePermissions = updatePermissions;
+async function addTicketCustomAction(req, res) {
+    try {
+        const payload = req.body || {};
+        const created = await rbacSvc.createTicketQueueCustomAction({
+            queue: payload.queue,
+            label: payload.label,
+            actionKey: payload.actionKey,
+        }, Number(req.user?.id || 0));
+        res.status(201).json(created);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to add custom action' });
+    }
+}
+exports.addTicketCustomAction = addTicketCustomAction;
+async function sendInvite(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        const result = await rbacSvc.sendUserInvite(id, Number(req.user?.id || 0));
+        res.json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to send invite' });
+    }
+}
+exports.sendInvite = sendInvite;
+async function markInvitePending(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        await rbacSvc.markInvitePending(id, Number(req.user?.id || 0));
+        res.json({ inviteStatus: 'invite_pending' });
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to mark invite pending' });
+    }
+}
+exports.markInvitePending = markInvitePending;

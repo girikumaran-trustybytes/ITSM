@@ -13,7 +13,7 @@ exports.userIdParamsSchema = zod_1.z.object({
 });
 exports.usersCreateBodySchema = zod_1.z.object({
     email: zod_1.z.string().email(),
-    password: zod_1.z.string().min(6),
+    password: zod_1.z.string().min(6).optional(),
     name: zod_1.z.string().optional(),
     phone: zod_1.z.string().optional(),
     client: zod_1.z.string().optional(),

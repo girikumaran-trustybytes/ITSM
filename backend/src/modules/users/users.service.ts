@@ -1,22 +1,46 @@
 import { query, queryOne } from '../../db'
 import bcrypt from 'bcrypt'
 
+function normalizeRole(input: any) {
+  const value = String(input || 'USER').trim().toUpperCase()
+  if (['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM'].includes(value)) return value
+  return 'USER'
+}
+
 export async function listUsers(opts: { q?: string; limit?: number; role?: string } = {}) {
   const conditions: string[] = []
   const params: any[] = []
   if (opts.role) {
     params.push(opts.role)
-    conditions.push(`"role" = $${params.length}`)
+    conditions.push(`u."role" = $${params.length}`)
   }
   if (opts.q) {
     params.push(`%${opts.q}%`)
-    conditions.push(`("name" ILIKE $${params.length} OR "email" ILIKE $${params.length})`)
+    conditions.push(`(u."name" ILIKE $${params.length} OR u."email" ILIKE $${params.length})`)
   }
   const take = opts.limit && opts.limit > 0 ? opts.limit : 50
   params.push(take)
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   return query(
-    `SELECT "id", "name", "email", "role", "status", "createdAt" FROM "User" ${where} ORDER BY "name" ASC LIMIT $${params.length}`,
+    `SELECT
+       u."id",
+       u."name",
+       u."email",
+       u."role",
+       u."status",
+       u."createdAt",
+       COALESCE(ui.status, 'none') AS "inviteStatus"
+     FROM "User" u
+     LEFT JOIN LATERAL (
+       SELECT status
+       FROM user_invites
+       WHERE user_id = u."id"
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) ui ON TRUE
+     ${where}
+     ORDER BY u."name" ASC NULLS LAST, u."email" ASC
+     LIMIT $${params.length}`,
     params
   )
 }
@@ -49,8 +73,8 @@ export async function createUser(payload: any) {
     client: payload.client ?? null,
     site: payload.site ?? null,
     accountManager: payload.accountManager ?? null,
-    role: payload.role || 'USER',
-    status: payload.status || 'ACTIVE',
+    role: normalizeRole(payload.role),
+    status: String(payload.status || 'ACTIVE').trim().toUpperCase(),
   }
 
   const rows = await query(
@@ -68,8 +92,8 @@ export async function updateUser(id: number, payload: any) {
   if (payload.client !== undefined) data.client = payload.client
   if (payload.site !== undefined) data.site = payload.site
   if (payload.accountManager !== undefined) data.accountManager = payload.accountManager
-  if (payload.role !== undefined) data.role = payload.role
-  if (payload.status !== undefined) data.status = payload.status
+  if (payload.role !== undefined) data.role = normalizeRole(payload.role)
+  if (payload.status !== undefined) data.status = String(payload.status).trim().toUpperCase()
   if (payload.password) {
     if (String(payload.password).length < 6) throw { status: 400, message: 'Password must be at least 6 characters' }
     data.password = await bcrypt.hash(String(payload.password), 12)

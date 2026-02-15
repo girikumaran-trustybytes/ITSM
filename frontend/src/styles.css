@@ -6993,6 +6993,510 @@ body.admin-queue-collapsed .ticket-left-panel {
   accent-color: #2563eb;
 }
 
+.admin-role-permissions-card {
+  grid-column: 1 / -1;
+  padding: 0;
+  gap: 0;
+}
+
+.admin-role-editor-header {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 12px 14px;
+}
+
+.admin-role-editor-header h3 {
+  margin: 0;
+  font-size: 27px;
+  color: #2b3942;
+}
+
+.admin-role-editor-name-row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.admin-role-name-label {
+  font-size: 13px;
+  color: #374151;
+  justify-self: end;
+}
+
+.admin-role-name-input {
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #ffffff;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+.admin-role-cards-grid {
+  padding: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-role-permission-card {
+  border: 1px solid #dde5ec;
+  border-radius: 4px;
+  background: #edf4fa;
+  padding: 10px;
+}
+
+.admin-role-permission-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.admin-role-permission-card-head h4 {
+  margin: 0;
+  font-size: 21px;
+  color: #2b3942;
+  font-weight: 700;
+}
+
+.admin-role-select-all,
+.admin-role-permission-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #243447;
+  font-size: 16px;
+}
+
+.admin-role-select-all input,
+.admin-role-permission-item input {
+  accent-color: #2ea3f2;
+}
+
+.admin-role-permission-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 18px;
+}
+
+.admin-role-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.admin-role-editor-pad {
+  height: 10px;
+}
+
+.rbac-module-card {
+  grid-column: 1 / -1;
+  position: relative;
+  border-radius: 16px;
+  border: 1px solid #dbe2ea;
+  background: #f2f4f7;
+  padding: 18px;
+  gap: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.rbac-shell-head {
+  border-radius: 12px 12px 0 0;
+  padding: 2px 4px 10px;
+}
+
+.rbac-shell-head h3 {
+  margin: 0;
+  font-size: 36px;
+  letter-spacing: 0.2px;
+  color: #1e2a44;
+}
+
+.rbac-top-controls {
+  border-radius: 14px;
+  border: 1px solid #d8dfe8;
+  background: #eef1f4;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.rbac-select-field {
+  min-width: 0;
+}
+
+.rbac-select-field select {
+  width: 100%;
+  height: 46px;
+  border: 1px solid #c8d0db;
+  border-radius: 10px;
+  padding: 0 16px;
+  background: #f8fafc;
+  font-size: 14px;
+  color: #334563;
+}
+
+.rbac-select-field select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, #65789d 50%),
+    linear-gradient(135deg, #65789d 50%, transparent 50%),
+    linear-gradient(180deg, #f8fafc, #f8fafc);
+  background-position:
+    calc(100% - 25px) calc(50% - 3px),
+    calc(100% - 17px) calc(50% - 3px),
+    0 0;
+  background-size: 8px 8px, 8px 8px, 100% 100%;
+  background-repeat: no-repeat;
+}
+
+.rbac-header-actions {
+  display: inline-flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.rbac-add-btn,
+.rbac-reinvite-btn {
+  height: 46px;
+  border-radius: 10px;
+  padding: 0 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #bfcde4;
+  white-space: nowrap;
+}
+
+.rbac-add-btn {
+  background: #f8fafc;
+  color: #314564;
+}
+
+.rbac-reinvite-btn {
+  border-color: #1f63d3;
+  background: linear-gradient(180deg, #2e77ec, #1f63d3);
+  color: #ffffff;
+}
+
+.rbac-add-btn:disabled,
+.rbac-reinvite-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rbac-module-strip {
+  border-radius: 14px;
+  border: 1px solid #d8dfe8;
+  background: #eef1f4;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+}
+
+.rbac-strip-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: #273854;
+  line-height: 1;
+}
+
+.rbac-strip-item input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2f79e8;
+}
+
+.rbac-modules-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.rbac-module-block {
+  border: 1px solid #d7dee8;
+  border-radius: 14px;
+  background: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  display: flex;
+  flex-direction: column;
+  min-height: 260px;
+}
+
+.rbac-module-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e1e7ef;
+  background: #eef2f7;
+}
+
+.rbac-module-toggle {
+  border: none;
+  background: transparent;
+  text-align: left;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.rbac-module-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #25344e;
+}
+
+.rbac-module-subtitle {
+  color: #516483;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rbac-select-all {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: #2c3f5d;
+  white-space: nowrap;
+}
+
+.rbac-select-all input,
+.rbac-permission-item input,
+.rbac-role-option input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2f79e8;
+  cursor: pointer;
+}
+
+.rbac-permission-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 14px 18px 10px;
+}
+
+.rbac-permission-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #253651;
+}
+
+.rbac-module-footer {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 14px 12px;
+  border-top: 1px solid #e1e7ef;
+}
+
+.rbac-add-action-btn {
+  border: 1px solid #b8c9e4;
+  background: linear-gradient(180deg, #f6f9ff, #ebf2ff);
+  color: #2864c8;
+  height: 32px;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rbac-add-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rbac-sticky-actions {
+  position: static;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 2px;
+  border-top: none;
+  background: transparent;
+}
+
+.rbac-close-btn,
+.rbac-update-btn {
+  border-radius: 10px;
+  height: 40px;
+  padding: 0 24px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #bccbe2;
+}
+
+.rbac-close-btn {
+  background: linear-gradient(180deg, #f4f8ff, #e8f0ff);
+  color: #2e4261;
+}
+
+.rbac-update-btn {
+  border-color: #2166d6;
+  background: linear-gradient(180deg, #3180ef, #2166d6);
+  color: #ffffff;
+}
+
+.rbac-update-btn:disabled,
+.rbac-close-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.rbac-user-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 360px;
+}
+
+.rbac-user-picker label {
+  font-size: 12px;
+  color: #374151;
+}
+
+.rbac-user-search,
+.rbac-user-picker select {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.rbac-role-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 10px 0;
+}
+
+.rbac-template-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d8e2ee;
+  border-radius: 6px;
+  background: #f6f8fb;
+  padding: 8px 10px;
+}
+
+.rbac-template-row label {
+  font-size: 12px;
+  color: #374151;
+  min-width: 120px;
+}
+
+.rbac-template-row select {
+  width: 100%;
+  max-width: 320px;
+  border: 1px solid #c9d3de;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.rbac-role-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.rbac-module-block-wide {
+  grid-column: 1 / -1;
+}
+
+.rbac-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #ffffff;
+  z-index: 1200;
+}
+
+.rbac-toast.ok {
+  background: #16a34a;
+}
+
+.rbac-toast.error {
+  background: #dc2626;
+}
+
+.rbac-modal {
+  width: min(560px, 92vw);
+}
+
+.rbac-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.rbac-modal-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.rbac-modal-grid input,
+.rbac-modal-grid select {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.rbac-invite-step {
+  font-size: 13px;
+  color: #374151;
+}
+
+.rbac-modal-error {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.rbac-invite-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .danger-zone {
   border-color: #fecaca;
   background: #fffafa;
@@ -7142,6 +7646,89 @@ body.admin-queue-collapsed .ticket-left-panel {
 
   .admin-settings-head-meta {
     align-items: flex-start;
+  }
+
+  .admin-role-editor-name-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-role-name-label {
+    justify-self: start;
+  }
+
+  .admin-role-cards-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-role-permission-list {
+    grid-template-columns: 1fr;
+  }
+
+  .rbac-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rbac-template-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 1600px) and (min-width: 1281px) {
+  .rbac-modules-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1280px) {
+  .rbac-modules-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rbac-top-controls {
+    grid-template-columns: 1fr;
+  }
+  .rbac-header-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 700px) {
+  .rbac-modules-grid,
+  .rbac-permission-grid {
+    grid-template-columns: 1fr;
+  }
+  .rbac-top-controls {
+    grid-template-columns: 1fr;
+  }
+  .rbac-header-actions {
+    justify-content: flex-start;
+  }
+  .rbac-shell-head h3 {
+    font-size: 28px;
+  }
+  .rbac-input-with-icon,
+  .rbac-select-field select,
+  .rbac-add-btn,
+  .rbac-reinvite-btn {
+    height: 42px;
+    font-size: 13px;
+  }
+  .rbac-module-title {
+    font-size: 16px;
+  }
+  .rbac-module-subtitle,
+  .rbac-select-all,
+  .rbac-permission-item,
+  .rbac-strip-item,
+  .rbac-add-action-btn,
+  .rbac-close-btn,
+  .rbac-update-btn {
+    font-size: 13px;
+  }
+  .rbac-close-btn,
+  .rbac-update-btn {
+    height: 38px;
   }
 }
 

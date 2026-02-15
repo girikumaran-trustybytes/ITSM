@@ -37,6 +37,7 @@ const navLabels: Record<string, string> = {
   assets: 'Assets',
   users: 'Users',
   suppliers: 'Suppliers',
+  accounts: 'Accounts',
   reports: 'Reports',
   admin: 'Admin',
 }
@@ -46,6 +47,7 @@ function getNavFromPath(pathname: string) {
   if (pathname.startsWith('/assets')) return 'assets'
   if (pathname.startsWith('/users')) return 'users'
   if (pathname.startsWith('/supplier')) return 'suppliers'
+  if (pathname.startsWith('/accounts')) return 'accounts'
   if (pathname.startsWith('/reports')) return 'reports'
   if (pathname.startsWith('/admin')) return 'admin'
   return 'dashboard'
@@ -163,19 +165,20 @@ function MainShell() {
   const isDashboardRoute = location.pathname.startsWith('/dashboard')
   const isReportsRoute = location.pathname.startsWith('/reports')
   const isUsersListRoute = location.pathname === '/users'
+  const isAccountsListRoute = location.pathname === '/accounts'
   const isAssetsListRoute = location.pathname === '/assets'
   const isSuppliersListRoute = location.pathname === '/supplier'
   const isAdminListRoute = location.pathname === '/admin'
-  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute
+  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute && !isAdminListRoute
   const toolbarPagination =
-    isUsersListRoute ? usersPagination :
+    isUsersListRoute || isAccountsListRoute ? usersPagination :
     isAssetsListRoute ? assetsPagination :
     isSuppliersListRoute ? suppliersPagination :
     isAdminListRoute ? adminPagination :
     null
 
   useEffect(() => {
-    if (isUsersListRoute) {
+    if (isUsersListRoute || isAccountsListRoute) {
       setUsersPage(1)
     }
     if (isAssetsListRoute) {
@@ -187,10 +190,11 @@ function MainShell() {
     if (isAdminListRoute) {
       setAdminPage(1)
     }
-  }, [tabToolbarSearch, isUsersListRoute, isAssetsListRoute, isSuppliersListRoute, isAdminListRoute])
+  }, [tabToolbarSearch, isUsersListRoute, isAccountsListRoute, isAssetsListRoute, isSuppliersListRoute, isAdminListRoute])
 
   const toolbarTarget =
     isUsersListRoute ? 'users' :
+    isAccountsListRoute ? 'accounts' :
     isAssetsListRoute ? 'assets' :
     isSuppliersListRoute ? 'suppliers' :
     isAdminListRoute ? 'admin' :
@@ -422,7 +426,7 @@ function MainShell() {
                       <button
                         className="users-page-btn"
                         onClick={() => {
-                          if (isUsersListRoute) setUsersPage((p) => Math.max(1, p - 1))
+                          if (isUsersListRoute || isAccountsListRoute) setUsersPage((p) => Math.max(1, p - 1))
                           else if (isAssetsListRoute) setAssetsPage((p) => Math.max(1, p - 1))
                           else if (isSuppliersListRoute) setSuppliersPage((p) => Math.max(1, p - 1))
                           else if (isAdminListRoute) setAdminPage((p) => Math.max(1, p - 1))
@@ -438,7 +442,7 @@ function MainShell() {
                       <button
                         className="users-page-btn"
                         onClick={() => {
-                          if (isUsersListRoute) setUsersPage((p) => Math.min(usersPagination.totalPages, p + 1))
+                          if (isUsersListRoute || isAccountsListRoute) setUsersPage((p) => Math.min(usersPagination.totalPages, p + 1))
                           else if (isAssetsListRoute) setAssetsPage((p) => Math.min(assetsPagination.totalPages, p + 1))
                           else if (isSuppliersListRoute) setSuppliersPage((p) => Math.min(suppliersPagination.totalPages, p + 1))
                           else if (isAdminListRoute) setAdminPage((p) => Math.min(adminPagination.totalPages, p + 1))
@@ -544,6 +548,19 @@ function MainShell() {
             }
           />
           <Route path="/users/:userId" element={<div className="work-main"><UserDetailView /></div>} />
+          <Route
+            path="/accounts"
+            element={
+              <div className="work-main">
+                <UsersView
+                  toolbarSearch={tabToolbarSearch}
+                  controlledPage={usersPage}
+                  onPageChange={setUsersPage}
+                  onPaginationMetaChange={setUsersPagination}
+                />
+              </div>
+            }
+          />
           <Route path="/reports" element={<div className="work-main"><ReportsView /></div>} />
           <Route
             path="/admin"
