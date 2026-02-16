@@ -17,6 +17,13 @@ async function getTicketRecord(idOrTicketId: string) {
   return queryOne<any>(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params)
 }
 
+async function resolveChangedById(user: any): Promise<number | null> {
+  const parsed = typeof user === 'number' ? user : parseInt(String(user), 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  const exists = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [parsed])
+  return exists?.id ?? null
+}
+
 function buildInsert(table: string, data: Record<string, any>) {
   const keys = Object.keys(data).filter((k) => data[k] !== undefined)
   const cols = keys.map((k) => `"${k}"`)
@@ -201,13 +208,14 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
   )
   const updated = updatedRows[0]
 
+  const changedById = await resolveChangedById(user)
   await query(
     'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [
       t.id,
       from,
       toState,
-      typeof user === 'number' ? user : parseInt(String(user)) || null,
+      changedById,
       '',
       false,
     ]
@@ -236,13 +244,14 @@ export const createHistoryEntry = async (ticketId: string, opts: { note: string;
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
+  const changedById = await resolveChangedById(opts.user)
   const rows = await query(
     'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
     [
       t.id,
       t.status,
       t.status,
-      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+      changedById,
       opts.note,
       false,
     ]
@@ -259,17 +268,21 @@ export const createHistoryEntry = async (ticketId: string, opts: { note: string;
   return created
 }
 
-export const addResponse = async (ticketId: string, opts: { message: string; user?: any; sendEmail?: boolean }) => {
+export const addResponse = async (
+  ticketId: string,
+  opts: { message: string; user?: any; sendEmail?: boolean; to?: string; cc?: string; bcc?: string; subject?: string }
+) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
+  const changedById = await resolveChangedById(opts.user)
   const rows = await query(
     'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
     [
       t.id,
       t.status,
       t.status,
-      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+      changedById,
       opts.message,
       false,
     ]
@@ -278,13 +291,16 @@ export const addResponse = async (ticketId: string, opts: { message: string; use
 
   await auditLog({ action: 'respond', ticketId: t.ticketId, user: opts.user, meta: { message: opts.message } })
 
-  if (opts.sendEmail && t.requesterId) {
-    try {
+  if (opts.sendEmail) {
+    let targetEmail = String(opts.to || '').trim()
+    if (!targetEmail && t.requesterId) {
       const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
-      if (requester?.email) await mailer.sendTicketResponse(requester.email, t, opts.message)
-    } catch (e) {
-      console.warn('Failed sending ticket response email', e)
+      targetEmail = String(requester?.email || '').trim()
     }
+    if (!targetEmail) {
+      throw { status: 400, message: 'Recipient email is required for sending response' }
+    }
+    await mailer.sendTicketResponseStrict(targetEmail, t, opts.message, opts.subject, opts.cc, opts.bcc)
   }
 
   return created
@@ -294,13 +310,14 @@ export const addPrivateNote = async (ticketId: string, opts: { note: string; use
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
+  const changedById = await resolveChangedById(opts.user)
   const rows = await query(
     'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
     [
       t.id,
       t.status,
       t.status,
-      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+      changedById,
       opts.note,
       true,
     ]
@@ -328,13 +345,14 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
   )
   const updated = updatedRows[0]
 
+  const changedById = await resolveChangedById(opts.user)
   await query(
     'INSERT INTO "TicketStatusHistory" ("ticketId", "oldStatus", "newStatus", "changedById", "changedAt") VALUES ($1, $2, $3, $4, NOW())',
     [
       t.id,
       from,
       'Resolved',
-      typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+      changedById,
     ]
   )
 
@@ -380,13 +398,14 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
   )
   const updated = updatedRows[0]
 
+  const changedById = await resolveChangedById(user)
   await query(
     'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [
       t.id,
       t.status,
       updated.status,
-      typeof user === 'number' ? user : parseInt(String(user)) || null,
+      changedById,
       'ticket updated',
       false,
     ]
@@ -405,13 +424,14 @@ export const deleteTicket = async (ticketId: string, user?: any) => {
   const deletedRows = await query(`DELETE FROM "Ticket" t WHERE ${where.clause} RETURNING *`, where.params)
   const deleted = deletedRows[0]
 
+  const changedById = await resolveChangedById(user)
   await query(
     'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [
       t.id,
       t.status,
       'Deleted',
-      typeof user === 'number' ? user : parseInt(String(user)) || null,
+      changedById,
       'deleted',
       false,
     ]

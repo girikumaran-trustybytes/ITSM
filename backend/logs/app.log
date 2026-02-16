@@ -179,3 +179,48 @@
 {"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T08:23:10.010Z"}
 {"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T08:24:17.105Z"}
 {"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T08:24:17.125Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <20260216083248.23c331c1cb708ea9@getgitguardian.com>\nFrom: security@getgitguardian.com\nDate: Mon, 16 Feb 2026 08:32:48 +0000","status":"New","subcategory":"Email","subject":"[girikumaran-trustybytes/ITSM] SMTP credentials exposed on GitHub","type":"Incident"}},"ticketId":"TB#00005","timestamp":"2026-02-16T08:33:19.004Z","user":"mail_ingest"}
+{"from":"security@getgitguardian.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"[girikumaran-trustybytes/ITSM] SMTP credentials exposed on GitHub","ticketId":"TB#00005","timestamp":"2026-02-16T08:33:19.381Z","uid":"409"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:12:17.973Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:12:47.981Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:13:17.979Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:13:47.979Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:14:17.985Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:14:47.992Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:15:17.997Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:15:48.000Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:16:18.015Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:16:48.027Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:17:18.065Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:17:48.076Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:18:18.091Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:18:48.095Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T09:19:18.093Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAMJh7FW+KZ4DJ=htrWijREHrb1kOWc+LxGKA7Bx2hnv+9Jjr8A@mail.gmail.com>\nFrom: girims9901@gmail.com\nDate: Mon, 16 Feb 2026 15:02:43 +0530","status":"New","subcategory":"Email","subject":"Test","type":"Incident"}},"ticketId":"TB#00006","timestamp":"2026-02-16T09:33:21.160Z","user":"mail_ingest"}
+{"from":"girims9901@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Test","ticketId":"TB#00006","timestamp":"2026-02-16T09:33:21.758Z","uid":"410"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:36:01.729Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:36:01.761Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:38:08.398Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:38:08.414Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"scs"},"ticketId":"TB#00006","timestamp":"2026-02-16T09:38:33.367Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T09:38:33.382Z"}
+{"action":"transition","level":"info","message":"audit","meta":{"from":"New","to":"In Progress"},"ticketId":"TB#00006","timestamp":"2026-02-16T09:38:33.495Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T09:38:33.501Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"Hi"},"ticketId":"TB#00006","timestamp":"2026-02-16T09:39:54.009Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T09:39:54.017Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:42:01.963Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:42:01.989Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:42:26.733Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:42:26.755Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:42:51.874Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:42:51.902Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:43:34.359Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:43:34.492Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:46:04.737Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:46:04.760Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:46:22.508Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:46:22.529Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:46:44.283Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:46:44.307Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:47:25.179Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:47:25.256Z"}

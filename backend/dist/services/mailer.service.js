@@ -9,6 +9,9 @@ async function safeSend(to, subject, text) {
         console.warn('[MAILER] Failed to send email', { to, subject, error: error?.message || error });
     }
 }
+async function strictSend(to, subject, text) {
+    await (0, mail_integration_1.sendSmtpMail)({ to, subject, text });
+}
 exports.default = {
     async sendTicketCreated(email, ticket) {
         const subject = `[ITSM] Ticket created: ${ticket?.ticketId || ticket?.id || ''}`.trim();
@@ -38,6 +41,15 @@ exports.default = {
             `Message: ${message || '-'}`,
         ].join('\n');
         await safeSend(email, subject, text);
+    },
+    async sendTicketResponseStrict(email, ticket, message, subjectOverride, cc, bcc) {
+        const subject = String(subjectOverride || `[ITSM] New response: ${ticket?.ticketId || ticket?.id || ''}`).trim();
+        const text = [
+            'A new response was added to your ticket.',
+            `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
+            `Message: ${message || '-'}`,
+        ].join('\n');
+        await (0, mail_integration_1.sendSmtpMail)({ to: email, cc, bcc, subject, text });
     },
     async sendTicketResolved(email, ticket) {
         const subject = `[ITSM] Ticket resolved: ${ticket?.ticketId || ticket?.id || ''}`.trim();

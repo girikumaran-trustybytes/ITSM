@@ -58,6 +58,10 @@ export const ticketsHistoryBodySchema = z.object({
 export const ticketsRespondBodySchema = z.object({
   message: z.string().min(1),
   sendEmail: z.boolean().optional(),
+  to: z.string().email().optional(),
+  cc: z.string().optional(),
+  bcc: z.string().optional(),
+  subject: z.string().min(1).optional(),
 })
 
 export const ticketsPrivateNoteBodySchema = z.object({

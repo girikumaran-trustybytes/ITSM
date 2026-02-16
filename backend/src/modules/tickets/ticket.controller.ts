@@ -64,11 +64,11 @@ export const addHistory = async (req: Request, res: Response) => {
 
 export const respond = async (req: Request, res: Response) => {
   const id = req.params.id
-  const { message, sendEmail } = (req as any).validated?.body || req.body || {}
+  const { message, sendEmail, to, cc, bcc, subject } = (req as any).validated?.body || req.body || {}
   if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' })
   const user = (req as any).user?.id || 'system'
   try {
-    const entry = await ticketService.addResponse(id, { message, user, sendEmail })
+    const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject })
     res.status(201).json(entry)
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message || 'Failed to add response' })

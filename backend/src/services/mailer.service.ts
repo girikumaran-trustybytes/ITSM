@@ -8,6 +8,10 @@ async function safeSend(to: string, subject: string, text: string) {
   }
 }
 
+async function strictSend(to: string, subject: string, text: string) {
+  await sendSmtpMail({ to, subject, text })
+}
+
 export default {
   async sendTicketCreated(email: string, ticket: any) {
     const subject = `[ITSM] Ticket created: ${ticket?.ticketId || ticket?.id || ''}`.trim()
@@ -39,6 +43,23 @@ export default {
       `Message: ${message || '-'}`,
     ].join('\n')
     await safeSend(email, subject, text)
+  },
+
+  async sendTicketResponseStrict(
+    email: string,
+    ticket: any,
+    message: string,
+    subjectOverride?: string,
+    cc?: string,
+    bcc?: string
+  ) {
+    const subject = String(subjectOverride || `[ITSM] New response: ${ticket?.ticketId || ticket?.id || ''}`).trim()
+    const text = [
+      'A new response was added to your ticket.',
+      `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
+      `Message: ${message || '-'}`,
+    ].join('\n')
+    await sendSmtpMail({ to: email, cc, bcc, subject, text })
   },
 
   async sendTicketResolved(email: string, ticket: any) {

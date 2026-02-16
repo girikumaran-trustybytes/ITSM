@@ -19,6 +19,13 @@ async function getTicketRecord(idOrTicketId) {
     const where = buildTicketWhere(idOrTicketId, 't', 1);
     return (0, db_1.queryOne)(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params);
 }
+async function resolveChangedById(user) {
+    const parsed = typeof user === 'number' ? user : parseInt(String(user), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0)
+        return null;
+    const exists = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [parsed]);
+    return exists?.id ?? null;
+}
 function buildInsert(table, data) {
     const keys = Object.keys(data).filter((k) => data[k] !== undefined);
     const cols = keys.map((k) => `"${k}"`);
@@ -181,11 +188,12 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
     const where = buildTicketWhere(ticketId, 't', 2);
     const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [toState, ...where.params]);
     const updated = updatedRows[0];
+    const changedById = await resolveChangedById(user);
     await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
         t.id,
         from,
         toState,
-        typeof user === 'number' ? user : parseInt(String(user)) || null,
+        changedById,
         '',
         false,
     ]);
@@ -215,11 +223,12 @@ const createHistoryEntry = async (ticketId, opts) => {
     const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
+    const changedById = await resolveChangedById(opts.user);
     const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
         t.id,
         t.status,
         t.status,
-        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+        changedById,
         opts.note,
         false,
     ]);
@@ -237,25 +246,27 @@ const addResponse = async (ticketId, opts) => {
     const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
+    const changedById = await resolveChangedById(opts.user);
     const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
         t.id,
         t.status,
         t.status,
-        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+        changedById,
         opts.message,
         false,
     ]);
     const created = rows[0];
     await (0, logger_1.auditLog)({ action: 'respond', ticketId: t.ticketId, user: opts.user, meta: { message: opts.message } });
-    if (opts.sendEmail && t.requesterId) {
-        try {
+    if (opts.sendEmail) {
+        let targetEmail = String(opts.to || '').trim();
+        if (!targetEmail && t.requesterId) {
             const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
-            if (requester?.email)
-                await mailer_service_1.default.sendTicketResponse(requester.email, t, opts.message);
+            targetEmail = String(requester?.email || '').trim();
         }
-        catch (e) {
-            console.warn('Failed sending ticket response email', e);
+        if (!targetEmail) {
+            throw { status: 400, message: 'Recipient email is required for sending response' };
         }
+        await mailer_service_1.default.sendTicketResponseStrict(targetEmail, t, opts.message, opts.subject, opts.cc, opts.bcc);
     }
     return created;
 };
@@ -264,11 +275,12 @@ const addPrivateNote = async (ticketId, opts) => {
     const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
+    const changedById = await resolveChangedById(opts.user);
     const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
         t.id,
         t.status,
         t.status,
-        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+        changedById,
         opts.note,
         true,
     ]);
@@ -290,11 +302,12 @@ const resolveTicketWithDetails = async (ticketId, opts) => {
         ...where.params,
     ]);
     const updated = updatedRows[0];
+    const changedById = await resolveChangedById(opts.user);
     await (0, db_1.query)('INSERT INTO "TicketStatusHistory" ("ticketId", "oldStatus", "newStatus", "changedById", "changedAt") VALUES ($1, $2, $3, $4, NOW())', [
         t.id,
         from,
         'Resolved',
-        typeof opts.user === 'number' ? opts.user : parseInt(String(opts.user)) || null,
+        changedById,
     ]);
     await (0, logger_1.auditLog)({ action: 'resolve', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } });
     if (opts.sendEmail && t.requesterId) {
@@ -341,11 +354,12 @@ const updateTicket = async (ticketId, payload, user) => {
     const where = buildTicketWhere(ticketId, 't', params.length + 1);
     const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET ${setParts.join(', ')} WHERE ${where.clause} RETURNING *`, [...params, ...where.params]);
     const updated = updatedRows[0];
+    const changedById = await resolveChangedById(user);
     await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
         t.id,
         t.status,
         updated.status,
-        typeof user === 'number' ? user : parseInt(String(user)) || null,
+        changedById,
         'ticket updated',
         false,
     ]);
@@ -361,11 +375,12 @@ const deleteTicket = async (ticketId, user) => {
     const where = buildTicketWhere(ticketId, 't', 1);
     const deletedRows = await (0, db_1.query)(`DELETE FROM "Ticket" t WHERE ${where.clause} RETURNING *`, where.params);
     const deleted = deletedRows[0];
+    const changedById = await resolveChangedById(user);
     await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
         t.id,
         t.status,
         'Deleted',
-        typeof user === 'number' ? user : parseInt(String(user)) || null,
+        changedById,
         'deleted',
         false,
     ]);

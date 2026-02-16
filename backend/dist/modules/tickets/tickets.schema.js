@@ -53,6 +53,10 @@ exports.ticketsHistoryBodySchema = zod_1.z.object({
 exports.ticketsRespondBodySchema = zod_1.z.object({
     message: zod_1.z.string().min(1),
     sendEmail: zod_1.z.boolean().optional(),
+    to: zod_1.z.string().email().optional(),
+    cc: zod_1.z.string().optional(),
+    bcc: zod_1.z.string().optional(),
+    subject: zod_1.z.string().min(1).optional(),
 });
 exports.ticketsPrivateNoteBodySchema = zod_1.z.object({
     note: zod_1.z.string().min(1),

@@ -4099,74 +4099,160 @@ body.tickets-queue-expanded .detail-view-container {
     position: static;
   }
 }
-.email-modal {
-  max-width: 900px;
+.action-compose-modal {
+  width: min(1180px, 96vw);
+  max-width: 1180px;
+  border-radius: 10px;
+  border: 1px solid #d8dee7;
+  background: #f5f7fb;
 }
-.email-header {
+.compose-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #eef2f7;
+  align-items: flex-start;
+  padding: 14px 16px 8px;
 }
-.email-title {
-  font-size: 14px;
-  font-weight: 700;
+.compose-user {
+  font-size: 13px;
+  font-weight: 600;
   color: #111827;
 }
-.email-subtitle {
-  font-size: 12px;
-  color: #6b7280;
+.compose-mode {
+  font-size: 13px;
+  color: #111827;
 }
-.email-row {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  gap: 10px;
+.compose-header-actions {
+  display: inline-flex;
   align-items: center;
-  padding: 12px 20px 0 20px;
+  gap: 8px;
+  position: relative;
 }
-.email-row label {
-  font-size: 12px;
-  color: #6b7280;
-}
-.email-to {
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
-}
-.email-toolbar {
-  display: flex;
-  gap: 6px;
-  padding: 10px 20px;
-}
-.email-toolbar button {
-  border: 1px solid #e5e7eb;
-  background: #fff;
-  border-radius: 6px;
-  padding: 4px 6px;
+.compose-icon-btn {
+  min-width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid #d2d8e3;
+  background: #f8fafc;
+  color: #1f2937;
   font-size: 12px;
   cursor: pointer;
 }
-.email-body {
-  margin: 0 20px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 10px 12px;
-  min-height: 140px;
-  font-size: 13px;
-  resize: vertical;
-}
-.email-status {
-  border: 1px solid #e5e7eb;
+.compose-menu {
+  position: absolute;
+  top: 30px;
+  right: 36px;
+  min-width: 180px;
+  border: 1px solid #d8dee7;
   border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+  display: flex;
+  flex-direction: column;
+  z-index: 4;
 }
-.email-actions {
+.compose-menu button {
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #111827;
+  cursor: pointer;
+}
+.compose-menu button:hover {
+  background: #f3f6fb;
+}
+.compose-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+}
+.compose-row label {
+  font-size: 12px;
+  color: #111827;
+}
+.compose-row input,
+.compose-row select {
+  height: 34px;
+  border: 1px solid #cfd7e4;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.compose-grid {
+  display: grid;
+  gap: 10px 14px;
+  padding: 8px 16px;
+}
+.compose-grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.compose-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.compose-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #111827;
+}
+.compose-grid input,
+.compose-grid select {
+  height: 34px;
+  border: 1px solid #cfd7e4;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.inline-row {
+  display: flex;
+  gap: 6px;
+}
+.compose-editor-shell {
+  margin: 8px 16px;
+  border: 1px solid #cad2de;
+  border-radius: 8px;
+  background: #fff;
+}
+.compose-editor-toolbar {
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
+}
+.compose-editor-toolbar button {
+  border: none;
+  background: transparent;
+  color: #364152;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.compose-editor-body {
+  width: 100%;
+  border: none;
+  resize: vertical;
+  min-height: 120px;
+  padding: 12px;
+  font-size: 12px;
+  color: #111827;
+  background: #fff;
+}
+.compose-editor-body:focus {
+  outline: none;
+}
+.compose-footer-actions {
   display: flex;
   gap: 10px;
-  padding: 16px 20px 20px 20px;
+  padding: 12px 16px 16px;
 }
 
 /* Dashboard */

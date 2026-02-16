@@ -94,12 +94,12 @@ const addHistory = async (req, res) => {
 exports.addHistory = addHistory;
 const respond = async (req, res) => {
     const id = req.params.id;
-    const { message, sendEmail } = req.validated?.body || req.body || {};
+    const { message, sendEmail, to, cc, bcc, subject } = req.validated?.body || req.body || {};
     if (!message || !message.trim())
         return res.status(400).json({ error: 'Message is required' });
     const user = req.user?.id || 'system';
     try {
-        const entry = await ticketService.addResponse(id, { message, user, sendEmail });
+        const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject });
         res.status(201).json(entry);
     }
     catch (err) {

@@ -148,6 +148,8 @@ export async function verifySmtp(override?: Partial<MailConfig>) {
 export async function sendSmtpMail(
   payload: {
     to: string | string[]
+    cc?: string | string[]
+    bcc?: string | string[]
     subject: string
     text?: string
     html?: string
@@ -159,6 +161,12 @@ export async function sendSmtpMail(
   assertSmtpConfigured(cfg)
   const to = Array.isArray(payload.to) ? payload.to.filter(Boolean) : [String(payload.to || '').trim()]
   if (to.length === 0 || !to[0]) throw { status: 400, message: 'Recipient email is required' }
+  const cc = Array.isArray(payload.cc)
+    ? payload.cc.map((v) => String(v || '').trim()).filter(Boolean)
+    : String(payload.cc || '').split(',').map((v) => v.trim()).filter(Boolean)
+  const bcc = Array.isArray(payload.bcc)
+    ? payload.bcc.map((v) => String(v || '').trim()).filter(Boolean)
+    : String(payload.bcc || '').split(',').map((v) => v.trim()).filter(Boolean)
 
   const subject = String(payload.subject || '').trim()
   if (!subject) throw { status: 400, message: 'Subject is required' }
@@ -174,6 +182,8 @@ export async function sendSmtpMail(
   const info = await transport.sendMail({
     from: payload.from || cfg.from,
     to,
+    cc: cc.length ? cc : undefined,
+    bcc: bcc.length ? bcc : undefined,
     subject,
     text: payload.text,
     html: payload.html,

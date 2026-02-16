@@ -15,7 +15,7 @@ export type Incident = {
   subject: string
   category: string
   priority: 'Low' | 'Medium' | 'High'
-  status: 'Re-Opened' | 'New' | 'Rejected' | 'Approved' | 'Awaiting Ap' | 'Awaiting Approval' | 'In Progress' | 'Draft' | 'Updated' | 'With Supplier' | 'With HR' | 'With User' | 'Closed'
+  status: string
   type: string
   endUser: string
   dateReported: string
@@ -53,10 +53,40 @@ export default function TicketsView() {
   const [assetQuery, setAssetQuery] = useState('')
   const [assetAssignId, setAssetAssignId] = useState<number | ''>('')
   const [activeDetailTab, setActiveDetailTab] = useState('Progress')
-  const [showEmailComposer, setShowEmailComposer] = useState(false)
-  const [emailTo, setEmailTo] = useState('')
-  const [emailBody, setEmailBody] = useState('')
-  const [emailStatus, setEmailStatus] = useState('With Customer')
+  const [showActionComposer, setShowActionComposer] = useState(false)
+  const [showInternalNoteEditor, setShowInternalNoteEditor] = useState(false)
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false)
+  const [showCcField, setShowCcField] = useState(false)
+  const [showBccField, setShowBccField] = useState(false)
+  const [actionStateByTicket, setActionStateByTicket] = useState<Record<string, { ackSent: boolean; supplierLogged: boolean }>>({})
+  const [composerMode, setComposerMode] = useState<
+    'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+  >('emailUser')
+  const [composerForm, setComposerForm] = useState({
+    to: '',
+    cc: '',
+    bcc: '',
+    subject: '',
+    body: '',
+    nextUpdateDate: '',
+    nextUpdateTime: '',
+    issue: 'Offline',
+    issueDetail: 'Services>Network',
+    currentAction: '',
+    nextAction: '',
+    supplier: 'Supplier and Contract',
+    supplierRef: '',
+    approvalTeam: 'Management Team',
+    approvalPriority: 'P2 - Single site outage with remote fix',
+  })
+  const [internalNoteForm, setInternalNoteForm] = useState({
+    body: '',
+    status: 'In Progress',
+    team: 'Automated Alerts',
+    staff: '',
+    timeHours: '00',
+    timeMinutes: '01',
+  })
   const [agents, setAgents] = useState<any[]>([])
   const [queueCollapsed, setQueueCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -482,13 +512,10 @@ export default function TicketsView() {
     })
   }
 
-  // Comments keyed by ticket id (simple in-memory store for demo)
+  // Comments keyed by ticket id (simple in-memory store for timeline)
   const [ticketComments, setTicketComments] = useState<Record<string, {author: string; text: string; time: string}[]>>({})
 
-  // Inline note editor state for detail view
-  const [showNoteEditor, setShowNoteEditor] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
-  const [responseDraft, setResponseDraft] = useState('')
 
   const getCurrentAgentName = () => {
     if (!user) return 'You'
@@ -546,6 +573,81 @@ export default function TicketsView() {
     navigate('/tickets')
   }
 
+  const getTicketActionState = (ticket: Incident | null) => {
+    if (!ticket) return { ackSent: false, supplierLogged: false }
+    const key = ticket.id
+    const base = actionStateByTicket[key] || { ackSent: false, supplierLogged: false }
+    const status = String(ticket.status || '').toLowerCase()
+    const inferredAck = ['in progress', 'resolved', 'closed', 'with supplier', 'awaiting approval'].includes(status)
+    const inferredSupplier = status.includes('supplier')
+    return {
+      ackSent: base.ackSent || inferredAck,
+      supplierLogged: base.supplierLogged || inferredSupplier,
+    }
+  }
+
+  const updateTicketStatusLocal = (ticketId: string, status: string) => {
+    setIncidents((prev) => prev.map((i) => (i.id === ticketId ? { ...i, status } : i)))
+    setSelectedTicket((prev) => (prev ? { ...prev, status } : prev))
+  }
+
+  const markTicketActionState = (ticketId: string, patch: Partial<{ ackSent: boolean; supplierLogged: boolean }>) => {
+    setActionStateByTicket((prev) => ({
+      ...prev,
+      [ticketId]: {
+        ackSent: prev[ticketId]?.ackSent || false,
+        supplierLogged: prev[ticketId]?.supplierLogged || false,
+        ...patch,
+      },
+    }))
+  }
+
+  const getComposerHeading = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail' = composerMode
+  ) => {
+    if (mode === 'acknowledge') return 'Acknowledge'
+    if (mode === 'emailUser') return 'Email End User'
+    if (mode === 'logSupplier') return 'Log With Supplier'
+    if (mode === 'emailSupplier') return 'Email Supplier'
+    if (mode === 'callbackSupplier') return 'Call Back Supplier'
+    if (mode === 'approval') return 'Approval Request'
+    if (mode === 'resolve') return 'Resolve Ticket'
+    if (mode === 'close') return 'Close Ticket'
+    return 'Note + Email'
+  }
+
+  const openComposer = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+  ) => {
+    if (!selectedTicket) return
+    setComposerMode(mode)
+    const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'resolve' || mode === 'close' || mode === 'noteEmail'
+      ? (endUser?.email || '')
+      : ''
+    const subjectPrefix = `[${selectedTicket.id}] ${selectedTicket.subject}`
+    const subjectDefault =
+      mode === 'logSupplier' ? `Supplier log - ${subjectPrefix}` :
+      mode === 'approval' ? `Approval needed - ${subjectPrefix}` :
+      mode === 'resolve' ? `Resolution update - ${subjectPrefix}` :
+      mode === 'close' ? `Ticket closed - ${subjectPrefix}` :
+      mode === 'acknowledge' ? `Acknowledged - ${subjectPrefix}` :
+      `Update - ${subjectPrefix}`
+
+    setComposerForm((prev) => ({
+      ...prev,
+      to: toDefault,
+      cc: '',
+      bcc: '',
+      subject: subjectDefault,
+      body: '',
+      currentAction: getComposerHeading(mode),
+    }))
+    setShowCcField(false)
+    setShowBccField(false)
+    setComposerMenuOpen(false)
+    setShowActionComposer(true)
+  }
+
   const getActionButtons = () => {
     if (!selectedTicket) return []
     if (!isIncidentOrFault(selectedTicket.type)) return []
@@ -554,70 +656,35 @@ export default function TicketsView() {
     }
 
     const status = (selectedTicket.status || '').toLowerCase()
+    const actionState = getTicketActionState(selectedTicket)
     const buttons: { label: string; onClick: () => void; className?: string }[] = []
 
-    // Always include back
     buttons.push({ label: 'Back', onClick: closeDetail })
 
-    if (status === 'new') {
-      buttons.push({ label: 'Accept', onClick: handleAccept })
-      buttons.push({ label: 'Internal note', onClick: handleAddNote })
-      buttons.push({ label: 'Close', onClick: () => applyStatus('Closed', 'Closed') })
-      return buttons
-    }
-
-    if (status === 'acknowledged') {
-      buttons.push({ label: 'Acknowledge', onClick: () => applyStatus('In Progress', 'Acknowledged') })
-      buttons.push({ label: 'Internal note', onClick: handleAddNote })
-      buttons.push({ label: 'Re-assign', onClick: () => addTicketComment(selectedTicket.id, 'Re-assign') })
-      buttons.push({ label: 'Close', onClick: () => applyStatus('Closed', 'Closed') })
-      return buttons
-    }
-
-    if (status === 'resolved') {
-      buttons.push({ label: 'Internal note', onClick: handleAddNote })
-      buttons.push({ label: 'User Confirmation', onClick: () => applyStatus('Waiting for User', 'User confirmation requested') })
-      buttons.push({ label: 'Close', onClick: () => applyStatus('Closed', 'Closed') })
-      return buttons
-    }
-
     if (status === 'closed') {
-      buttons.push({ label: 'Internal note', onClick: handleAddNote })
-      buttons.push({ label: 'Re-open', onClick: () => applyStatus('Re-Opened', 'Re-opened') })
-      buttons.push({ label: 'Reclose', onClick: () => applyStatus('Closed', 'Reclosed') })
+      buttons.push({ label: 'Re-open', onClick: () => applyStatus('In Progress', 'Re-opened') })
+      buttons.push({ label: 'Internal note', onClick: () => setShowInternalNoteEditor(true) })
+      buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
       return buttons
     }
 
-    if (status === 'waiting for supplier') {
-      buttons.push({ label: 'Email User', onClick: handleEmailUser })
-      buttons.push({ label: 'Internal note', onClick: handleAddNote })
-      buttons.push({ label: 'Email Supplier', onClick: () => addTicketComment(selectedTicket.id, 'Emailed supplier') })
-      buttons.push({ label: 'Request Approval', onClick: () => applyStatus('Waiting for Approval', 'Approval requested') })
-      buttons.push({ label: 'Re-assign', onClick: () => addTicketComment(selectedTicket.id, 'Re-assign') })
-      buttons.push({ label: 'Resolve', onClick: () => applyStatus('Resolved', 'Resolved') })
-      buttons.push({ label: 'Close', onClick: () => applyStatus('Closed', 'Closed') })
-      return buttons
+    if (status === 'new') buttons.push({ label: 'Accept', onClick: handleAccept })
+
+    if (!actionState.ackSent) buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
+    buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
+
+    if (!actionState.supplierLogged) {
+      buttons.push({ label: 'Log to Supplier', onClick: () => openComposer('logSupplier') })
+    } else {
+      buttons.push({ label: 'Email Supplier', onClick: () => openComposer('emailSupplier') })
+      buttons.push({ label: 'Call Back Supplier', onClick: () => openComposer('callbackSupplier') })
     }
 
-    if (status === 'waiting for approval') {
-      buttons.push({ label: 'Email User', onClick: handleEmailUser })
-      buttons.push({ label: 'Internal note', onClick: handleAddNote })
-      buttons.push({ label: 'Log to Supplier', onClick: () => applyStatus('Waiting for Supplier', 'Logged to supplier') })
-      buttons.push({ label: 'Recall to Approval', onClick: () => applyStatus('In Progress', 'Recall to approval') })
-      buttons.push({ label: 'Re-assign', onClick: () => addTicketComment(selectedTicket.id, 'Re-assign') })
-      buttons.push({ label: 'Resolve', onClick: () => applyStatus('Resolved', 'Resolved') })
-      buttons.push({ label: 'Close', onClick: () => applyStatus('Closed', 'Closed') })
-      return buttons
-    }
-
-    // In Progress / Re-Opened / other
-    buttons.push({ label: 'Email User', onClick: handleEmailUser })
-    buttons.push({ label: 'Internal note', onClick: handleAddNote })
-    buttons.push({ label: 'Log to Supplier', onClick: () => applyStatus('Waiting for Supplier', 'Logged to supplier') })
-    buttons.push({ label: 'Request Approval', onClick: () => applyStatus('Waiting for Approval', 'Approval requested') })
-    buttons.push({ label: 'Re-assign', onClick: () => addTicketComment(selectedTicket.id, 'Re-assign') })
-    buttons.push({ label: 'Resolve', onClick: () => applyStatus('Resolved', 'Resolved') })
-    buttons.push({ label: 'Close', onClick: () => applyStatus('Closed', 'Closed') })
+    buttons.push({ label: 'Internal note', onClick: () => setShowInternalNoteEditor(true) })
+    buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
+    buttons.push({ label: 'Approval', onClick: () => openComposer('approval') })
+    buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
+    buttons.push({ label: 'Close', onClick: () => openComposer('close') })
     return buttons
   }
 
@@ -629,10 +696,10 @@ export default function TicketsView() {
     Close: 'circle-x',
     'Email User': 'mail',
     'Log to Supplier': 'package',
-    'Request Approval': 'clipboard-check',
-    'Re-assign': 'user-cog',
+    Approval: 'clipboard-check',
+    'Note + Email': 'mail-plus',
+    'Call Back Supplier': 'phone-call',
     Resolve: 'circle-check-big',
-    'User Confirmation': 'user-check',
     'Re-open': 'rotate-ccw',
     Reclose: 'lock',
     'Email Supplier': 'send',
@@ -989,15 +1056,16 @@ export default function TicketsView() {
   const handleAccept = () => {
     if (!selectedTicket) return
     const assigneeName = getCurrentAgentName()
-    const assigneeId = user?.id || assigneeName
-    // optimistic local update for assignment and status
+    const assigneeId = user?.id ? String(user.id) : assigneeName
     setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: 'Acknowledged', assignedAgentId: assigneeId, assignedAgentName: assigneeName } : i))
     setSelectedTicket(prev => prev ? { ...prev, status: 'Acknowledged', assignedAgentId: assigneeId, assignedAgentName: assigneeName } : prev)
     addTicketComment(selectedTicket.id, `Accepted by ${assigneeName}`)
-    // transition on backend (ignore assignment if not supported)
-    ticketService.transitionTicket(selectedTicket.id, 'Acknowledged').catch((err) => {
-      console.warn('Accept transition failed', err)
-    })
+    markTicketActionState(selectedTicket.id, { ackSent: false })
+    if (user?.id) {
+      ticketService.updateTicket(selectedTicket.id, { assigneeId: Number(user.id) }).catch((err) => {
+        console.warn('Assign after accept failed', err)
+      })
+    }
   }
 
   const renderActionIcon = (label: string) => {
@@ -1017,13 +1085,6 @@ export default function TicketsView() {
     } catch (err: any) {
       alert(err?.response?.data?.error || err?.message || `Failed to set status: ${toStatus}`)
     }
-  }
-
-  const handleEmailUser = () => {
-    if (!selectedTicket) return
-    setEmailTo(endUser?.email || '')
-    setShowEmailComposer(true)
-    addTicketComment(selectedTicket.id, 'Email user action started')
   }
 
   const handleOpenGChat = () => {
@@ -1046,83 +1107,99 @@ export default function TicketsView() {
     })
   }
 
-  const handleMarkResponded = async () => {
+  const handleSendActionComposer = async () => {
     if (!selectedTicket) return
+    const body = composerForm.body.trim()
+    if (!body) {
+      alert('Please enter message')
+      return
+    }
+
     try {
-      const updated = await ticketSvc.transitionTicket(selectedTicket.id, 'In Progress')
-      // update UI
-      setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: updated.status as any } : i))
-      setSelectedTicket(prev => prev ? { ...prev, status: updated.status } : prev)
-      addTicketComment(selectedTicket.id, 'Marked as responded (In Progress)')
-    } catch (e) {
-      // fallback: optimistic update
-      setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: 'In Progress' } : i))
-      setSelectedTicket(prev => prev ? { ...prev, status: 'In Progress' } : prev)
-      addTicketComment(selectedTicket.id, 'Marked as responded (local)')
-    }
-  }
+      if (composerMode === 'resolve') {
+        await ticketService.resolveTicketWithDetails(selectedTicket.id, {
+          resolution: body,
+          resolutionCategory: composerForm.issueDetail || undefined,
+          sendEmail: Boolean(composerForm.to.trim()),
+        })
+        updateTicketStatusLocal(selectedTicket.id, 'Resolved')
+        addTicketComment(selectedTicket.id, `Resolved: ${body}`)
+      } else if (composerMode === 'close') {
+        if (composerForm.to.trim()) {
+          await ticketService.respond(selectedTicket.id, {
+            message: body,
+            sendEmail: true,
+            to: composerForm.to.trim(),
+            cc: composerForm.cc.trim() || undefined,
+            bcc: composerForm.bcc.trim() || undefined,
+            subject: composerForm.subject.trim() || `Ticket closed - ${selectedTicket.id}`,
+          })
+        }
+        await ticketService.transitionTicket(selectedTicket.id, 'Closed')
+        updateTicketStatusLocal(selectedTicket.id, 'Closed')
+        addTicketComment(selectedTicket.id, `Closed: ${body}`)
+      } else if (composerMode === 'noteEmail') {
+        await ticketService.privateNote(selectedTicket.id, { note: body })
+        if (composerForm.to.trim()) {
+          await ticketService.respond(selectedTicket.id, {
+            message: body,
+            sendEmail: true,
+            to: composerForm.to.trim(),
+            cc: composerForm.cc.trim() || undefined,
+            bcc: composerForm.bcc.trim() || undefined,
+            subject: composerForm.subject.trim() || `Update - ${selectedTicket.id}`,
+          })
+        }
+        addTicketComment(selectedTicket.id, `Note + Email: ${body}`)
+      } else {
+        await ticketService.respond(selectedTicket.id, {
+          message: body,
+          sendEmail: Boolean(composerForm.to.trim()),
+          to: composerForm.to.trim() || undefined,
+          cc: composerForm.cc.trim() || undefined,
+          bcc: composerForm.bcc.trim() || undefined,
+          subject: composerForm.subject.trim() || undefined,
+        })
+        addTicketComment(selectedTicket.id, `${getComposerHeading()}: ${body}`)
 
-  const handleSendResponse = async () => {
-    if (!selectedTicket) return
-    const body = showEmailComposer ? emailBody : responseDraft
-    if (!body.trim()) return alert('Please enter a message')
-    try {
-      await ticketService.respond(selectedTicket.id, { message: body, sendEmail: true })
-      addTicketComment(selectedTicket.id, `You: ${body}`)
-      setResponseDraft('')
-      setEmailBody('')
-      setShowEmailComposer(false)
-      // mark In Progress locally
-      setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: 'In Progress' } : i))
-      setSelectedTicket(prev => prev ? { ...prev, status: 'In Progress' } : prev)
-    } catch (e: any) {
-      const msg = e?.response?.data?.error || e?.message || 'Failed to send response'
-      alert(msg)
-      addTicketComment(selectedTicket.id, `You: ${body}`)
-      setResponseDraft('')
-      setEmailBody('')
-      setShowEmailComposer(false)
-    }
-  }
-
-  const handleSaveNote = () => {
-    if (!selectedTicket) return
-    if (noteDraft && noteDraft.trim()) {
-      addTicketComment(selectedTicket.id, noteDraft.trim())
-    }
-    setNoteDraft('')
-    setShowNoteEditor(false)
-  }
-
-  const handleDiscardNote = () => {
-    setNoteDraft('')
-    setShowNoteEditor(false)
-  }
-
-  const handleLogToSupplier = () => {
-    if (!selectedTicket) return
-    addTicketComment(selectedTicket.id, 'Logged to supplier')
-    alert('Logged to supplier (demo)')
-  }
-
-  const handleResolveTicket = () => {
-    if (!selectedTicket) return
-    (async () => {
-      try {
-        const resolution = window.prompt('Enter resolution details (e.g. Replaced battery)')
-        if (!resolution) return
-        const category = window.prompt('Resolution category (e.g. Hardware Replaced)', 'Hardware Replaced') || undefined
-        const sendEmail = window.confirm('Send resolution email to requester?')
-        const res = await ticketService.resolveTicketWithDetails(selectedTicket.id, { resolution, resolutionCategory: category, sendEmail })
-        const updated = incidents.map(i => i.id === selectedTicket.id ? { ...i, status: res.status } : i)
-        setIncidents(updated)
-        setSelectedTicket(prev => prev ? { ...prev, status: res.status } : prev)
-        addTicketComment(selectedTicket.id, `Resolved: ${resolution}`)
-      } catch (err: any) {
-        console.warn('Resolve transition failed', err)
-        alert(err?.response?.data?.error || err?.message || 'Failed to resolve ticket')
+        if (composerMode === 'acknowledge') {
+          await ticketSvc.transitionTicket(selectedTicket.id, 'In Progress').catch(() => undefined)
+          updateTicketStatusLocal(selectedTicket.id, 'In Progress')
+          markTicketActionState(selectedTicket.id, { ackSent: true })
+        }
+        if (composerMode === 'approval') {
+          await ticketSvc.transitionTicket(selectedTicket.id, 'Awaiting Approval').catch(() => undefined)
+          updateTicketStatusLocal(selectedTicket.id, 'Awaiting Approval')
+        }
+        if (composerMode === 'logSupplier') {
+          updateTicketStatusLocal(selectedTicket.id, 'With Supplier')
+          markTicketActionState(selectedTicket.id, { supplierLogged: true })
+        }
       }
-    })()
+      setShowActionComposer(false)
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to send action')
+    }
+  }
+
+  const handleSaveInternalNote = async () => {
+    if (!selectedTicket) return
+    const note = internalNoteForm.body.trim()
+    if (!note) {
+      alert('Please enter internal note')
+      return
+    }
+    addTicketComment(selectedTicket.id, `Internal: ${note}`)
+    try {
+      await ticketService.privateNote(selectedTicket.id, { note })
+      if (internalNoteForm.status && internalNoteForm.status !== selectedTicket.status) {
+        await ticketSvc.transitionTicket(selectedTicket.id, internalNoteForm.status).catch(() => undefined)
+        updateTicketStatusLocal(selectedTicket.id, internalNoteForm.status)
+      }
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to save internal note')
+    }
+    setShowInternalNoteEditor(false)
   }
 
   const loadAssetsForTicket = async (q = '') => {
@@ -1508,7 +1585,7 @@ export default function TicketsView() {
               <button className="progress-icon-btn" title="View">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
-              <button className="progress-icon-btn" title="Note" onClick={() => setShowNoteEditor(true)}>
+              <button className="progress-icon-btn" title="Note" onClick={() => setShowInternalNoteEditor(true)}>
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h12l4 4v12H4z"/><path d="M14 4v4h4"/></svg>
               </button>
               <button className="progress-icon-btn" title="Scroll">
@@ -1660,43 +1737,203 @@ export default function TicketsView() {
             </div>
           </div>
         </div>
-      </div>{showEmailComposer && (
-        <div className="modal-overlay" onClick={() => setShowEmailComposer(false)}>
-          <div className="modal-content email-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="email-header">
+      </div>{showActionComposer && (
+        <div className="modal-overlay" onClick={() => setShowActionComposer(false)}>
+          <div className="modal-content action-compose-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="compose-header">
               <div>
-                <div className="email-title">Girikumaran M S</div>
-                <div className="email-subtitle">Reply</div>
+                <div className="compose-user">Girikumaran</div>
+                <div className="compose-mode">{getComposerHeading()}</div>
               </div>
-              <button className="modal-close" onClick={() => setShowEmailComposer(false)}>x</button>
+              <div className="compose-header-actions">
+                <button className="compose-icon-btn" onClick={() => setComposerMenuOpen((v) => !v)}>...</button>
+                {composerMenuOpen && (
+                  <div className="compose-menu">
+                    <button onClick={() => setShowCcField((v) => !v)}>Show Cc</button>
+                    <button onClick={() => setShowBccField((v) => !v)}>Show Bcc</button>
+                    <button onClick={() => setComposerForm((prev) => ({ ...prev, to: endUser?.email || '' }))}>Reply directly to me</button>
+                  </div>
+                )}
+                <button className="compose-icon-btn" onClick={() => setShowActionComposer(false)}>x</button>
+              </div>
             </div>
-            <div className="email-row">
+
+            <div className="compose-row">
               <label>To</label>
-              <input className="email-to" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="user@example.com" />
+              <input
+                value={composerForm.to}
+                onChange={(e) => setComposerForm((prev) => ({ ...prev, to: e.target.value }))}
+                placeholder="Enter recipient"
+              />
             </div>
-            <div className="email-toolbar">
-              <button>AI</button>
-              <button>B</button>
-              <button>I</button>
-              <button>U</button>
-              <button>â€¢</button>
-              <button>1.</button>
-              <button>"</button>
-              <button>@</button>
-              <button>+</button>
+            {showCcField && (
+              <div className="compose-row">
+                <label>Cc</label>
+                <input value={composerForm.cc} onChange={(e) => setComposerForm((prev) => ({ ...prev, cc: e.target.value }))} placeholder="Enter cc recipient" />
+              </div>
+            )}
+            {showBccField && (
+              <div className="compose-row">
+                <label>Bcc</label>
+                <input value={composerForm.bcc} onChange={(e) => setComposerForm((prev) => ({ ...prev, bcc: e.target.value }))} placeholder="Enter bcc recipient" />
+              </div>
+            )}
+            <div className="compose-row">
+              <label>Subject</label>
+              <input
+                value={composerForm.subject}
+                onChange={(e) => setComposerForm((prev) => ({ ...prev, subject: e.target.value }))}
+                placeholder="Enter a Subject here"
+              />
             </div>
-            <textarea className="email-body" placeholder="Type your update/note here" value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
-            <div className="email-row">
-              <label>Status</label>
-              <select className="email-status" value={emailStatus} onChange={(e) => setEmailStatus(e.target.value)}>
-                <option>With Customer</option>
-                <option>In Progress</option>
-                <option>Closed</option>
-              </select>
+
+            {(composerMode === 'acknowledge' || composerMode === 'emailUser' || composerMode === 'resolve' || composerMode === 'close' || composerMode === 'noteEmail') && (
+              <div className="compose-grid four">
+                <label>
+                  Next Update
+                  <div className="inline-row">
+                    <input type="date" value={composerForm.nextUpdateDate} onChange={(e) => setComposerForm((prev) => ({ ...prev, nextUpdateDate: e.target.value }))} />
+                    <input type="time" value={composerForm.nextUpdateTime} onChange={(e) => setComposerForm((prev) => ({ ...prev, nextUpdateTime: e.target.value }))} />
+                  </div>
+                </label>
+                <label>
+                  Issue
+                  <input value={composerForm.issue} onChange={(e) => setComposerForm((prev) => ({ ...prev, issue: e.target.value }))} />
+                </label>
+                <label>
+                  Issue - Detail
+                  <input value={composerForm.issueDetail} onChange={(e) => setComposerForm((prev) => ({ ...prev, issueDetail: e.target.value }))} />
+                </label>
+                <label>
+                  Current Action
+                  <input value={composerForm.currentAction} onChange={(e) => setComposerForm((prev) => ({ ...prev, currentAction: e.target.value }))} />
+                </label>
+              </div>
+            )}
+
+            {(composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') && (
+              <div className="compose-grid three">
+                <label>
+                  Supplier
+                  <input value={composerForm.supplier} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplier: e.target.value }))} />
+                </label>
+                <label>
+                  Supplier Ref
+                  <input value={composerForm.supplierRef} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplierRef: e.target.value }))} />
+                </label>
+                <label>
+                  Priority
+                  <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
+                </label>
+              </div>
+            )}
+
+            {composerMode === 'approval' && (
+              <div className="compose-grid three">
+                <label>
+                  Approval Team
+                  <select value={composerForm.approvalTeam} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalTeam: e.target.value }))}>
+                    <option>Management Team</option>
+                    <option>HR Team</option>
+                    <option>Account Team</option>
+                  </select>
+                </label>
+                <label>
+                  Priority
+                  <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
+                </label>
+                <label>
+                  Current Action
+                  <input value={composerForm.currentAction} onChange={(e) => setComposerForm((prev) => ({ ...prev, currentAction: e.target.value }))} />
+                </label>
+              </div>
+            )}
+
+            <div className="compose-editor-shell">
+              <div className="compose-editor-toolbar">
+                <button type="button">A:</button>
+                <button type="button">-</button>
+                <button type="button">1.</button>
+                <button type="button">"</button>
+                <button type="button">link</button>
+                <button type="button">img</button>
+                <button type="button">table</button>
+                <button type="button">:)</button>
+                <button type="button">+</button>
+              </div>
+              <textarea
+                className="compose-editor-body"
+                placeholder="Type your update/note here"
+                value={composerForm.body}
+                onChange={(e) => setComposerForm((prev) => ({ ...prev, body: e.target.value }))}
+              />
             </div>
-            <div className="email-actions">
-              <button className="btn-submit" onClick={handleSendResponse}>Send</button>
-              <button className="btn-cancel" onClick={() => setShowEmailComposer(false)}>Discard</button>
+
+            <div className="compose-row">
+              <label>Public Note</label>
+              <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} placeholder="Public note" />
+            </div>
+
+            <div className="compose-footer-actions">
+              <button className="btn-submit" onClick={handleSendActionComposer}>Send</button>
+              <button className="btn-cancel" onClick={() => setShowActionComposer(false)}>Discard</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showInternalNoteEditor && (
+        <div className="modal-overlay" onClick={() => setShowInternalNoteEditor(false)}>
+          <div className="modal-content action-compose-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="compose-header">
+              <div>
+                <div className="compose-user">Girikumaran</div>
+                <div className="compose-mode">Internal Note</div>
+              </div>
+              <button className="compose-icon-btn" onClick={() => setShowInternalNoteEditor(false)}>x</button>
+            </div>
+            <div className="compose-editor-shell">
+              <div className="compose-editor-toolbar">
+                <button type="button">A:</button>
+                <button type="button">-</button>
+                <button type="button">1.</button>
+                <button type="button">"</button>
+                <button type="button">link</button>
+                <button type="button">img</button>
+                <button type="button">table</button>
+              </div>
+              <textarea
+                className="compose-editor-body"
+                placeholder="Enter your note here"
+                value={internalNoteForm.body}
+                onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, body: e.target.value }))}
+              />
+            </div>
+            <div className="compose-grid four">
+              <label>Status
+                <select value={internalNoteForm.status} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, status: e.target.value }))}>
+                  <option>In Progress</option>
+                  <option>Awaiting Approval</option>
+                  <option>With Supplier</option>
+                  <option>Resolved</option>
+                  <option>Closed</option>
+                </select>
+              </label>
+              <label>Team
+                <input value={internalNoteForm.team} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, team: e.target.value }))} />
+              </label>
+              <label>Staff
+                <input value={internalNoteForm.staff} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, staff: e.target.value }))} />
+              </label>
+              <label>Time Taken
+                <div className="inline-row">
+                  <input value={internalNoteForm.timeHours} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeHours: e.target.value }))} />
+                  <input value={internalNoteForm.timeMinutes} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeMinutes: e.target.value }))} />
+                </div>
+              </label>
+            </div>
+            <div className="compose-footer-actions">
+              <button className="btn-submit" onClick={handleSaveInternalNote}>Save</button>
+              <button className="btn-cancel" onClick={() => setShowInternalNoteEditor(false)}>Discard</button>
             </div>
           </div>
         </div>
