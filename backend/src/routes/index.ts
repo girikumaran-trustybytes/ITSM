@@ -12,6 +12,7 @@ import changesRoutes from '../modules/changes/changes.routes'
 import problemsRoutes from '../modules/problems/problems.routes'
 import servicesRoutes from '../modules/services/services.routes'
 import incidentsRoutes from '../modules/incidents/routes'
+import mailRoutes from '../modules/mail/mail.routes'
 
 const router = Router()
 
@@ -29,5 +30,6 @@ router.use('/changes', changesRoutes)
 router.use('/problems', problemsRoutes)
 router.use('/services', servicesRoutes)
 router.use('/incidents', incidentsRoutes)
+router.use('/mail', mailRoutes)
 
 export default router

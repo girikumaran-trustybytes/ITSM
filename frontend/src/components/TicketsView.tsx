@@ -71,60 +71,6 @@ export default function TicketsView() {
     description: ''
   })
 
-  const buildSampleIncidents = (): Incident[] => {
-    const now = new Date()
-    const t1 = new Date(now.getTime() - 15 * 60 * 1000)
-    const t2 = new Date(now.getTime() - 2 * 60 * 60 * 1000)
-    const t3 = new Date(now.getTime() - 6 * 60 * 60 * 1000)
-    return [
-      {
-        id: 'TKT-DEMO-0001',
-        slaTimeLeft: '00:00',
-        subject: 'Laptop screen flickering',
-        category: 'Hardware',
-        priority: 'Medium',
-        status: 'New',
-        type: 'Incident',
-        endUser: 'End User',
-        dateReported: t1.toLocaleString(),
-        lastAction: 'Created',
-        lastActionTime: t1.toLocaleString(),
-        assignedAgentId: undefined,
-        assignedAgentName: undefined,
-      },
-      {
-        id: 'TKT-DEMO-0002',
-        slaTimeLeft: '00:00',
-        subject: 'VPN access failing',
-        category: 'Network',
-        priority: 'High',
-        status: 'In Progress',
-        type: 'Incident',
-        endUser: 'End User',
-        dateReported: t2.toLocaleString(),
-        lastAction: 'Triaged',
-        lastActionTime: t2.toLocaleString(),
-        assignedAgentId: undefined,
-        assignedAgentName: undefined,
-      },
-      {
-        id: 'TKT-DEMO-0003',
-        slaTimeLeft: '00:00',
-        subject: 'Outlook not syncing',
-        category: 'Email',
-        priority: 'Low',
-        status: 'Awaiting Approval',
-        type: 'Incident',
-        endUser: 'End User',
-        dateReported: t3.toLocaleString(),
-        lastAction: 'Waiting',
-        lastActionTime: t3.toLocaleString(),
-        assignedAgentId: undefined,
-        assignedAgentName: undefined,
-      },
-    ]
-  }
-
   const loadTickets = async () => {
     try {
       const data: any = await ticketService.listTickets({ page: 1, pageSize: 200 })
@@ -144,20 +90,23 @@ export default function TicketsView() {
         assignedAgentId: t.assignedTo?.id || t.assignee?.id,
         assignedAgentName: t.assignedTo?.name || t.assignee?.name
       }))
-      if (mapped.length > 0) {
-        setIncidents(mapped)
-      } else {
-        setIncidents(buildSampleIncidents())
-      }
+      setIncidents(mapped)
     } catch (err) {
       console.warn('Failed to fetch tickets:', err)
-      setIncidents(buildSampleIncidents())
+      setIncidents([])
     }
   }
 
   // Hydrate from backend tickets API
   React.useEffect(() => {
     loadTickets()
+  }, [])
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      loadTickets()
+    }, 15000)
+    return () => window.clearInterval(timer)
   }, [])
 
   React.useEffect(() => {
@@ -452,7 +401,7 @@ export default function TicketsView() {
         // Refresh from DB to ensure persisted view is accurate
         await loadTickets()
       } catch (e) {
-        alert('Failed to create ticket â€” offline demo fallback will be used')
+        alert('Failed to create ticket')
         // fallback to local demo behavior
         const lastId = incidents[0]?.id
         const numericPart = typeof lastId === 'string' ? parseInt(lastId.replace(/[^0-9]/g, ''), 10) : (typeof lastId === 'number' ? lastId : 0)
@@ -702,6 +651,7 @@ export default function TicketsView() {
   const openIncidents = incidents.filter((i) => isOpenStatus(i.status))
   const mapTeam = (incident: Incident) => {
     const c = String(incident.category || '').toLowerCase()
+    if (c.includes('helpdesk')) return 'Helpdesk (Line1)'
     if (c.includes('hardware') || c.includes('network')) return 'Helpdesk (Line1)'
     if (c.includes('email') || c.includes('monitor')) return 'Monitor queue'
     if (c.includes('on-site') || c.includes('onsite')) return 'On-Site'
@@ -1125,8 +1075,9 @@ export default function TicketsView() {
       // mark In Progress locally
       setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: 'In Progress' } : i))
       setSelectedTicket(prev => prev ? { ...prev, status: 'In Progress' } : prev)
-    } catch (e) {
-      alert('Failed to send response (offline demo fallback)')
+    } catch (e: any) {
+      const msg = e?.response?.data?.error || e?.message || 'Failed to send response'
+      alert(msg)
       addTicketComment(selectedTicket.id, `You: ${body}`)
       setResponseDraft('')
       setEmailBody('')

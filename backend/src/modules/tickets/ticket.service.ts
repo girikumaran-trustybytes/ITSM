@@ -26,6 +26,24 @@ function buildInsert(table: string, data: Record<string, any>) {
   return { text, values }
 }
 
+async function getNextTicketTag(): Promise<string> {
+  await query('CREATE SEQUENCE IF NOT EXISTS ticket_id_seq START 1')
+  await query(
+    `SELECT setval(
+      'ticket_id_seq',
+      GREATEST(
+        (SELECT last_value FROM ticket_id_seq),
+        (SELECT COALESCE(MAX((regexp_match("ticketId", '^TB#([0-9]+)$'))[1]::INTEGER), 0) FROM "Ticket")
+      )
+    )`
+  )
+  const row = await queryOne<{ next_id: string }>(
+    `SELECT nextval('ticket_id_seq')::text AS next_id`
+  )
+  const num = Number(row?.next_id || 1)
+  return `TB#${String(num).padStart(5, '0')}`
+}
+
 export const getTickets = async (opts: { page?: number; pageSize?: number; q?: string } = {}, viewer?: any) => {
   const page = opts.page ?? 1
   const pageSize = opts.pageSize ?? 20
@@ -90,7 +108,7 @@ export const getTicketById = async (id: string, viewer?: any) => {
 }
 
 export const createTicket = async (payload: any, creator = 'system') => {
-  const ticketId = `TKT-${Date.now()}`
+  const ticketId = await getNextTicketTag()
   // auto-actions: compute priority from impact x urgency if not provided
   function computePriority(impact: string, urgency: string) {
     const map: Record<string, number> = { Low: 1, Medium: 2, High: 3 }
@@ -261,8 +279,12 @@ export const addResponse = async (ticketId: string, opts: { message: string; use
   await auditLog({ action: 'respond', ticketId: t.ticketId, user: opts.user, meta: { message: opts.message } })
 
   if (opts.sendEmail && t.requesterId) {
-    const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
-    if (requester?.email) await mailer.sendTicketResponse(requester.email, t, opts.message)
+    try {
+      const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
+      if (requester?.email) await mailer.sendTicketResponse(requester.email, t, opts.message)
+    } catch (e) {
+      console.warn('Failed sending ticket response email', e)
+    }
   }
 
   return created
@@ -319,8 +341,12 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
   await auditLog({ action: 'resolve', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } })
 
   if (opts.sendEmail && t.requesterId) {
-    const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
-    if (requester?.email) await mailer.sendTicketResolved(requester.email, updated)
+    try {
+      const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
+      if (requester?.email) await mailer.sendTicketResolved(requester.email, updated)
+    } catch (e) {
+      console.warn('Failed sending ticket resolved email', e)
+    }
   }
 
   return updated

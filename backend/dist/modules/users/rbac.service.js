@@ -5,9 +5,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendUserInvite = exports.markInvitePending = exports.createTicketQueueCustomAction = exports.upsertUserPermissions = exports.getUserPermissionsSnapshot = exports.ensureRbacSeeded = void 0;
 const crypto_1 = __importDefault(require("crypto"));
-const nodemailer_1 = __importDefault(require("nodemailer"));
 const db_1 = require("../../db");
 const logger_1 = require("../../common/logger/logger");
+const mail_integration_1 = require("../../services/mail.integration");
 const predefinedRoles = ['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM'];
 const enterpriseModuleSeeds = [
     { key: 'dashboard', label: 'Dashboard', sortOrder: 1 },
@@ -817,7 +817,6 @@ async function markInvitePending(userId, actorUserId) {
 exports.markInvitePending = markInvitePending;
 async function sendInviteEmail(email, name, inviteLink, expiresAt) {
     const orgName = process.env.ORG_NAME || 'ITSM';
-    const fromAddress = process.env.SMTP_FROM || 'no-reply@itsm.local';
     const subject = `${orgName}: Activate your account`;
     const text = [
         `Hello ${name || 'User'},`,
@@ -828,24 +827,7 @@ async function sendInviteEmail(email, name, inviteLink, expiresAt) {
         '',
         'If you did not expect this invite, you can ignore this email.',
     ].join('\n');
-    const host = process.env.SMTP_HOST;
-    const port = Number(process.env.SMTP_PORT || 587);
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
-    const transport = host
-        ? nodemailer_1.default.createTransport({
-            host,
-            port,
-            secure: port === 465,
-            auth: user && pass ? { user, pass } : undefined,
-        })
-        : nodemailer_1.default.createTransport({ jsonTransport: true });
-    await transport.sendMail({
-        from: fromAddress,
-        to: email,
-        subject,
-        text,
-    });
+    await (0, mail_integration_1.sendSmtpMail)({ to: email, subject, text });
 }
 async function sendUserInvite(userId, actorUserId) {
     const user = await (0, db_1.queryOne)('SELECT "id", "email", "name" FROM "User" WHERE "id" = $1', [userId]);

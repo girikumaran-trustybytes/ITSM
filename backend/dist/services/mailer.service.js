@@ -1,17 +1,51 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-// Stub mailer service - implement actual email sending as needed
+const mail_integration_1 = require("./mail.integration");
+async function safeSend(to, subject, text) {
+    try {
+        await (0, mail_integration_1.sendSmtpMail)({ to, subject, text });
+    }
+    catch (error) {
+        console.warn('[MAILER] Failed to send email', { to, subject, error: error?.message || error });
+    }
+}
 exports.default = {
     async sendTicketCreated(email, ticket) {
-        console.log(`[MAILER STUB] Ticket created email would be sent to ${email}`);
+        const subject = `[ITSM] Ticket created: ${ticket?.ticketId || ticket?.id || ''}`.trim();
+        const text = [
+            'Your ticket has been created.',
+            `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
+            `Subject: ${ticket?.subject || '-'}`,
+            `Status: ${ticket?.status || 'New'}`,
+        ].join('\n');
+        await safeSend(email, subject, text);
     },
     async sendStatusUpdated(email, ticket) {
-        console.log(`[MAILER STUB] Status updated email would be sent to ${email}`);
+        const subject = `[ITSM] Ticket status updated: ${ticket?.ticketId || ticket?.id || ''}`.trim();
+        const text = [
+            'A ticket status has been updated.',
+            `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
+            `Subject: ${ticket?.subject || '-'}`,
+            `Status: ${ticket?.status || '-'}`,
+        ].join('\n');
+        await safeSend(email, subject, text);
     },
     async sendTicketResponse(email, ticket, message) {
-        console.log(`[MAILER STUB] Ticket response email would be sent to ${email}`);
+        const subject = `[ITSM] New response: ${ticket?.ticketId || ticket?.id || ''}`.trim();
+        const text = [
+            'A new response was added to your ticket.',
+            `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
+            `Message: ${message || '-'}`,
+        ].join('\n');
+        await safeSend(email, subject, text);
     },
     async sendTicketResolved(email, ticket) {
-        console.log(`[MAILER STUB] Ticket resolved email would be sent to ${email}`);
+        const subject = `[ITSM] Ticket resolved: ${ticket?.ticketId || ticket?.id || ''}`.trim();
+        const text = [
+            'Your ticket has been resolved.',
+            `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
+            `Resolution: ${ticket?.resolution || '-'}`,
+        ].join('\n');
+        await safeSend(email, subject, text);
     },
 };

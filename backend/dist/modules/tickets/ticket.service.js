@@ -27,6 +27,19 @@ function buildInsert(table, data) {
     const text = `INSERT INTO "${table}" (${cols.join(', ')}, "createdAt", "updatedAt") VALUES (${params.join(', ')}, NOW(), NOW()) RETURNING *`;
     return { text, values };
 }
+async function getNextTicketTag() {
+    await (0, db_1.query)('CREATE SEQUENCE IF NOT EXISTS ticket_id_seq START 1');
+    await (0, db_1.query)(`SELECT setval(
+      'ticket_id_seq',
+      GREATEST(
+        (SELECT last_value FROM ticket_id_seq),
+        (SELECT COALESCE(MAX((regexp_match("ticketId", '^TB#([0-9]+)$'))[1]::INTEGER), 0) FROM "Ticket")
+      )
+    )`);
+    const row = await (0, db_1.queryOne)(`SELECT nextval('ticket_id_seq')::text AS next_id`);
+    const num = Number(row?.next_id || 1);
+    return `TB#${String(num).padStart(5, '0')}`;
+}
 const getTickets = async (opts = {}, viewer) => {
     const page = opts.page ?? 1;
     const pageSize = opts.pageSize ?? 20;
@@ -80,7 +93,7 @@ const getTicketById = async (id, viewer) => {
 };
 exports.getTicketById = getTicketById;
 const createTicket = async (payload, creator = 'system') => {
-    const ticketId = `TKT-${Date.now()}`;
+    const ticketId = await getNextTicketTag();
     // auto-actions: compute priority from impact x urgency if not provided
     function computePriority(impact, urgency) {
         const map = { Low: 1, Medium: 2, High: 3 };
@@ -235,9 +248,14 @@ const addResponse = async (ticketId, opts) => {
     const created = rows[0];
     await (0, logger_1.auditLog)({ action: 'respond', ticketId: t.ticketId, user: opts.user, meta: { message: opts.message } });
     if (opts.sendEmail && t.requesterId) {
-        const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
-        if (requester?.email)
-            await mailer_service_1.default.sendTicketResponse(requester.email, t, opts.message);
+        try {
+            const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
+            if (requester?.email)
+                await mailer_service_1.default.sendTicketResponse(requester.email, t, opts.message);
+        }
+        catch (e) {
+            console.warn('Failed sending ticket response email', e);
+        }
     }
     return created;
 };
@@ -280,9 +298,14 @@ const resolveTicketWithDetails = async (ticketId, opts) => {
     ]);
     await (0, logger_1.auditLog)({ action: 'resolve', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } });
     if (opts.sendEmail && t.requesterId) {
-        const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
-        if (requester?.email)
-            await mailer_service_1.default.sendTicketResolved(requester.email, updated);
+        try {
+            const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
+            if (requester?.email)
+                await mailer_service_1.default.sendTicketResolved(requester.email, updated);
+        }
+        catch (e) {
+            console.warn('Failed sending ticket resolved email', e);
+        }
     }
     return updated;
 };

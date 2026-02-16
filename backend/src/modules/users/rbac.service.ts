@@ -1,7 +1,7 @@
 import crypto from 'crypto'
-import nodemailer from 'nodemailer'
 import { query, queryOne, withClient } from '../../db'
 import { auditLog } from '../../common/logger/logger'
+import { sendSmtpMail } from '../../services/mail.integration'
 
 type PermissionRow = {
   permission_id: number
@@ -945,7 +945,6 @@ export async function markInvitePending(userId: number, actorUserId?: number) {
 
 async function sendInviteEmail(email: string, name: string | null, inviteLink: string, expiresAt: Date) {
   const orgName = process.env.ORG_NAME || 'ITSM'
-  const fromAddress = process.env.SMTP_FROM || 'no-reply@itsm.local'
   const subject = `${orgName}: Activate your account`
   const text = [
     `Hello ${name || 'User'},`,
@@ -956,27 +955,7 @@ async function sendInviteEmail(email: string, name: string | null, inviteLink: s
     '',
     'If you did not expect this invite, you can ignore this email.',
   ].join('\n')
-
-  const host = process.env.SMTP_HOST
-  const port = Number(process.env.SMTP_PORT || 587)
-  const user = process.env.SMTP_USER
-  const pass = process.env.SMTP_PASS
-
-  const transport = host
-    ? nodemailer.createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: user && pass ? { user, pass } : undefined,
-    })
-    : nodemailer.createTransport({ jsonTransport: true })
-
-  await transport.sendMail({
-    from: fromAddress,
-    to: email,
-    subject,
-    text,
-  })
+  await sendSmtpMail({ to: email, subject, text })
 }
 
 export async function sendUserInvite(userId: number, actorUserId?: number) {

@@ -17,6 +17,7 @@ const changes_routes_1 = __importDefault(require("../modules/changes/changes.rou
 const problems_routes_1 = __importDefault(require("../modules/problems/problems.routes"));
 const services_routes_1 = __importDefault(require("../modules/services/services.routes"));
 const routes_8 = __importDefault(require("../modules/incidents/routes"));
+const mail_routes_1 = __importDefault(require("../modules/mail/mail.routes"));
 const router = (0, express_1.Router)();
 router.use('/auth', auth_routes_1.default);
 router.use('/tickets', routes_1.default);
@@ -32,4 +33,5 @@ router.use('/changes', changes_routes_1.default);
 router.use('/problems', problems_routes_1.default);
 router.use('/services', services_routes_1.default);
 router.use('/incidents', routes_8.default);
+router.use('/mail', mail_routes_1.default);
 exports.default = router;
