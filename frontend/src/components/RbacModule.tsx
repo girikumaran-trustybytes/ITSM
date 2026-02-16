@@ -8,6 +8,9 @@ import {
   sendUserInvite,
   type RbacUserRow,
 } from '../services/rbac.service'
+import { updateUser } from '../services/user.service'
+import { primarySidebarModules } from './PrimarySidebar'
+import { loadLeftPanelConfig } from '../utils/leftPanelConfig'
 
 type Props = {
   isAdmin: boolean
@@ -37,6 +40,18 @@ type Snapshot = {
   selectedTemplateKey?: string
 }
 
+type ServiceAccountConfigRow = {
+  userId: number
+  userName: string
+  userEmail: string
+  enabled: boolean
+  autoUpgrade: boolean
+  queueIds: string[]
+  updatedAt: string
+}
+
+type ServiceAccountView = 'none' | 'picker' | 'existing-user' | 'new-user'
+
 const customTemplate: PermissionTemplate = {
   key: 'custom',
   label: 'Custom',
@@ -52,23 +67,114 @@ const fallbackTemplates: PermissionTemplate[] = [
   { key: 'supplier_queue', label: 'Supplier Queue', baseRole: 'SUPPLIER', permissions: {} },
 ]
 
-const fallbackCards = [
-  { id: 'dashboard', title: 'Dashboard', items: ['View Dashboard', 'Analytics', 'KPI View'] },
-  { id: 'tickets', title: 'Tickets', items: ['View Ticket', 'Create Ticket', 'Assign Ticket', 'Respond to Ticket'] },
-  { id: 'assets', title: 'Assets', items: ['View Asset', 'Create Asset', 'Edit Asset', 'Delete Asset'] },
-  { id: 'users', title: 'Users', items: ['View User', 'Create User', 'Edit User', 'Delete User'] },
-  { id: 'suppliers', title: 'Suppliers', items: ['View Supplier', 'Create Supplier', 'Edit Supplier', 'Delete Supplier'] },
-  { id: 'accounts', title: 'Accounts', items: ['View Account', 'Create Account', 'Edit Account', 'Delete Account'] },
-  { id: 'reports', title: 'Reports', items: ['View Report', 'Export Report'] },
-  { id: 'admin', title: 'Admin', items: ['View Admin', 'Create Admin', 'Edit Admin', 'Delete Admin'] },
-]
+const fallbackActionLabelsByModuleId: Record<string, string[]> = {
+  dashboard: ['View Dashboard', 'Analytics', 'KPI View'],
+  tickets: ['View Ticket', 'Create Ticket', 'Assign Ticket', 'Respond to Ticket'],
+  assets: ['View Asset', 'Create Asset', 'Edit Asset', 'Delete Asset'],
+  users: ['View User', 'Create User', 'Edit User', 'Delete User'],
+  suppliers: ['View Supplier', 'Create Supplier', 'Edit Supplier', 'Delete Supplier'],
+  accounts: ['View Account', 'Create Account', 'Edit Account', 'Delete Account'],
+  reports: ['View Report', 'Export Report'],
+  admin: ['View Admin', 'Create Admin', 'Edit Admin', 'Delete Admin'],
+}
+
+const fallbackCards = primarySidebarModules.map((module) => ({
+  id: module.id,
+  title: module.label,
+  items: fallbackActionLabelsByModuleId[module.id] || [
+    `Read ${module.label}`,
+    `Create ${module.label}`,
+    `Edit ${module.label}`,
+    `Delete ${module.label}`,
+    `Export ${module.label}`,
+  ],
+}))
+
+const hiddenPermissionLabels = new Set(['hi'])
+const SERVICE_ACCOUNT_STORAGE_KEY = 'itsm_service_accounts_v1'
+const UI_PERMISSION_STORAGE_KEY = 'itsm_ui_permissions_v1'
+const permissionMatrixColumns = [
+  { key: 'all', label: 'all' },
+  { key: 'read', label: 'read' },
+  { key: 'create', label: 'create' },
+  { key: 'edit', label: 'edit' },
+  { key: 'delete', label: 'delete' },
+  { key: 'export', label: 'export' },
+] as const
+const forcedMatrixColumnsByModule: Record<string, Array<'edit' | 'export'>> = {
+  tickets: ['edit', 'export'],
+  assets: ['export'],
+  users: ['export'],
+  suppliers: ['export'],
+  reports: ['edit'],
+}
+
+type PermissionMatrixColumnKey = (typeof permissionMatrixColumns)[number]['key']
+
+function loadServiceAccountRows(): ServiceAccountConfigRow[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(SERVICE_ACCOUNT_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed as ServiceAccountConfigRow[]
+  } catch {
+    return []
+  }
+}
+
+function saveServiceAccountRows(next: ServiceAccountConfigRow[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(SERVICE_ACCOUNT_STORAGE_KEY, JSON.stringify(next))
+}
+
+function loadUiPermissionRows(): Record<string, Record<string, boolean>> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(UI_PERMISSION_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    return parsed as Record<string, Record<string, boolean>>
+  } catch {
+    return {}
+  }
+}
+
+function saveUiPermissionRows(next: Record<string, Record<string, boolean>>) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(UI_PERMISSION_STORAGE_KEY, JSON.stringify(next))
+}
+
+function slugifyQueueId(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function loadAdminQueueOptions() {
+  const cfg = loadLeftPanelConfig()
+  const rules = Array.isArray(cfg?.ticketsMyLists) ? cfg.ticketsMyLists : []
+  const seen = new Set<string>()
+  return rules
+    .map((rule) => {
+      const rawId = String(rule?.id || '')
+      const rawLabel = String(rule?.label || '').trim()
+      if (!rawLabel) return null
+      const normalizedId = rawId || `queue-${slugifyQueueId(rawLabel)}`
+      const id = `team-${slugifyQueueId(normalizedId || rawLabel)}`
+      if (seen.has(id)) return null
+      seen.add(id)
+      return { id, label: rawLabel }
+    })
+    .filter((row): row is { id: string; label: string } => Boolean(row))
+}
 
 function titleCase(text: string) {
   return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase()
-}
-
-function displayPermissionLabel(label: string) {
-  return label.startsWith('View ') ? label.replace(/^View\s+/, 'Read ') : label
 }
 
 export default function RbacModule({ isAdmin }: Props) {
@@ -80,7 +186,6 @@ export default function RbacModule({ isAdmin }: Props) {
   const [selectedTemplateKey, setSelectedTemplateKey] = useState('support_desk')
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({})
   const [permissions, setPermissions] = useState<Record<string, boolean>>({})
-  const [customActionsByModule, setCustomActionsByModule] = useState<Record<string, PermissionEntry[]>>({})
   const [initialState, setInitialState] = useState<{ role: string; templateKey: string; permissions: Record<string, boolean> } | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -91,20 +196,34 @@ export default function RbacModule({ isAdmin }: Props) {
   const [modalError, setModalError] = useState('')
   const [newUser, setNewUser] = useState({
     fullName: '',
-    email: '',
+    personalEmail: '',
+    workEmail: '',
     phone: '',
+    employeeId: '',
+    designation: '',
+    department: '',
+    manager: '',
+    dateOfJoining: '',
+    employmentType: 'Full-time',
+    workMode: 'Onsite',
     defaultPermissionTemplate: '',
   })
+  const [serviceAccountView, setServiceAccountView] = useState<ServiceAccountView>('none')
+  const [serviceExistingUserId, setServiceExistingUserId] = useState<number | null>(null)
+  const [newServiceUserId, setNewServiceUserId] = useState<number | null>(null)
+  const [convertToServiceAccount, setConvertToServiceAccount] = useState(false)
+  const [autoUpgradeQueues, setAutoUpgradeQueues] = useState(true)
+  const [selectedServiceQueueIds, setSelectedServiceQueueIds] = useState<string[]>([])
 
   const notify = (type: 'ok' | 'error', text: string) => {
     setToast({ type, text })
     window.setTimeout(() => setToast(null), 2200)
   }
 
-  const isFallbackPermissionKey = (key: string) => key.startsWith('ui_fallback_')
   const isPermissionChecked = (key: string) => {
+    if (!selectedUserId) return false
     if (Object.prototype.hasOwnProperty.call(permissions, key)) return Boolean(permissions[key])
-    return isFallbackPermissionKey(key)
+    return false
   }
 
   const getUserOptionLabel = (u: RbacUserRow) => {
@@ -116,9 +235,6 @@ export default function RbacModule({ isAdmin }: Props) {
       const data = await listRbacUsers({ q: userSearch, limit: 500 })
       const list = Array.isArray(data) ? data : []
       setUsers(list)
-      if (!selectedUserId && list.length > 0) {
-        setSelectedUserId(Number(list[0].id))
-      }
     } catch (error: any) {
       notify('error', error?.response?.data?.error || 'Failed to load users')
     }
@@ -128,20 +244,22 @@ export default function RbacModule({ isAdmin }: Props) {
     setLoading(true)
     try {
       const data: Snapshot = await getUserPermissions(userId)
-      const nextPermissions = data.permissions.reduce<Record<string, boolean>>((acc, item) => {
+      const nextPermissionsFromApi = data.permissions.reduce<Record<string, boolean>>((acc, item) => {
         acc[item.permissionKey] = Boolean(item.allowed)
         return acc
       }, {})
+      const uiRows = loadUiPermissionRows()
+      const uiPermissions = uiRows[String(userId)] || {}
+      const nextPermissions = { ...nextPermissionsFromApi, ...uiPermissions }
       const nextTemplateKey = String(data.selectedTemplateKey || 'custom')
       setSnapshot(data)
       setSelectedRole(data.user.role || 'USER')
       setSelectedTemplateKey(nextTemplateKey)
       setPermissions(nextPermissions)
-      setCustomActionsByModule({})
       setInitialState({ role: data.user.role || 'USER', templateKey: nextTemplateKey, permissions: nextPermissions })
       const moduleExpansion = (data.modules || []).reduce<Record<string, boolean>>((acc, moduleRow) => {
         const moduleItems = data.permissions.filter((p) => p.module === moduleRow.key && !p.queue)
-        acc[moduleRow.key] = moduleItems.some((p) => Boolean(nextPermissions[p.permissionKey]))
+        acc[moduleRow.key] = moduleItems.some((p) => Boolean(nextPermissionsFromApi[p.permissionKey]))
         return acc
       }, {})
       setExpandedModules(moduleExpansion)
@@ -154,7 +272,15 @@ export default function RbacModule({ isAdmin }: Props) {
 
   useEffect(() => { loadUsers() }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadUsers() }, [userSearch]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (selectedUserId) loadPermissions(selectedUserId) }, [selectedUserId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (selectedUserId) {
+      loadPermissions(selectedUserId)
+      return
+    }
+    setSnapshot(null)
+    setPermissions({})
+    setInitialState(null)
+  }, [selectedUserId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const permissionTemplates = useMemo(() => {
     const templates = (snapshot?.permissionTemplates || []).length > 0 ? (snapshot?.permissionTemplates || []) : fallbackTemplates
@@ -171,8 +297,39 @@ export default function RbacModule({ isAdmin }: Props) {
   const permissionKeys = useMemo(() => (snapshot?.permissions || []).map((p) => p.permissionKey), [snapshot])
 
   const permissionCards = useMemo(() => {
+    const getColumnForEntry = (item: PermissionEntry): Exclude<PermissionMatrixColumnKey, 'all'> => {
+      const text = `${item.action || ''} ${item.label || ''}`.toLowerCase()
+      if (text.includes('create') || text.includes('add')) return 'create'
+      if (text.includes('edit') || text.includes('update')) return 'edit'
+      if (text.includes('delete') || text.includes('remove')) return 'delete'
+      if (text.includes('export')) return 'export'
+      return 'read'
+    }
+
+    const withForcedMatrixItems = (moduleId: string, items: PermissionEntry[]) => {
+      const required = forcedMatrixColumnsByModule[moduleId] || []
+      if (required.length === 0) return items
+      const next = [...items]
+      required.forEach((column) => {
+        if (next.some((item) => getColumnForEntry(item) === column)) return
+        const moduleLabel = titleCase(moduleId.replace(/_/g, ' '))
+        next.push({
+          permissionKey: `ui_matrix_${moduleId}_${column}`,
+          module: moduleId,
+          queue: null,
+          action: column,
+          label: `${titleCase(column)} ${moduleLabel}`,
+          allowed: false,
+        })
+      })
+      return next
+    }
+
     const modulesFromApi = (snapshot?.modules || []).slice().sort((a, b) => a.sortOrder - b.sortOrder)
-    const itemsFromApi = (snapshot?.permissions || []).filter((item) => !item.queue)
+    const itemsFromApi = (snapshot?.permissions || []).filter((item) => {
+      if (item.queue) return false
+      return !hiddenPermissionLabels.has(item.label.trim().toLowerCase())
+    })
     const hasApiShape = modulesFromApi.length > 0 || itemsFromApi.length > 0
 
     if (hasApiShape) {
@@ -186,17 +343,21 @@ export default function RbacModule({ isAdmin }: Props) {
       inferred.forEach((m) => {
         if (!mergedModules.some((x) => x.key === m.key)) mergedModules.push(m)
       })
+      primarySidebarModules.forEach((m, index) => {
+        if (!mergedModules.some((x) => x.key === m.id)) {
+          mergedModules.push({ key: m.id, label: m.label, sortOrder: 1000 + index })
+        }
+      })
 
       return mergedModules.map((moduleRow) => ({
         id: moduleRow.key,
         title: moduleRow.label,
         subtitle: 'Permission',
-        items: [
+        items: withForcedMatrixItems(moduleRow.key, [
           ...itemsFromApi
           .filter((item) => item.module === moduleRow.key)
           .sort((a, b) => a.label.localeCompare(b.label)),
-          ...(customActionsByModule[moduleRow.key] || []),
-        ],
+        ]),
       }))
     }
 
@@ -204,19 +365,18 @@ export default function RbacModule({ isAdmin }: Props) {
       id: card.id,
       title: card.title,
       subtitle: 'Permission',
-      items: [
-        ...card.items.map((label, index) => ({
-          permissionKey: `ui_fallback_${card.id}_${index}`,
+        items: withForcedMatrixItems(card.id, [
+          ...card.items.map((label, index) => ({
+            permissionKey: `ui_fallback_${card.id}_${index}`,
           module: card.id,
           queue: null,
           action: label.toLowerCase().replace(/\s+/g, '_'),
-          label,
-          allowed: true,
-        })),
-        ...(customActionsByModule[card.id] || []),
-      ],
-    }))
-  }, [snapshot, customActionsByModule])
+            label,
+            allowed: true,
+          })),
+        ]),
+      }))
+  }, [snapshot])
 
   const isDirty = useMemo(() => {
     if (!initialState) return false
@@ -226,6 +386,61 @@ export default function RbacModule({ isAdmin }: Props) {
       permissions,
     }) !== JSON.stringify(initialState)
   }, [initialState, permissions, selectedRole, selectedTemplateKey])
+
+  const [ticketQueueOptions, setTicketQueueOptions] = useState<{ id: string; label: string }[]>(() => loadAdminQueueOptions())
+
+  const activeServiceUserId = serviceAccountView === 'existing-user' ? serviceExistingUserId : newServiceUserId
+  const activeServiceAccountExists = useMemo(() => {
+    const targetUserId = Number(activeServiceUserId || 0)
+    if (!targetUserId) return false
+    return loadServiceAccountRows().some((row) => Number(row.userId) === targetUserId)
+  }, [activeServiceUserId, convertToServiceAccount, autoUpgradeQueues, selectedServiceQueueIds, users.length])
+
+  const resetServiceAccountFlow = () => {
+    setServiceAccountView('none')
+    setServiceExistingUserId(null)
+    setNewServiceUserId(null)
+    setConvertToServiceAccount(false)
+    setAutoUpgradeQueues(true)
+    setSelectedServiceQueueIds([])
+  }
+
+  const toggleServiceQueue = (queueId: string, checked: boolean) => {
+    setSelectedServiceQueueIds((prev) => {
+      if (checked) return prev.includes(queueId) ? prev : [...prev, queueId]
+      return prev.filter((id) => id !== queueId)
+    })
+  }
+
+  useEffect(() => {
+    const reloadQueueOptions = () => {
+      const next = loadAdminQueueOptions()
+      setTicketQueueOptions(next)
+    }
+    reloadQueueOptions()
+    window.addEventListener('left-panel-config-updated', reloadQueueOptions)
+    return () => window.removeEventListener('left-panel-config-updated', reloadQueueOptions)
+  }, [])
+
+  useEffect(() => {
+    if (serviceAccountView !== 'existing-user') return
+    if (!serviceExistingUserId) {
+      setConvertToServiceAccount(false)
+      setAutoUpgradeQueues(true)
+      setSelectedServiceQueueIds([])
+      return
+    }
+    const existing = loadServiceAccountRows().find((row) => Number(row.userId) === Number(serviceExistingUserId))
+    if (!existing) {
+      setConvertToServiceAccount(false)
+      setAutoUpgradeQueues(true)
+      setSelectedServiceQueueIds([])
+      return
+    }
+    setConvertToServiceAccount(Boolean(existing.enabled))
+    setAutoUpgradeQueues(Boolean(existing.autoUpgrade))
+    setSelectedServiceQueueIds(Array.isArray(existing.queueIds) ? existing.queueIds : [])
+  }, [serviceAccountView, serviceExistingUserId])
 
   const resolveTemplateForPermissions = (nextPermissions: Record<string, boolean>) => {
     const templates = snapshot?.permissionTemplates || []
@@ -287,6 +502,39 @@ export default function RbacModule({ isAdmin }: Props) {
     syncTemplateState(next)
   }
 
+  const getPermissionMatrixColumn = (item: PermissionEntry): Exclude<PermissionMatrixColumnKey, 'all'> => {
+    const text = `${item.action || ''} ${item.label || ''}`.toLowerCase()
+    if (text.includes('create') || text.includes('add')) return 'create'
+    if (text.includes('edit') || text.includes('update')) return 'edit'
+    if (text.includes('delete') || text.includes('remove')) return 'delete'
+    if (text.includes('export')) return 'export'
+    return 'read'
+  }
+
+  const getCardItemsByColumn = (cardItems: PermissionEntry[], column: PermissionMatrixColumnKey) => {
+    if (column === 'all') return cardItems
+    return cardItems.filter((item) => getPermissionMatrixColumn(item) === column)
+  }
+
+  const toggleCardColumn = (cardId: string, column: PermissionMatrixColumnKey, allowed: boolean) => {
+    if (column === 'all') {
+      toggleCardAll(cardId, allowed)
+      return
+    }
+    const card = permissionCards.find((c) => c.id === cardId)
+    if (!card) return
+    const targetItems = getCardItemsByColumn(card.items, column)
+    if (targetItems.length === 0) return
+    const next = { ...permissions }
+    targetItems.forEach((item) => {
+      next[item.permissionKey] = allowed
+    })
+    setPermissions(next)
+    const hasAnySelected = card.items.some((item) => Boolean(next[item.permissionKey]))
+    setExpandedModules((prev) => ({ ...prev, [cardId]: hasAnySelected || Boolean(prev[cardId]) }))
+    syncTemplateState(next)
+  }
+
   const handleSave = async () => {
     if (!selectedUserId) return
     setSaving(true)
@@ -307,12 +555,21 @@ export default function RbacModule({ isAdmin }: Props) {
         acc[item.permissionKey] = Boolean(item.allowed)
         return acc
       }, {})
+      const uiKeys = Object.keys(permissions).filter((key) => key.startsWith('ui_'))
+      const nextUiForUser = uiKeys.reduce<Record<string, boolean>>((acc, key) => {
+        acc[key] = Boolean(permissions[key])
+        return acc
+      }, {})
+      const uiRows = loadUiPermissionRows()
+      const nextUiRows = { ...uiRows, [String(selectedUserId)]: nextUiForUser }
+      saveUiPermissionRows(nextUiRows)
+      const mergedNextPermissions = { ...nextPermissions, ...nextUiForUser }
       const nextTemplateKey = String(data.selectedTemplateKey || 'custom')
       setSnapshot(data)
       setSelectedRole(data.user.role)
       setSelectedTemplateKey(nextTemplateKey)
-      setPermissions(nextPermissions)
-      setInitialState({ role: data.user.role, templateKey: nextTemplateKey, permissions: nextPermissions })
+      setPermissions(mergedNextPermissions)
+      setInitialState({ role: data.user.role, templateKey: nextTemplateKey, permissions: mergedNextPermissions })
       notify('ok', 'Permissions updated successfully')
     } catch (error: any) {
       notify('error', error?.response?.data?.error || 'Failed to update permissions')
@@ -321,68 +578,12 @@ export default function RbacModule({ isAdmin }: Props) {
     }
   }
 
-  const handleClose = () => {
-    if (!initialState) return
-    setSelectedRole(initialState.role)
-    setSelectedTemplateKey(initialState.templateKey)
-    setPermissions({ ...initialState.permissions })
-    setExpandedModules((prev) => {
-      const next = { ...prev }
-      permissionCards.forEach((card) => {
-        next[card.id] = card.items.some((item) => Boolean(initialState.permissions[item.permissionKey]))
-      })
-      return next
-    })
-  }
-
-  const toActionKey = (value: string) =>
-    value
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9\s_-]/g, '')
-      .replace(/\s+/g, '_')
-
-  const handleAddAction = (moduleId: string) => {
-    const actionLabel = window.prompt('Enter action name')
-    if (!actionLabel) return
-    const trimmed = actionLabel.trim()
-    if (!trimmed) return
-
-    const actionKey = toActionKey(trimmed)
-    if (!actionKey) {
-      notify('error', 'Enter a valid action name')
-      return
-    }
-    const permissionKey = `ui_custom_${moduleId}_${actionKey}`
-    const moduleCard = permissionCards.find((card) => card.id === moduleId)
-    if (!moduleCard) return
-
-    if (moduleCard.items.some((item) => item.permissionKey === permissionKey || item.label.toLowerCase() === trimmed.toLowerCase())) {
-      notify('error', 'Action already exists in this module')
-      return
-    }
-
-    const item: PermissionEntry = {
-      permissionKey,
-      module: moduleId,
-      queue: null,
-      action: toActionKey(trimmed),
-      label: trimmed,
-      allowed: false,
-    }
-
-    setCustomActionsByModule((prev) => ({
-      ...prev,
-      [moduleId]: [...(prev[moduleId] || []), item],
-    }))
-    setPermissions((prev) => ({ ...prev, [permissionKey]: true }))
-    notify('ok', `${trimmed} action added`)
-  }
-
   const handleAddUser = async () => {
     setModalError('')
-    if (!newUser.fullName.trim() || !newUser.email.trim()) {
-      const msg = 'Full Name and Email are required.'
+    const workEmail = newUser.workEmail.trim()
+    const personalEmail = newUser.personalEmail.trim()
+    if (!newUser.fullName.trim() || (!workEmail && !personalEmail)) {
+      const msg = 'Full Name and Work Email or Personal Email is required.'
       setModalError(msg)
       notify('error', msg)
       return
@@ -390,8 +591,17 @@ export default function RbacModule({ isAdmin }: Props) {
     try {
       const created = await createRbacUser({
         fullName: newUser.fullName.trim(),
-        email: newUser.email.trim(),
+        email: workEmail || personalEmail,
+        personalEmail: personalEmail || undefined,
+        workEmail: workEmail || undefined,
         phone: newUser.phone.trim(),
+        employeeId: newUser.employeeId.trim() || undefined,
+        department: newUser.department.trim() || undefined,
+        reportingManager: newUser.manager.trim() || undefined,
+        dateOfJoining: newUser.dateOfJoining || undefined,
+        employmentType: newUser.employmentType,
+        workMode: newUser.workMode,
+        designation: newUser.designation.trim() || undefined,
         role: 'USER',
         defaultPermissionTemplate: newUser.defaultPermissionTemplate || undefined,
       })
@@ -411,7 +621,20 @@ export default function RbacModule({ isAdmin }: Props) {
     setAddStep(1)
     setCreatedUserId(null)
     setModalError('')
-    setNewUser({ fullName: '', email: '', phone: '', defaultPermissionTemplate: '' })
+    setNewUser({
+      fullName: '',
+      personalEmail: '',
+      workEmail: '',
+      phone: '',
+      employeeId: '',
+      designation: '',
+      department: '',
+      manager: '',
+      dateOfJoining: '',
+      employmentType: 'Full-time',
+      workMode: 'Onsite',
+      defaultPermissionTemplate: '',
+    })
   }
 
   const handleInviteNow = async () => {
@@ -438,127 +661,360 @@ export default function RbacModule({ isAdmin }: Props) {
     }
   }
 
-  const handleReInvite = async () => {
-    if (!selectedUserId || !snapshot) return
-    if (!['invite_pending', 'invited_not_accepted'].includes(snapshot.user.inviteStatus)) return
+  const handleCreateUserAndContinueServiceAccount = async () => {
+    setModalError('')
+    const workEmail = newUser.workEmail.trim()
+    const personalEmail = newUser.personalEmail.trim()
+    if (!newUser.fullName.trim() || (!workEmail && !personalEmail)) {
+      const msg = 'Full Name and Work Email or Personal Email is required.'
+      setModalError(msg)
+      notify('error', msg)
+      return
+    }
     try {
-      await sendUserInvite(selectedUserId)
-      notify('ok', 'Invite sent successfully')
-      await loadPermissions(selectedUserId)
+      const created = await createRbacUser({
+        fullName: newUser.fullName.trim(),
+        email: workEmail || personalEmail,
+        personalEmail: personalEmail || undefined,
+        workEmail: workEmail || undefined,
+        phone: newUser.phone.trim(),
+        employeeId: newUser.employeeId.trim() || undefined,
+        department: newUser.department.trim() || undefined,
+        reportingManager: newUser.manager.trim() || undefined,
+        dateOfJoining: newUser.dateOfJoining || undefined,
+        employmentType: newUser.employmentType,
+        workMode: newUser.workMode,
+        designation: newUser.designation.trim() || undefined,
+        role: 'USER',
+        defaultPermissionTemplate: newUser.defaultPermissionTemplate || undefined,
+      })
+      const nextUserId = Number(created.id)
+      setNewServiceUserId(nextUserId)
+      setConvertToServiceAccount(true)
+      notify('ok', 'User created. Continue with service account setup.')
       await loadUsers()
     } catch (error: any) {
-      notify('error', error?.response?.data?.error || 'Failed to re-invite user')
+      const msg = error?.response?.data?.error || 'Failed to create user'
+      setModalError(msg)
+      notify('error', msg)
+    }
+  }
+
+  const handleSaveServiceAccount = async () => {
+    const targetUserId = Number(activeServiceUserId || 0)
+    if (!targetUserId) {
+      notify('error', 'Select a user first')
+      return
+    }
+    try {
+      const rows = loadServiceAccountRows()
+      if (!convertToServiceAccount) {
+        await updateUser(targetUserId, { role: 'USER' })
+        const nextRows = rows.filter((r) => Number(r.userId) !== targetUserId)
+        saveServiceAccountRows(nextRows)
+        setSelectedUserId(targetUserId)
+        notify('ok', 'Service account disabled')
+        resetServiceAccountFlow()
+        return
+      }
+      const queueIds = autoUpgradeQueues ? ticketQueueOptions.map((q) => q.id) : selectedServiceQueueIds
+      if (queueIds.length === 0) {
+        notify('error', 'Select at least one team queue')
+        return
+      }
+      await updateUser(targetUserId, { role: 'AGENT' })
+      const baseUser = users.find((u) => Number(u.id) === targetUserId)
+      const nextRow: ServiceAccountConfigRow = {
+        userId: targetUserId,
+        userName: baseUser?.name || `User ${targetUserId}`,
+        userEmail: baseUser?.email || '',
+        enabled: true,
+        autoUpgrade: autoUpgradeQueues,
+        queueIds,
+        updatedAt: new Date().toISOString(),
+      }
+      const nextRows = [...rows.filter((r) => Number(r.userId) !== targetUserId), nextRow]
+      saveServiceAccountRows(nextRows)
+      setSelectedUserId(targetUserId)
+      notify('ok', activeServiceAccountExists ? 'Service account updated successfully' : 'Service account configured successfully')
+      resetServiceAccountFlow()
+    } catch (error: any) {
+      notify('error', error?.response?.data?.error || 'Failed to configure service account')
     }
   }
 
   return (
-    <section className="admin-settings-card rbac-module-card">
-      <div className="rbac-shell-head">
-        <h3>Permission Management</h3>
-      </div>
-
-      <div className="rbac-top-controls">
-        <div className="rbac-select-field">
-          <select
-            value={selectedUserId ?? ''}
-            onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
-            disabled={loading || users.length === 0}
+    <>
+      <div className="admin-user-permission-tool-bar">
+        <div className="tool-bar-left">
+          <button
+            className="table-icon-btn toolbar-left-panel-toggle"
+            title="Toggle Left Panel"
+            aria-label="Toggle Left Panel"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'toggle-left-panel', target: 'admin' } }))
+            }}
           >
-            <option value="">Select User</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {getUserOptionLabel(u)}
-              </option>
-            ))}
-          </select>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+          </button>
+          <div className="rbac-select-field">
+            <select
+              value={selectedUserId ?? ''}
+              onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
+              disabled={loading}
+            >
+              <option value="">Select User</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {getUserOptionLabel(u)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <div className="rbac-header-actions">
-          <button className="rbac-add-btn" onClick={() => setShowAddModal(true)} disabled={!isAdmin}>
+        <div className="tool-bar-right rbac-header-actions">
+          <button
+            className="rbac-add-btn"
+            onClick={() => {
+              resetServiceAccountFlow()
+              setShowAddModal(true)
+            }}
+            disabled={!isAdmin}
+          >
             + Add User
           </button>
           <button
             className="rbac-reinvite-btn"
-            onClick={handleReInvite}
-            disabled={!isAdmin || !snapshot || !['invite_pending', 'invited_not_accepted'].includes(snapshot.user.inviteStatus)}
+            onClick={() => {
+              setShowAddModal(false)
+              setModalError('')
+              setServiceAccountView('picker')
+              setConvertToServiceAccount(false)
+              setAutoUpgradeQueues(true)
+              setSelectedServiceQueueIds([])
+              setNewServiceUserId(null)
+            }}
+            disabled={!isAdmin}
           >
-            Re-Invite
+            Service Account
+          </button>
+          <button className="rbac-update-btn" onClick={handleSave} disabled={!isDirty || saving || !selectedUserId}>
+            {saving ? 'Updating...' : 'Update'}
           </button>
         </div>
       </div>
 
-      <div className="rbac-module-strip">
-        {permissionCards.map((card) => {
-          const anyChecked = card.items.some((item) => isPermissionChecked(item.permissionKey))
-          return (
-            <label key={`strip-${card.id}`} className="rbac-strip-item">
-              <input
-                type="checkbox"
-                checked={anyChecked}
-                onChange={(e) => toggleCardAll(card.id, e.target.checked)}
-                disabled={!isAdmin || card.items.length === 0}
-              />
-              <span>{card.title}</span>
-            </label>
-          )
-        })}
-      </div>
-
-      <div className="rbac-modules-grid">
-        {permissionCards.map((card) => {
-          const allChecked = card.items.length > 0 && card.items.every((item) => isPermissionChecked(item.permissionKey))
-          return (
-            <section key={card.id} className="rbac-module-block">
-              <header className="rbac-module-head">
-                <div className="rbac-module-toggle" role="presentation">
-                  <span className="rbac-module-title">{card.title}</span>
-                  <span className="rbac-module-subtitle">{card.subtitle}</span>
+      {serviceAccountView !== 'none' ? (
+        <section className="rbac-module-card">
+          <div className="rbac-service-account-shell">
+            {serviceAccountView === 'picker' && (
+              <>
+                <div className="rbac-service-account-head">
+                  <h3>Service Account Setup</h3>
+                  <button className="admin-settings-ghost" onClick={resetServiceAccountFlow}>Back to Permissions</button>
                 </div>
-                <label className="rbac-select-all">
-                  <input
-                    type="checkbox"
-                    checked={allChecked}
-                    onChange={(e) => toggleCardAll(card.id, e.target.checked)}
-                    disabled={!isAdmin || card.items.length === 0}
-                  />
-                  <span>Select All</span>
+                <div className="rbac-service-account-picker-grid">
+                  <button className="rbac-service-account-picker-card" onClick={() => setServiceAccountView('existing-user')}>
+                    <h4>Add/Edit service account from existing user</h4>
+                    <p>Select a current user to add or edit queue-scoped service account settings.</p>
+                  </button>
+                  <button className="rbac-service-account-picker-card" onClick={() => setServiceAccountView('new-user')}>
+                    <h4>Add user and service account</h4>
+                    <p>Create a new user first, then continue with service account conversion and queue scope.</p>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {serviceAccountView === 'existing-user' && (
+              <div className="rbac-service-account-form">
+                <div className="rbac-service-account-head">
+                  <h3>Add/Edit service account from existing user</h3>
+                  <button className="admin-settings-ghost" onClick={() => setServiceAccountView('picker')}>Back</button>
+                </div>
+                {modalError && <div className="rbac-modal-error">{modalError}</div>}
+                <label className="rbac-service-account-label">
+                  Select User
+                  <select value={serviceExistingUserId ?? ''} onChange={(e) => setServiceExistingUserId(e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">Select User</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>{getUserOptionLabel(u)}</option>
+                    ))}
+                  </select>
                 </label>
-              </header>
-              <div className="rbac-permission-grid">
-                {card.items.map((item) => (
-                  <label key={item.permissionKey} className="rbac-permission-item">
-                    <input
-                      type="checkbox"
-                      checked={isPermissionChecked(item.permissionKey)}
-                      onChange={(e) => setPermission(item.permissionKey, e.target.checked)}
-                      disabled={!isAdmin}
-                    />
-                    <span>{displayPermissionLabel(item.label)}</span>
-                  </label>
-                ))}
+                {serviceExistingUserId && (
+                  <p className="rbac-service-account-note">
+                    {activeServiceAccountExists
+                      ? 'Existing service account config loaded. Update and save changes.'
+                      : 'No existing service account config. Configure and save to create one.'}
+                  </p>
+                )}
+                <label className="rbac-service-account-toggle">
+                  <span>Make as Service Account</span>
+                  <span className="rbac-toggle-switch">
+                    <input type="checkbox" checked={convertToServiceAccount} onChange={(e) => setConvertToServiceAccount(e.target.checked)} />
+                    <span className="rbac-toggle-slider" />
+                  </span>
+                </label>
+                {convertToServiceAccount && (
+                  <div className="rbac-service-account-queues">
+                    <label className="rbac-service-account-check">
+                      <input type="checkbox" checked={autoUpgradeQueues} onChange={(e) => setAutoUpgradeQueues(e.target.checked)} />
+                      <span>Auto-upgrade to include future team queues</span>
+                    </label>
+                    <div className="rbac-service-account-queue-grid">
+                      {ticketQueueOptions.map((q) => {
+                        const checked = autoUpgradeQueues ? true : selectedServiceQueueIds.includes(q.id)
+                        return (
+                          <label key={q.id} className="rbac-service-account-check">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={autoUpgradeQueues}
+                              onChange={(e) => toggleServiceQueue(q.id, e.target.checked)}
+                            />
+                            <span>{q.label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div className="rbac-service-account-actions">
+                  <button className="admin-settings-primary" onClick={handleSaveServiceAccount}>
+                    {!convertToServiceAccount
+                      ? 'Disable Service Account'
+                      : activeServiceAccountExists
+                        ? 'Update Service Account'
+                        : 'Save Service Account'}
+                  </button>
+                </div>
               </div>
-              <div className="rbac-module-footer">
-                <button type="button" className="rbac-add-action-btn" disabled={!isAdmin} onClick={() => handleAddAction(card.id)}>
-                  + Add Action
-                </button>
+            )}
+
+            {serviceAccountView === 'new-user' && (
+              <div className="rbac-service-account-form">
+                <div className="rbac-service-account-head">
+                  <h3>Add user and service account</h3>
+                  <button className="admin-settings-ghost" onClick={() => setServiceAccountView('picker')}>Back</button>
+                </div>
+                {modalError && <div className="rbac-modal-error">{modalError}</div>}
+                {!newServiceUserId ? (
+                  <>
+                    <div className="rbac-user-template-grid">
+                      <label>Full Name<input placeholder="Full name" value={newUser.fullName} onChange={(e) => setNewUser((p) => ({ ...p, fullName: e.target.value }))} /></label>
+                      <label>Personal Email ID<input placeholder="name@example.com" value={newUser.personalEmail} onChange={(e) => setNewUser((p) => ({ ...p, personalEmail: e.target.value }))} /></label>
+                      <label>Phone Number<input placeholder="+1 555 000 0000" value={newUser.phone} onChange={(e) => setNewUser((p) => ({ ...p, phone: e.target.value }))} /></label>
+                      <label>Employee ID<input placeholder="EMP-001" value={newUser.employeeId} onChange={(e) => setNewUser((p) => ({ ...p, employeeId: e.target.value }))} /></label>
+                      <label>Work Email ID<input placeholder="name@company.com" value={newUser.workEmail} onChange={(e) => setNewUser((p) => ({ ...p, workEmail: e.target.value }))} /></label>
+                      <label>Designation<input placeholder="Designation" value={newUser.designation} onChange={(e) => setNewUser((p) => ({ ...p, designation: e.target.value }))} /></label>
+                      <label>Department/Project<input placeholder="Department or project" value={newUser.department} onChange={(e) => setNewUser((p) => ({ ...p, department: e.target.value }))} /></label>
+                      <label>Reporting Manager<input placeholder="Manager name" value={newUser.manager} onChange={(e) => setNewUser((p) => ({ ...p, manager: e.target.value }))} /></label>
+                      <label>Date of Joining<input type="date" value={newUser.dateOfJoining} onChange={(e) => setNewUser((p) => ({ ...p, dateOfJoining: e.target.value }))} /></label>
+                      <label>Employment Type
+                        <select value={newUser.employmentType} onChange={(e) => setNewUser((p) => ({ ...p, employmentType: e.target.value }))}>
+                          <option>Full-time</option>
+                          <option>Part-time</option>
+                          <option>Contract</option>
+                        </select>
+                      </label>
+                      <label className="rbac-user-template-span-1">Work mode
+                        <select value={newUser.workMode} onChange={(e) => setNewUser((p) => ({ ...p, workMode: e.target.value }))}>
+                          <option>Onsite</option>
+                          <option>Hybrid</option>
+                          <option>Remote</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="rbac-service-account-toggle">
+                      <span>Make as Service Account</span>
+                      <span className="rbac-toggle-switch">
+                        <input type="checkbox" checked={convertToServiceAccount} onChange={(e) => setConvertToServiceAccount(e.target.checked)} />
+                        <span className="rbac-toggle-slider" />
+                      </span>
+                    </label>
+                    {convertToServiceAccount && (
+                      <div className="rbac-service-account-queues">
+                        <label className="rbac-service-account-check">
+                          <input type="checkbox" checked={autoUpgradeQueues} onChange={(e) => setAutoUpgradeQueues(e.target.checked)} />
+                          <span>Auto-upgrade to include future team queues</span>
+                        </label>
+                        <div className="rbac-service-account-queue-grid">
+                          {ticketQueueOptions.map((q) => {
+                            const checked = autoUpgradeQueues ? true : selectedServiceQueueIds.includes(q.id)
+                            return (
+                              <label key={q.id} className="rbac-service-account-check">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={autoUpgradeQueues}
+                                  onChange={(e) => toggleServiceQueue(q.id, e.target.checked)}
+                                />
+                                <span>{q.label}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {!convertToServiceAccount && (
+                      <p className="rbac-service-account-note">Enable "Make as Service Account" to continue.</p>
+                    )}
+                    <div className="rbac-service-account-actions">
+                      <button className="admin-settings-primary" onClick={handleCreateUserAndContinueServiceAccount} disabled={!convertToServiceAccount}>Add User</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="rbac-service-account-note">User created. Continue with service account conversion and queue scopes.</p>
+                    <label className="rbac-service-account-toggle">
+                      <span>Make as Service Account</span>
+                      <span className="rbac-toggle-switch">
+                        <input type="checkbox" checked={convertToServiceAccount} onChange={(e) => setConvertToServiceAccount(e.target.checked)} />
+                        <span className="rbac-toggle-slider" />
+                      </span>
+                    </label>
+                    {convertToServiceAccount && (
+                      <div className="rbac-service-account-queues">
+                        <label className="rbac-service-account-check">
+                          <input type="checkbox" checked={autoUpgradeQueues} onChange={(e) => setAutoUpgradeQueues(e.target.checked)} />
+                      <span>Auto-upgrade to include future team queues</span>
+                        </label>
+                        <div className="rbac-service-account-queue-grid">
+                          {ticketQueueOptions.map((q) => {
+                            const checked = autoUpgradeQueues ? true : selectedServiceQueueIds.includes(q.id)
+                            return (
+                              <label key={q.id} className="rbac-service-account-check">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={autoUpgradeQueues}
+                                  onChange={(e) => toggleServiceQueue(q.id, e.target.checked)}
+                                />
+                                <span>{q.label}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    <div className="rbac-service-account-actions">
+                      <button className="admin-settings-primary" onClick={handleSaveServiceAccount}>Save Service Account</button>
+                    </div>
+                  </>
+                )}
               </div>
-            </section>
-          )
-        })}
-      </div>
-
-      <div className="rbac-sticky-actions">
-        <button className="rbac-close-btn" onClick={handleClose}>Close</button>
-        <button className="rbac-update-btn" onClick={handleSave} disabled={!isDirty || saving || !selectedUserId}>
-          {saving ? 'Updating...' : 'Update'}
-        </button>
-      </div>
-
-      {toast && <div className={`rbac-toast ${toast.type}`}>{toast.text}</div>}
-
-      {showAddModal && (
-        <div className="modal-overlay" onClick={resetAddModal}>
-          <div className="modal-content rbac-modal" onClick={(e) => e.stopPropagation()}>
+            )}
+          </div>
+        </section>
+      ) : showAddModal ? (
+        <section className="rbac-module-card">
+          <div className="modal-content rbac-modal rbac-inline-add-user">
             <div className="modal-header">
               <h3>Add / Invite New User</h3>
               <button className="modal-close" onClick={resetAddModal}>x</button>
@@ -566,14 +1022,28 @@ export default function RbacModule({ isAdmin }: Props) {
             <div className="modal-body">
               {modalError && <div className="rbac-modal-error">{modalError}</div>}
               {addStep === 1 && (
-                <div className="rbac-modal-grid">
-                  <label>Full Name<input value={newUser.fullName} onChange={(e) => setNewUser((p) => ({ ...p, fullName: e.target.value }))} /></label>
-                  <label>Email<input value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} /></label>
-                  <label>Phone<input value={newUser.phone} onChange={(e) => setNewUser((p) => ({ ...p, phone: e.target.value }))} /></label>
-                  <label>Default Permission
-                    <select value={newUser.defaultPermissionTemplate} onChange={(e) => setNewUser((p) => ({ ...p, defaultPermissionTemplate: e.target.value }))}>
-                      <option value="">Select template</option>
-                      {(snapshot?.permissionTemplates || []).map((opt) => <option key={opt.key} value={opt.key}>{opt.label}</option>)}
+                <div className="rbac-user-template-grid">
+                  <label>Full Name<input placeholder="Full name" value={newUser.fullName} onChange={(e) => setNewUser((p) => ({ ...p, fullName: e.target.value }))} /></label>
+                  <label>Personal Email ID<input placeholder="name@example.com" value={newUser.personalEmail} onChange={(e) => setNewUser((p) => ({ ...p, personalEmail: e.target.value }))} /></label>
+                  <label>Phone Number<input placeholder="+1 555 000 0000" value={newUser.phone} onChange={(e) => setNewUser((p) => ({ ...p, phone: e.target.value }))} /></label>
+                  <label>Employee ID<input placeholder="EMP-001" value={newUser.employeeId} onChange={(e) => setNewUser((p) => ({ ...p, employeeId: e.target.value }))} /></label>
+                  <label>Work Email ID<input placeholder="name@company.com" value={newUser.workEmail} onChange={(e) => setNewUser((p) => ({ ...p, workEmail: e.target.value }))} /></label>
+                  <label>Designation<input placeholder="Designation" value={newUser.designation} onChange={(e) => setNewUser((p) => ({ ...p, designation: e.target.value }))} /></label>
+                  <label>Department/Project<input placeholder="Department or project" value={newUser.department} onChange={(e) => setNewUser((p) => ({ ...p, department: e.target.value }))} /></label>
+                  <label>Reporting Manager<input placeholder="Manager name" value={newUser.manager} onChange={(e) => setNewUser((p) => ({ ...p, manager: e.target.value }))} /></label>
+                  <label>Date of Joining<input type="date" value={newUser.dateOfJoining} onChange={(e) => setNewUser((p) => ({ ...p, dateOfJoining: e.target.value }))} /></label>
+                  <label>Employment Type
+                    <select value={newUser.employmentType} onChange={(e) => setNewUser((p) => ({ ...p, employmentType: e.target.value }))}>
+                      <option>Full-time</option>
+                      <option>Part-time</option>
+                      <option>Contract</option>
+                    </select>
+                  </label>
+                  <label className="rbac-user-template-span-1">Work mode
+                    <select value={newUser.workMode} onChange={(e) => setNewUser((p) => ({ ...p, workMode: e.target.value }))}>
+                      <option>Onsite</option>
+                      <option>Hybrid</option>
+                      <option>Remote</option>
                     </select>
                   </label>
                 </div>
@@ -592,8 +1062,47 @@ export default function RbacModule({ isAdmin }: Props) {
               {addStep === 1 && <button className="admin-settings-primary" onClick={handleAddUser}>Save</button>}
             </div>
           </div>
-        </div>
+        </section>
+      ) : (
+        <section className="rbac-module-card">
+          <div className="rbac-permission-matrix-wrap">
+            <table className="rbac-permission-matrix">
+              <thead>
+                <tr>
+                  <th scope="col">Permission</th>
+                  {permissionMatrixColumns.map((column) => (
+                    <th key={column.key} scope="col">{column.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {permissionCards.map((card) => (
+                  <tr key={card.id}>
+                    <td className="rbac-permission-module-cell">
+                      <span className="rbac-permission-module-name">{card.title}</span>
+                    </td>
+                    {permissionMatrixColumns.map((column) => {
+                      const columnItems = getCardItemsByColumn(card.items, column.key)
+                      const checked = columnItems.length > 0 && columnItems.every((item) => isPermissionChecked(item.permissionKey))
+                      return (
+                        <td key={`${card.id}-${column.key}`} className="rbac-permission-matrix-cell">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleCardColumn(card.id, column.key, e.target.checked)}
+                            disabled={!isAdmin || columnItems.length === 0}
+                          />
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
-    </section>
+      {toast && <div className={`rbac-toast ${toast.type}`}>{toast.text}</div>}
+    </>
   )
 }

@@ -99,6 +99,11 @@ const navItems: NavItem[] = [
   }
 ]
 
+export const primarySidebarModules = navItems.map((item) => ({
+  id: item.id,
+  label: item.label,
+}))
+
 export default function PrimarySidebar({ activeNav, setActiveNav, role }: { activeNav: string; setActiveNav: (id: string) => void; role?: string }) {
   const visibleNavItems = navItems.filter((item) => {
     if (role === 'ADMIN') return ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'accounts', 'reports', 'admin'].includes(item.id)

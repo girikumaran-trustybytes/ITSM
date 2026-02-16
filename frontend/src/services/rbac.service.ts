@@ -24,6 +24,15 @@ export async function createRbacUser(payload: {
   fullName: string
   email: string
   phone?: string
+  personalEmail?: string
+  workEmail?: string
+  employeeId?: string
+  department?: string
+  reportingManager?: string
+  dateOfJoining?: string
+  employmentType?: string
+  workMode?: string
+  designation?: string
   role: string
   defaultPermissionTemplate?: string
   inviteMode?: 'now' | 'later'
@@ -32,6 +41,15 @@ export async function createRbacUser(payload: {
     name: payload.fullName,
     email: payload.email,
     phone: payload.phone || null,
+    personalEmail: payload.personalEmail || null,
+    workEmail: payload.workEmail || null,
+    employeeId: payload.employeeId || null,
+    department: payload.department || null,
+    reportingManager: payload.reportingManager || null,
+    dateOfJoining: payload.dateOfJoining || null,
+    employmentType: payload.employmentType || null,
+    workMode: payload.workMode || null,
+    designation: payload.designation || null,
     role: payload.role,
     status: payload.inviteMode ? 'INVITED' : 'ACTIVE',
     inviteMode: payload.inviteMode,

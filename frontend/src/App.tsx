@@ -41,6 +41,16 @@ const navLabels: Record<string, string> = {
   reports: 'Reports',
   admin: 'Admin',
 }
+const navPaths: Record<string, string> = {
+  dashboard: '/dashboard',
+  tickets: '/tickets',
+  assets: '/assets',
+  users: '/users',
+  suppliers: '/supplier',
+  accounts: '/accounts',
+  reports: '/reports',
+  admin: '/admin',
+}
 
 function getNavFromPath(pathname: string) {
   if (pathname.startsWith('/tickets')) return 'tickets'
@@ -138,27 +148,43 @@ function MainShell() {
     navigate(`/${id}`)
   }
 
-  const breadcrumb = useMemo(() => {
+  const breadcrumbItems = useMemo(() => {
     if (location.pathname.startsWith('/tickets/')) {
       const id = decodeURIComponent(location.pathname.split('/')[2] || '')
-      return `Tickets > ${id}`
+      return [
+        { label: 'Tickets', path: '/tickets' },
+        { label: id || 'Details', path: location.pathname },
+      ]
     }
     if (location.pathname.startsWith('/assets/')) {
       const id = decodeURIComponent(location.pathname.split('/')[2] || '')
-      return `Assets > ${id}`
+      return [
+        { label: 'Assets', path: '/assets' },
+        { label: id || 'Details', path: location.pathname },
+      ]
     }
     if (location.pathname.startsWith('/users/')) {
       const id = decodeURIComponent(location.pathname.split('/')[2] || '')
-      return `Users > ${id}`
+      return [
+        { label: 'Users', path: '/users' },
+        { label: id || 'Details', path: location.pathname },
+      ]
     }
     if (location.pathname.startsWith('/supplier/')) {
       const id = decodeURIComponent(location.pathname.split('/')[2] || '')
-      return `Suppliers > ${id}`
+      return [
+        { label: 'Suppliers', path: '/supplier' },
+        { label: id || 'Details', path: location.pathname },
+      ]
     }
     if (location.pathname.startsWith('/admin')) {
-      return 'Admin > Settings'
+      return [
+        { label: 'Admin', path: '/admin' },
+        { label: 'Settings', path: '/admin' },
+      ]
     }
-    return activeNav === 'tickets' ? 'Tickets' : (navLabels[activeNav] || 'Dashboard')
+    const activeKey = activeNav === 'tickets' ? 'tickets' : (activeNav || 'dashboard')
+    return [{ label: navLabels[activeKey] || 'Dashboard', path: navPaths[activeKey] || '/dashboard' }]
   }, [activeNav, location.pathname])
 
   const isTicketsRoute = location.pathname.startsWith('/tickets')
@@ -199,87 +225,107 @@ function MainShell() {
     isSuppliersListRoute ? 'suppliers' :
     isAdminListRoute ? 'admin' :
     null
+  const sharedToolbarClass =
+    toolbarTarget === 'assets' ? 'assets-tool-bar' :
+    toolbarTarget === 'users' ? 'users-tool-bar' :
+    toolbarTarget === 'accounts' ? 'accounts-tool-bar' :
+    toolbarTarget === 'suppliers' ? 'suppliers-tool-bar' :
+    toolbarTarget === 'admin' ? 'admin-tool-bar' :
+    'tickets-tool-bar'
 
   return (
     <div className="app-root">
       <PrimarySidebar activeNav={activeNav} setActiveNav={handleNavSelect} role={user?.role} />
       <div id="ticket-left-panel" className="ticket-left-panel" />
-      <main className="main-area" style={panelWidth ? { marginRight: panelWidth } : undefined}>
-        <div className="app-header">
-          <div className="app-header-left">
-            <span className="breadcrumb">{breadcrumb}</span>
-          </div>
-          <div className="app-header-right">
+      <div className="nav-top-bar">
+        <div className="nav-top-bar-left">
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            {breadcrumbItems.map((item, index) => (
+              <React.Fragment key={`${item.label}-${index}`}>
+                <button
+                  type="button"
+                  className="breadcrumb-link"
+                  onClick={() => navigate(item.path)}
+                >
+                  {item.label}
+                </button>
+                {index < breadcrumbItems.length - 1 && <span className="breadcrumb-sep">{'>'}</span>}
+              </React.Fragment>
+            ))}
+          </nav>
+        </div>
+        <div className="nav-top-bar-right">
+          <button
+            className="app-pill-btn"
+            onClick={() => {
+              if (!location.pathname.startsWith('/tickets')) {
+                sessionStorage.setItem('openNewTicket', '1')
+                navigate('/tickets')
+                return
+              }
+              window.dispatchEvent(new CustomEvent('open-new-ticket'))
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New Ticket
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'search' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Search"
+            onClick={() => setActivePanel(activePanel === 'search' ? null : 'search')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'todo' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="To-Do"
+            onClick={() => setActivePanel(activePanel === 'todo' ? null : 'todo')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="4" y="5" width="16" height="15" rx="2" />
+              <path d="M8 9h8M8 13h8M8 17h5" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'feed' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Feed"
+            onClick={() => setActivePanel(activePanel === 'feed' ? null : 'feed')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M4 6h16M4 12h16M4 18h10" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'notifications' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Notifications"
+            onClick={() => setActivePanel(activePanel === 'notifications' ? null : 'notifications')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M6 17h12l-1.5-2.5V11a4.5 4.5 0 0 0-9 0v3.5L6 17z" />
+              <path d="M10 19a2 2 0 0 0 4 0" />
+            </svg>
+          </button>
+          <div className="profile-menu" ref={profileRef}>
             <button
-              className="app-pill-btn"
-              onClick={() => {
-                if (!location.pathname.startsWith('/tickets')) {
-                  sessionStorage.setItem('openNewTicket', '1')
-                  navigate('/tickets')
-                  return
-                }
-                window.dispatchEvent(new CustomEvent('open-new-ticket'))
-              }}
+              className="profile-avatar-btn"
+              aria-label="Profile menu"
+              onClick={() => setShowProfileMenu((v) => !v)}
             >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              New Ticket
+              {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
             </button>
-            <button
-              className={`app-icon-btn ${activePanel === 'search' ? 'app-icon-btn-active' : ''}`}
-              data-panel-toggle
-              aria-label="Search"
-              onClick={() => setActivePanel(activePanel === 'search' ? null : 'search')}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <circle cx="11" cy="11" r="7" />
-                <path d="M20 20l-3.5-3.5" />
-              </svg>
-            </button>
-            <button
-              className={`app-icon-btn ${activePanel === 'todo' ? 'app-icon-btn-active' : ''}`}
-              data-panel-toggle
-              aria-label="To-Do"
-              onClick={() => setActivePanel(activePanel === 'todo' ? null : 'todo')}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <rect x="4" y="5" width="16" height="15" rx="2" />
-                <path d="M8 9h8M8 13h8M8 17h5" />
-              </svg>
-            </button>
-            <button
-              className={`app-icon-btn ${activePanel === 'feed' ? 'app-icon-btn-active' : ''}`}
-              data-panel-toggle
-              aria-label="Feed"
-              onClick={() => setActivePanel(activePanel === 'feed' ? null : 'feed')}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M4 6h16M4 12h16M4 18h10" />
-              </svg>
-            </button>
-            <button
-              className={`app-icon-btn ${activePanel === 'notifications' ? 'app-icon-btn-active' : ''}`}
-              data-panel-toggle
-              aria-label="Notifications"
-              onClick={() => setActivePanel(activePanel === 'notifications' ? null : 'notifications')}
-            >
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                <path d="M6 17h12l-1.5-2.5V11a4.5 4.5 0 0 0-9 0v3.5L6 17z" />
-                <path d="M10 19a2 2 0 0 0 4 0" />
-              </svg>
-            </button>
-            <div className="profile-menu" ref={profileRef}>
-              <button
-                className="profile-avatar-btn"
-                aria-label="Profile menu"
-                onClick={() => setShowProfileMenu((v) => !v)}
-              >
-                {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
-              </button>
-            </div>
           </div>
         </div>
+      </div>
+      <main className="main-area" style={panelWidth ? { marginRight: panelWidth } : undefined}>
         {showProfileMenu && (
           <div className="profile-panel" ref={profilePanelRef}>
             <div className="profile-panel-header">
@@ -356,8 +402,8 @@ function MainShell() {
           </div>
         )}
         {showSharedToolbar && (
-          <div className="tickets-table-bar">
-            <div className="tickets-table-left">
+          <div className={sharedToolbarClass}>
+            <div className="tool-bar-left">
               <button
                 className="table-icon-btn toolbar-left-panel-toggle"
                 title="Toggle Left Panel"
@@ -388,7 +434,7 @@ function MainShell() {
                 </span>
               </div>
             </div>
-            <div className="tickets-table-right">
+            <div className="tool-bar-right">
               {isAdminListRoute ? (
                 <>
                   <div className="admin-settings-footer-meta">
@@ -565,14 +611,12 @@ function MainShell() {
           <Route
             path="/admin"
             element={
-              <div className="work-main">
-                <AdminView
-                  toolbarSearch={tabToolbarSearch}
-                  controlledPage={adminPage}
-                  onPageChange={setAdminPage}
-                  onPaginationMetaChange={setAdminPagination}
-                />
-              </div>
+              <AdminView
+                toolbarSearch={tabToolbarSearch}
+                controlledPage={adminPage}
+                onPageChange={setAdminPage}
+                onPaginationMetaChange={setAdminPagination}
+              />
             }
           />
           <Route path="*" element={<div className="work-main"><Dashboard /></div>} />
@@ -609,4 +653,6 @@ export default function App() {
     </Routes>
   )
 }
+
+
 

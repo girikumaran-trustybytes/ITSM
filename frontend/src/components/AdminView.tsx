@@ -49,6 +49,13 @@ const settingsMenu: MenuSection[] = [
     ],
   },
   {
+    id: 'queue-management',
+    label: 'Queue & Panel management',
+    items: [
+      { id: 'queue-management', label: 'Queue & Panel management', requiresAdmin: true },
+    ],
+  },
+  {
     id: 'incident',
     label: 'Incident Management',
     items: [
@@ -1026,147 +1033,26 @@ export default function AdminView(_props: AdminViewProps) {
     queueRoot
   ) : null
 
+  if (isRolesPermissionsView) {
+    return (
+      <>
+        {adminLeftPanel}
+        <RbacModule isAdmin={role === 'ADMIN'} />
+      </>
+    )
+  }
+
+  if (isQueueManagement) {
+    return (
+      <>
+        {adminLeftPanel}
+      </>
+    )
+  }
+
   return (
     <>
       {adminLeftPanel}
-      <div className="admin-settings-page">
-      <div className="admin-settings-layout">
-        <main className="admin-settings-main">
-          <div className="admin-settings-main-head">
-            <div>
-              <h2>{title}</h2>
-            </div>
-            {!isQueueManagement && !isRolesPermissionsView && (
-              <div className="admin-settings-head-meta">
-                <span className={`admin-health ${systemHealth.tone}`}>
-                  <i />
-                  System health: {systemHealth.label}
-                </span>
-                <span className="admin-role-pill">Role: {roleBadge}</span>
-              </div>
-            )}
-          </div>
-
-          {!isQueueManagement && !isRolesPermissionsView && (
-            <div className="admin-settings-toolbar">
-              <div className="admin-settings-inline-search">
-                <input
-                  value={settingsQuery}
-                  onChange={(e) => setSettingsQuery(e.target.value)}
-                  placeholder="Search within selected settings"
-                />
-              </div>
-              <div className="admin-settings-toolbar-actions">
-                <button className={`admin-settings-ghost ${recentOnly ? 'active' : ''}`} onClick={() => setRecentOnly((v) => !v)}>
-                  Recently Modified
-                </button>
-                <button className="admin-settings-ghost" onClick={handleImport}>Import Config</button>
-                <button className="admin-settings-ghost" onClick={handleExport}>Export Config</button>
-              </div>
-            </div>
-          )}
-          {!isQueueManagement && !isRolesPermissionsView && (
-            <div className="admin-settings-topic-strip">
-              <div className="admin-settings-topic-search">
-                <input
-                  value={subSidebarQuery}
-                  onChange={(e) => setSubSidebarQuery(e.target.value)}
-                  placeholder="Search settings topics..."
-                />
-              </div>
-              <div className="admin-settings-topic-items">
-                {subItems.map((item) => (
-                  <button
-                    key={item.id}
-                    className={`admin-left-panel-topic-item ${activeItem === item.id ? 'active' : ''} ${item.requiresAdmin && role !== 'ADMIN' ? 'restricted' : ''}`}
-                    title={item.requiresAdmin && role !== 'ADMIN' ? 'Restricted Access: Administrator role required' : item.label}
-                    disabled={item.requiresAdmin && role !== 'ADMIN'}
-                    onClick={() => setActiveItem(item.id)}
-                  >
-                    <span>{item.label}</span>
-                    <small>
-                      {item.requiresAdmin ? (role === 'ADMIN' ? 'A' : '!') : (settingsTopicPanels[item.id]?.reduce((sum, p) => sum + p.fields.length, 0) || 0)}
-                    </small>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="admin-settings-grid">
-            {activeItem === 'queue-management' && (
-              <section className="admin-settings-card">
-                <h3>Queue Management</h3>
-                <p>Configure and control left-panel lists for Tickets, Users, Assets, and Suppliers.</p>
-                <div className="admin-settings-toolbar-actions">
-                  {(['ticketsMyLists', 'users', 'assets', 'suppliers'] as const).map((key) => (
-                    <button
-                      key={key}
-                      className={`admin-settings-ghost ${queuePanelKey === key ? 'active' : ''}`}
-                      onClick={() => setQueuePanelKey(key)}
-                    >
-                      {queuePanelLabels[key]}
-                    </button>
-                  ))}
-                </div>
-                <div className="admin-settings-toolbar-actions">
-                  <button className="admin-settings-primary" onClick={handleQueueAdd}>Add New Queue</button>
-                  <button className="admin-settings-ghost" onClick={handleQueueEdit}>Edit Queue</button>
-                  <button className="admin-settings-danger" onClick={handleQueueDelete}>Delete Queue</button>
-                  <button className="admin-settings-ghost" onClick={handleQueueConfigReset}>Reset Defaults</button>
-                </div>
-                <div className="admin-queue-rules-plain">
-                  <h3>{queuePanelLabels[queuePanelKey]} Queues</h3>
-                  {queueRules.length === 0 && <p>No queues configured.</p>}
-                  {queueRules.map((rule) => (
-                    <div key={rule.id} className="admin-queue-rule-row">
-                      <span>{rule.label}</span>
-                      <small>{rule.field} = {rule.value}</small>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-            {isRolesPermissionsView && (
-              <RbacModule isAdmin={role === 'ADMIN'} />
-            )}
-            {!isRolesPermissionsView && topicPanels.map((panel) => {
-              const panelFields = panel.fields
-                .map((field) => renderField(field))
-                .filter(Boolean)
-              if (panelFields.length === 0) return null
-              return (
-                <section key={panel.id} className="admin-settings-card">
-                  <h3>{panel.title}</h3>
-                  <p>{panel.description}</p>
-                  {panelFields}
-                </section>
-              )
-            })}
-
-            {!isQueueManagement && !isRolesPermissionsView && (
-              <section className="admin-settings-card danger-zone">
-                <h3>Danger Zone</h3>
-                <p>Destructive actions require explicit confirmation and are logged for compliance.</p>
-                <div className="admin-danger-actions">
-                  <button className="admin-settings-danger" onClick={() => setShowConfirmReset(true)}>
-                    Reset this setting to defaults
-                  </button>
-                  <button
-                    className="admin-settings-danger"
-                    onClick={() => setShowConfirmRevoke(true)}
-                    disabled={isRestrictedRole}
-                    title={isRestrictedRole ? 'Restricted Access: Administrator role required' : 'Revoke API keys'}
-                  >
-                    Revoke all active API keys
-                  </button>
-                </div>
-              </section>
-            )}
-          </div>
-        </main>
-
-      </div>
 
       {showConfirmSave && (
         <div className="admin-settings-modal-backdrop" onClick={() => setShowConfirmSave(false)}>
@@ -1206,7 +1092,6 @@ export default function AdminView(_props: AdminViewProps) {
           </div>
         </div>
       )}
-      </div>
     </>
   )
 }

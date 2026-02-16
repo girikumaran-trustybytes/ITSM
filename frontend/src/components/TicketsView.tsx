@@ -1754,8 +1754,8 @@ export default function TicketsView() {
   ) : (
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
       <div className="work-main">
-        <div className="tickets-table-bar">
-          <div className="tickets-table-left">
+        <div className="tickets-tool-bar">
+          <div className="tool-bar-left">
             {queueCollapsed && (
               <button
                 className="table-icon-btn"
@@ -1812,7 +1812,7 @@ export default function TicketsView() {
               </span>
             </div>
           </div>
-          <div className="tickets-table-right">
+          <div className="tool-bar-right">
             <span className="pagination">{rangeStart}-{rangeEnd} of {totalTickets}</span>
             <div className="toolbar-pagination-group">
               <button
