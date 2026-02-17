@@ -10,7 +10,6 @@ Services:
 - Frontend: `http://localhost:3000`
 - Backend API: `http://localhost:5000`
 - Postgres: `localhost:5432`
-- Redis: `localhost:6379`
 
 ## Stop
 

@@ -22,7 +22,7 @@ export type Incident = {
   sla?: any
   subject: string
   category: string
-  priority: 'Low' | 'Medium' | 'High'
+  priority: 'Low' | 'Medium' | 'High' | 'Critical'
   status: string
   type: string
   endUser: string
@@ -67,6 +67,7 @@ export default function TicketsView() {
   const [slaApplying, setSlaApplying] = useState(false)
   const [slaPolicyMenuOpen, setSlaPolicyMenuOpen] = useState(false)
   const [slaPriorityMenuOpen, setSlaPriorityMenuOpen] = useState(false)
+  const [selectedSlaPolicyName, setSelectedSlaPolicyName] = useState('')
   const [composerAttachments, setComposerAttachments] = useState<LocalAttachment[]>([])
   const [internalNoteAttachments, setInternalNoteAttachments] = useState<LocalAttachment[]>([])
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
@@ -152,7 +153,7 @@ export default function TicketsView() {
     return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
   }
 
-  const applySlaPriority = async (priority: 'High' | 'Medium' | 'Low') => {
+  const applySlaPriority = async (priority: 'Critical' | 'High' | 'Medium' | 'Low') => {
     if (!selectedTicket) return
     try {
       setSlaApplying(true)
@@ -187,18 +188,25 @@ export default function TicketsView() {
     }
   }
 
-  const handlePolicyChange = async (policyIdRaw: string) => {
-    const policyId = Number(policyIdRaw)
-    if (!Number.isFinite(policyId) || !selectedTicket) return
-    const chosen = slaPolicies.find((p) => Number(p.id) === policyId)
-    if (!chosen) return
-    const targetPriority = String(chosen.priority || 'Medium') as 'High' | 'Medium' | 'Low'
-    await applySlaPriority(targetPriority)
+  const canonicalPriorityForRank = (rank: number): 'Critical' | 'High' | 'Medium' | 'Low' => {
+    if (rank === 1) return 'Critical'
+    if (rank === 2) return 'High'
+    if (rank === 3) return 'Medium'
+    return 'Low'
   }
 
-  const handlePolicySelectFromPill = async (policyIdRaw: string) => {
+  const rankFromPriorityLabel = (value: any): number => {
+    const v = String(value || '').trim().toLowerCase()
+    if (v === 'critical' || v === 'p1') return 1
+    if (v === 'high' || v === 'p2') return 2
+    if (v === 'medium' || v === 'p3') return 3
+    if (v === 'low' || v === 'p4') return 4
+    return 4
+  }
+
+  const handlePolicySelectFromPill = (policyName: string) => {
     setSlaPolicyMenuOpen(false)
-    await handlePolicyChange(policyIdRaw)
+    setSelectedSlaPolicyName(String(policyName || ''))
     setSlaPriorityMenuOpen(true)
   }
 
@@ -1874,21 +1882,37 @@ export default function TicketsView() {
 
   const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px 1fr`
   const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
-  const activeSlaPolicy = selectedTicket
-    ? slaPolicies.find(
-        (p) =>
-          String(p?.name || '') === String(selectedTicket.sla?.policyName || '') &&
-          String(p?.priority || '').toLowerCase() === String(selectedTicket.priority || '').toLowerCase()
+  const activeSlaPriorityRank = Number(selectedTicket?.sla?.priorityRank || rankFromPriorityLabel(selectedTicket?.sla?.priority || selectedTicket?.priority))
+  const activeSlaPolicyName = String(selectedTicket?.sla?.policyName || 'Select Policy')
+  const currentSlaPolicyName = String(selectedSlaPolicyName || activeSlaPolicyName)
+  const activePolicies = React.useMemo(() => {
+    const names = Array.from(
+      new Set(
+        slaPolicies
+          .filter((p) => p?.active !== false)
+          .map((p) => String(p?.name || '').trim())
+          .filter(Boolean)
       )
-    : null
-  const activeSlaPolicyId = activeSlaPolicy ? Number(activeSlaPolicy.id) : 0
-  const activeSlaPolicyName = String(activeSlaPolicy?.name || selectedTicket?.sla?.policyName || 'Select Policy')
-  const activeSlaPriority = String(selectedTicket?.sla?.priority || selectedTicket?.priority || 'Medium')
-  const activePolicies = slaPolicies.filter((p) => p?.active !== false)
+    )
+    return names
+  }, [slaPolicies])
+  const activePolicyRows = React.useMemo(() => {
+    if (!selectedTicket) return []
+    return slaPolicies
+      .filter((p) => p?.active !== false && String(p?.name || '') === currentSlaPolicyName)
+      .slice()
+      .sort((a, b) => Number(a?.priorityRank || rankFromPriorityLabel(a?.priority)) - Number(b?.priorityRank || rankFromPriorityLabel(b?.priority)))
+  }, [slaPolicies, selectedTicket, currentSlaPolicyName])
+  const activeSlaPriorityLabel = (() => {
+    const matched = activePolicyRows.find((row) => Number(row?.priorityRank || rankFromPriorityLabel(row?.priority)) === activeSlaPriorityRank)
+    if (matched?.priority) return String(matched.priority)
+    return String(selectedTicket?.sla?.priority || selectedTicket?.priority || 'P3')
+  })()
 
   React.useEffect(() => {
     setSlaPolicyMenuOpen(false)
     setSlaPriorityMenuOpen(false)
+    setSelectedSlaPolicyName('')
   }, [selectedTicket?.id])
 
   const mainContent = showDetailView && selectedTicket ? (
@@ -2283,19 +2307,19 @@ export default function TicketsView() {
                       onClick={() => setSlaPolicyMenuOpen((v) => !v)}
                       disabled={slaApplying}
                     >
-                      <span>{activeSlaPolicyName}</span>
+                      <span>{currentSlaPolicyName}</span>
                       <span className="sla-pill-chevron">v</span>
                     </button>
                     {slaPolicyMenuOpen && (
                       <div className="sla-pill-dropdown">
-                        {activePolicies.map((p) => (
+                        {activePolicies.map((policyName) => (
                           <button
-                            key={p.id}
+                            key={policyName}
                             type="button"
-                            className={`sla-pill-option${Number(p.id) === activeSlaPolicyId ? ' active' : ''}`}
-                            onClick={() => handlePolicySelectFromPill(String(p.id))}
+                            className={`sla-pill-option${String(currentSlaPolicyName) === String(policyName) ? ' active' : ''}`}
+                            onClick={() => handlePolicySelectFromPill(String(policyName))}
                           >
-                            {p.name}
+                            {policyName}
                           </button>
                         ))}
                       </div>
@@ -2311,24 +2335,29 @@ export default function TicketsView() {
                       onClick={() => setSlaPriorityMenuOpen((v) => !v)}
                       disabled={slaApplying}
                     >
-                      <span>{activeSlaPriority}</span>
+                      <span>{activeSlaPriorityLabel}</span>
                       <span className="sla-pill-chevron">v</span>
                     </button>
                     {slaPriorityMenuOpen && (
                       <div className="sla-pill-dropdown">
-                        {(['High', 'Medium', 'Low'] as const).map((priority) => (
+                        {activePolicyRows.map((row) => {
+                          const rank = Number(row?.priorityRank || rankFromPriorityLabel(row?.priority))
+                          const canonical = canonicalPriorityForRank(rank)
+                          const label = String(row?.priority || canonical)
+                          return (
                           <button
-                            key={priority}
+                            key={`${row.id}-${label}`}
                             type="button"
-                            className={`sla-pill-option${String(activeSlaPriority).toLowerCase() === priority.toLowerCase() ? ' active' : ''}`}
+                            className={`sla-pill-option${String(activeSlaPriorityLabel).toLowerCase() === label.toLowerCase() ? ' active' : ''}`}
                             onClick={() => {
                               setSlaPriorityMenuOpen(false)
-                              applySlaPriority(priority)
+                              applySlaPriority(canonical)
+                              setSelectedSlaPolicyName(currentSlaPolicyName)
                             }}
                           >
-                            {priority}
+                            {label}
                           </button>
-                        ))}
+                        )})}
                       </div>
                     )}
                   </div>
@@ -2714,6 +2743,7 @@ export default function TicketsView() {
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
                   <option value="High">High</option>
+                  <option value="Critical">Critical</option>
                 </select>
               </div>
             </div>

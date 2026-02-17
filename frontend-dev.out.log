@@ -1,0 +1,91 @@
+
+> itsm-frontend@1.0.16 dev
+> vite --port 3000 --host 0.0.0.0
+
+
+  [32m[1mVITE[22m v4.4.9[39m  [2mready in [0m[1m1343[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m3000[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.10.10.70:[1m3000[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://172.22.240.1:[1m3000[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://172.23.176.1:[1m3000[22m/[39m
+[2m1:00:47 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/TicketsView.tsx[22m
+[2m1:00:59 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:01:32 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:03:09 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:03:17 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:03:31 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:03:47 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:04:14 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:04:24 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:06:31 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:07:41 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:07:54 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:08:12 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:11:13 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:11:25 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:11:42 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:12:23 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:12:50 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:15:48 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:16:29 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:17:39 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:22:47 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:22:54 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:24:23 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:25:19 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:25:28 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:29:24 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[2m1:30:25 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:48:03 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:48:23 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:48:49 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:48:57 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:49:07 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:49:32 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:49:48 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:50:04 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:50:11 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:50:32 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:51:06 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:51:15 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:51:39 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:53:35 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:53:44 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m1:54:38 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[2m1:54:45 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m1:58:03 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/NotificationsPanel.tsx[22m
+[2m1:58:37 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/NotificationsPanel.tsx[22m
+[2m1:59:02 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m2:00:19 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:00:32 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:01:17 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:02:26 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/NotificationsPanel.tsx[22m
+[2m2:02:42 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[2m2:02:50 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m2:03:24 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:04:42 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m2:05:56 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:07:42 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m2:09:48 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:09:58 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m2:12:01 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:13:55 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[2m2:17:00 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:20:30 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/FeedPanel.tsx[22m
+[2m2:23:32 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:25:15 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/FeedPanel.tsx[22m
+[2m2:25:41 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/FeedPanel.tsx[22m
+[2m2:27:59 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/FeedPanel.tsx[22m
+[2m2:28:00 PM[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/panels/FeedPanel.tsx[22m Could not Fast Refresh. Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:28:00 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[2m2:28:00 PM[22m [36m[1m[vite][22m[39m [33mhmr invalidate [39m[2m/src/components/panels/FeedPanel.tsx[22m Could not Fast Refresh. Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+[2m2:28:00 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[2m2:28:21 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/panels/NotificationsPanel.tsx[22m
+[2m2:29:09 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/App.tsx[22m
+[2m2:29:44 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m2:30:30 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:34:05 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/styles.css[22m
+[2m2:35:21 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/AdminView.tsx[22m
+[2m2:40:11 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/TicketsView.tsx[22m
+[2m2:40:29 PM[22m [36m[1m[vite][22m[39m [32mhmr update [39m[2m/src/components/TicketsView.tsx[22m

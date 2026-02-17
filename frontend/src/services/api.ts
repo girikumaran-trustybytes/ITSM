@@ -13,6 +13,18 @@ function getAccessToken() {
   return localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
 }
 
+function isPublicEndpoint(url: string) {
+  return (
+    url.includes('/auth/login') ||
+    url.includes('/auth/google') ||
+    url.includes('/auth/google/config') ||
+    url.includes('/auth/forgot-password') ||
+    url.includes('/auth/reset-password') ||
+    url.includes('/auth/mfa/verify') ||
+    url.includes('/auth/refresh')
+  )
+}
+
 async function refreshToken() {
   const localRefresh = localStorage.getItem('refreshToken')
   const sessionRefresh = sessionStorage.getItem('refreshToken')
@@ -31,7 +43,21 @@ async function refreshToken() {
 // Request interceptor to add access token
 api.interceptors.request.use((config) => {
   const token = getAccessToken()
-  if (token && config.headers) config.headers['Authorization'] = `Bearer ${token}`
+  const url = String(config.url || '')
+
+  if (token && config.headers) {
+    config.headers['Authorization'] = `Bearer ${token}`
+    return config
+  }
+
+  // Prevent sending protected API calls without auth; keep public auth endpoints accessible.
+  if (!isPublicEndpoint(url)) {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+    return Promise.reject(new Error('Missing access token'))
+  }
+
   return config
 })
 

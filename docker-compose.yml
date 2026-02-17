@@ -54,12 +54,5 @@ services:
       - backend
     restart: unless-stopped
 
-  redis:
-    image: redis:7
-    container_name: itsm-redis
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-
 volumes:
   postgres-data:

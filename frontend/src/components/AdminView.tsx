@@ -58,75 +58,11 @@ const settingsMenu: MenuSection[] = [
   },
   {
     id: 'incident',
-    label: 'Incident Management',
+    label: 'Policy (SLA) Management',
     items: [
       { id: 'sla-policies', label: 'SLA policies' },
       { id: 'escalation-rules', label: 'Escalation rules' },
       { id: 'auto-assignment', label: 'Auto-assignment rules' },
-    ],
-  },
-  {
-    id: 'service-catalog',
-    label: 'Service Catalog',
-    items: [
-      { id: 'categories', label: 'Categories' },
-      { id: 'request-workflows', label: 'Request workflows' },
-      { id: 'approval-matrix', label: 'Approval matrix' },
-    ],
-  },
-  {
-    id: 'change',
-    label: 'Change Management',
-    items: [
-      { id: 'change-types', label: 'Change types' },
-      { id: 'risk-matrix', label: 'Risk matrix' },
-      { id: 'cab-configuration', label: 'CAB configuration' },
-    ],
-  },
-  {
-    id: 'automation',
-    label: 'Automation & Workflows',
-    items: [
-      { id: 'workflow-builder', label: 'Workflow builder' },
-      { id: 'triggers-conditions', label: 'Triggers & conditions' },
-      { id: 'email-templates-automation', label: 'Email templates' },
-      { id: 'webhooks', label: 'Webhooks' },
-    ],
-  },
-  {
-    id: 'integrations',
-    label: 'Integrations',
-    items: [
-      { id: 'api-keys', label: 'API keys', requiresAdmin: true },
-      { id: 'third-party-tools', label: 'Third-party tools (Slack, Azure AD, etc.)' },
-      { id: 'monitoring-tools', label: 'Monitoring tools' },
-    ],
-  },
-  {
-    id: 'asset-cmdb',
-    label: 'Asset & CMDB',
-    items: [
-      { id: 'asset-types', label: 'Asset types' },
-      { id: 'ci-relationships', label: 'CI relationships' },
-      { id: 'discovery-settings', label: 'Discovery settings' },
-    ],
-  },
-  {
-    id: 'notifications',
-    label: 'Notifications',
-    items: [
-      { id: 'email-templates-notify', label: 'Email templates' },
-      { id: 'sms-settings', label: 'SMS settings' },
-      { id: 'push-notifications', label: 'Push notifications' },
-    ],
-  },
-  {
-    id: 'audit',
-    label: 'Audit & Compliance',
-    items: [
-      { id: 'audit-logs', label: 'Audit logs', requiresAdmin: true },
-      { id: 'data-retention', label: 'Data retention policy', requiresAdmin: true },
-      { id: 'backup-settings', label: 'Backup settings', requiresAdmin: true },
     ],
   },
 ]
@@ -147,6 +83,95 @@ type PanelDef = {
   fields: FieldDef[]
 }
 
+const SLA_PRIORITIES = ['Critical', 'High', 'Medium', 'Low'] as const
+type SlaPriority = typeof SLA_PRIORITIES[number]
+const SLA_TIME_UNITS = ['min', 'hrs', 'days', 'weeks'] as const
+type SlaTimeUnit = typeof SLA_TIME_UNITS[number]
+type SlaFormat = 'critical_set' | 'p_set' | 'custom'
+const BUSINESS_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
+type BusinessDay = typeof BUSINESS_DAYS[number]
+type TimeSlot = { start: string; end: string }
+type BusinessSchedule = Record<BusinessDay, { enabled: boolean; slots: TimeSlot[] }>
+const SYSTEM_TIME_ZONE = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+})()
+const TIME_ZONE_OPTIONS = (() => {
+  try {
+    const supportedValuesOf = (Intl as any).supportedValuesOf as undefined | ((kind: string) => string[])
+    const supported = typeof supportedValuesOf === 'function'
+      ? (supportedValuesOf('timeZone') as string[])
+      : []
+    if (!supported.length) return [SYSTEM_TIME_ZONE, 'UTC']
+    return Array.from(new Set([SYSTEM_TIME_ZONE, ...supported]))
+  } catch {
+    return [SYSTEM_TIME_ZONE, 'UTC']
+  }
+})()
+
+type PrioritySlaForm = {
+  enabled: boolean
+  name: string
+  responseTimeMin: string
+  responseTimeUnit: SlaTimeUnit
+  resolutionTimeMin: string
+  resolutionTimeUnit: SlaTimeUnit
+  businessHours: boolean
+  timeZone: string
+  businessSchedule: BusinessSchedule
+  active: boolean
+  existingId: number | null
+}
+
+const createDefaultBusinessSchedule = (): BusinessSchedule => ({
+  Sunday: { enabled: false, slots: [{ start: '08:00', end: '17:30' }] },
+  Monday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
+  Tuesday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
+  Wednesday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
+  Thursday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
+  Friday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
+  Saturday: { enabled: false, slots: [{ start: '08:00', end: '17:30' }] },
+})
+
+const defaultPriorityPolicy = (priority: SlaPriority): PrioritySlaForm => {
+  const defaults: Record<SlaPriority, { response: string; responseUnit: SlaTimeUnit; resolution: string; resolutionUnit: SlaTimeUnit }> = {
+    Critical: { response: '15', responseUnit: 'min', resolution: '4', resolutionUnit: 'hrs' },
+    High: { response: '30', responseUnit: 'min', resolution: '8', resolutionUnit: 'hrs' },
+    Medium: { response: '1', responseUnit: 'hrs', resolution: '1', resolutionUnit: 'days' },
+    Low: { response: '4', responseUnit: 'hrs', resolution: '3', resolutionUnit: 'days' },
+  }
+  return {
+    enabled: false,
+    name: `${priority} SLA`,
+    responseTimeMin: defaults[priority].response,
+    responseTimeUnit: defaults[priority].responseUnit,
+    resolutionTimeMin: defaults[priority].resolution,
+    resolutionTimeUnit: defaults[priority].resolutionUnit,
+    businessHours: false,
+    timeZone: SYSTEM_TIME_ZONE,
+    businessSchedule: createDefaultBusinessSchedule(),
+    active: true,
+    existingId: null,
+  }
+}
+
+const createEmptyPriorityPolicies = (): Record<SlaPriority, PrioritySlaForm> => ({
+  Critical: defaultPriorityPolicy('Critical'),
+  High: defaultPriorityPolicy('High'),
+  Medium: defaultPriorityPolicy('Medium'),
+  Low: defaultPriorityPolicy('Low'),
+})
+
+const createEnabledPriorityPolicies = (): Record<SlaPriority, PrioritySlaForm> => ({
+  Critical: { ...defaultPriorityPolicy('Critical'), enabled: true },
+  High: { ...defaultPriorityPolicy('High'), enabled: true },
+  Medium: { ...defaultPriorityPolicy('Medium'), enabled: true },
+  Low: { ...defaultPriorityPolicy('Low'), enabled: true },
+})
+
 const initialValues: Values = {
   scope: 'Global',
   ownerRole: 'Admin',
@@ -163,6 +188,96 @@ const initialValues: Values = {
   autoAssignEnabled: true,
   notificationsEnabled: true,
   webhookEnabled: false,
+}
+
+const getMinutesMultiplier = (unit: SlaTimeUnit): number => {
+  if (unit === 'weeks') return 7 * 24 * 60
+  if (unit === 'days') return 24 * 60
+  if (unit === 'hrs') return 60
+  return 1
+}
+
+const splitMinutesToDisplay = (minutesInput: any): { value: string; unit: SlaTimeUnit } => {
+  const minutes = Number(minutesInput)
+  if (!Number.isFinite(minutes) || minutes < 0) return { value: '0', unit: 'min' }
+  if (minutes > 0 && minutes % (7 * 24 * 60) === 0) return { value: String(minutes / (7 * 24 * 60)), unit: 'weeks' }
+  if (minutes > 0 && minutes % (24 * 60) === 0) return { value: String(minutes / (24 * 60)), unit: 'days' }
+  if (minutes > 0 && minutes % 60 === 0) return { value: String(minutes / 60), unit: 'hrs' }
+  return { value: String(minutes), unit: 'min' }
+}
+
+const resolveFormatLabels = (format: SlaFormat, customFormatText: string): [string, string, string, string] => {
+  if (format === 'p_set') return ['P1', 'P2', 'P3', 'P4']
+  if (format === 'custom') {
+    const parsed = String(customFormatText || '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean)
+    const fallback = ['L1', 'L2', 'L3', 'L4']
+    return [
+      parsed[0] || fallback[0],
+      parsed[1] || fallback[1],
+      parsed[2] || fallback[2],
+      parsed[3] || fallback[3],
+    ]
+  }
+  return ['Critical', 'High', 'Medium', 'Low']
+}
+
+const inferFormatFromRows = (rows: any[]): { format: SlaFormat; customFormatText: string } => {
+  const labels = rows
+    .map((r) => String(r?.priority || '').trim())
+    .filter(Boolean)
+  if (!labels.length) return { format: 'critical_set', customFormatText: '' }
+  const lower = labels.map((v) => v.toLowerCase())
+  const isCriticalSet = ['critical', 'high', 'medium', 'low'].every((key) => lower.includes(key))
+  if (isCriticalSet) return { format: 'critical_set', customFormatText: '' }
+  const isPSet = ['p1', 'p2', 'p3', 'p4'].every((key) => lower.includes(key))
+  if (isPSet) return { format: 'p_set', customFormatText: '' }
+  return { format: 'custom', customFormatText: labels.slice(0, 4).join(', ') }
+}
+
+const buildPriorityPoliciesForPolicy = (
+  rows: any[],
+  policyName: string,
+  expectedLabels?: [string, string, string, string]
+): Record<SlaPriority, PrioritySlaForm> => {
+  const byPolicy = rows.filter((r) => String(r?.name || '').trim().toLowerCase() === String(policyName || '').trim().toLowerCase())
+  const labels = expectedLabels || ['Critical', 'High', 'Medium', 'Low']
+  const rankFromRow = (row: any): number => {
+    const rank = Number(row?.priorityRank)
+    if (Number.isFinite(rank) && rank >= 1 && rank <= 4) return rank
+    const label = String(row?.priority || '').trim().toLowerCase()
+    const idx = labels.findIndex((v) => v.toLowerCase() === label)
+    if (idx >= 0) return idx + 1
+    if (label === 'critical' || label === 'p1') return 1
+    if (label === 'high' || label === 'p2') return 2
+    if (label === 'medium' || label === 'p3') return 3
+    return 4
+  }
+  byPolicy.sort((a, b) => rankFromRow(a) - rankFromRow(b))
+  const next = createEmptyPriorityPolicies()
+  for (let idx = 0; idx < SLA_PRIORITIES.length; idx++) {
+    const priority = SLA_PRIORITIES[idx]
+    const row = byPolicy.find((r) => rankFromRow(r) === idx + 1)
+    if (!row) continue
+    const responseDisplay = splitMinutesToDisplay(row.responseTimeMin)
+    const resolutionDisplay = splitMinutesToDisplay(row.resolutionTimeMin)
+    next[priority] = {
+      enabled: true,
+      name: String(row.name || ''),
+      responseTimeMin: responseDisplay.value,
+      responseTimeUnit: responseDisplay.unit,
+      resolutionTimeMin: resolutionDisplay.value,
+      resolutionTimeUnit: resolutionDisplay.unit,
+      businessHours: Boolean(row.businessHours),
+      timeZone: SYSTEM_TIME_ZONE,
+      businessSchedule: createDefaultBusinessSchedule(),
+      active: Boolean(row.active),
+      existingId: Number(row.id),
+    }
+  }
+  return next
 }
 
 const settingsTopicPanels: Record<string, PanelDef[]> = {
@@ -593,15 +708,15 @@ export default function AdminView(_props: AdminViewProps) {
   const [slaLoading, setSlaLoading] = useState(false)
   const [slaBusy, setSlaBusy] = useState(false)
   const [slaRows, setSlaRows] = useState<any[]>([])
-  const [editingSlaId, setEditingSlaId] = useState<number | null>(null)
-  const [slaForm, setSlaForm] = useState({
-    name: '',
-    priority: 'Medium',
-    responseTimeMin: '60',
-    resolutionTimeMin: '1440',
-    businessHours: false,
-    active: true,
-  })
+  const [priorityPolicies, setPriorityPolicies] = useState<Record<SlaPriority, PrioritySlaForm>>(createEmptyPriorityPolicies())
+  const [showPolicyForm, setShowPolicyForm] = useState(false)
+  const [policyFormMode, setPolicyFormMode] = useState<'create' | 'edit'>('create')
+  const [policyName, setPolicyName] = useState('')
+  const [editingPolicyName, setEditingPolicyName] = useState<string | null>(null)
+  const [policyFormat, setPolicyFormat] = useState<SlaFormat>('critical_set')
+  const [customFormatText, setCustomFormatText] = useState('')
+  const [policyTimeZone, setPolicyTimeZone] = useState<string>(SYSTEM_TIME_ZONE)
+  const [policySchedule, setPolicySchedule] = useState<BusinessSchedule>(createDefaultBusinessSchedule())
 
   const visibleSections = useMemo(() => {
     return settingsMenu
@@ -653,6 +768,23 @@ export default function AdminView(_props: AdminViewProps) {
   const isQueueManagement = activeItem === 'queue-management'
   const isRolesPermissionsView = activeItem === 'roles-permissions'
   const isSlaPoliciesView = activeItem === 'sla-policies'
+  const policyPriorityLabels = useMemo(
+    () => resolveFormatLabels(policyFormat, customFormatText),
+    [policyFormat, customFormatText]
+  )
+  const anyBusinessHoursEnabled = useMemo(
+    () => SLA_PRIORITIES.some((priority) => priorityPolicies[priority].enabled && priorityPolicies[priority].businessHours),
+    [priorityPolicies]
+  )
+  const slaPoliciesGrouped = useMemo(() => {
+    const map = new Map<string, any[]>()
+    for (const row of slaRows) {
+      const name = String(row?.name || '').trim() || 'Unnamed Policy'
+      if (!map.has(name)) map.set(name, [])
+      map.get(name)!.push(row)
+    }
+    return Array.from(map.entries()).map(([name, rows]) => ({ name, rows }))
+  }, [slaRows])
 
   const matches = (text: string) => {
     const q = settingsQuery.trim().toLowerCase()
@@ -754,7 +886,8 @@ export default function AdminView(_props: AdminViewProps) {
     try {
       setSlaLoading(true)
       const data = await listSlaConfigs()
-      setSlaRows(Array.isArray(data) ? data : [])
+      const rows = Array.isArray(data) ? data : []
+      setSlaRows(rows)
     } catch (error: any) {
       alert(error?.response?.data?.error || 'Failed to load SLA configs')
       setSlaRows([])
@@ -763,43 +896,164 @@ export default function AdminView(_props: AdminViewProps) {
     }
   }
 
-  const resetSlaForm = () => {
-    setEditingSlaId(null)
-    setSlaForm({
-      name: '',
-      priority: 'Medium',
-      responseTimeMin: '60',
-      resolutionTimeMin: '1440',
-      businessHours: false,
-      active: true,
+  const openCreatePolicyForm = () => {
+    setPolicyFormMode('create')
+    setEditingPolicyName(null)
+    setPolicyName('')
+    setPolicyFormat('critical_set')
+    setCustomFormatText('')
+    setPolicyTimeZone(SYSTEM_TIME_ZONE)
+    setPolicySchedule(createDefaultBusinessSchedule())
+    setPriorityPolicies(createEnabledPriorityPolicies())
+    setShowPolicyForm(true)
+  }
+
+  const openEditPolicyForm = (name: string) => {
+    setPolicyFormMode('edit')
+    setEditingPolicyName(name)
+    setPolicyName(name)
+    const rows = slaRows.filter((r) => String(r?.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase())
+    const inferred = inferFormatFromRows(rows)
+    const explicitFormat = String(rows[0]?.format || '').trim().toLowerCase()
+    const resolvedFormat: SlaFormat =
+      explicitFormat === 'p_set' ? 'p_set' :
+      explicitFormat === 'custom' ? 'custom' :
+      explicitFormat === 'critical_set' ? 'critical_set' :
+      inferred.format
+    setPolicyFormat(resolvedFormat)
+    setCustomFormatText(inferred.customFormatText)
+    const labels = resolveFormatLabels(resolvedFormat, inferred.customFormatText)
+    setPriorityPolicies(buildPriorityPoliciesForPolicy(slaRows, name, labels))
+    const first = rows[0]
+    setPolicyTimeZone(String(first?.timeZone || SYSTEM_TIME_ZONE))
+    setPolicySchedule(first?.businessSchedule && typeof first.businessSchedule === 'object'
+      ? (first.businessSchedule as BusinessSchedule)
+      : createDefaultBusinessSchedule())
+    setShowPolicyForm(true)
+  }
+
+  const closePolicyForm = () => {
+    setShowPolicyForm(false)
+    setEditingPolicyName(null)
+    setPolicyName('')
+    setPolicyFormat('critical_set')
+    setCustomFormatText('')
+    setPolicyTimeZone(SYSTEM_TIME_ZONE)
+    setPolicySchedule(createDefaultBusinessSchedule())
+    setPriorityPolicies(createEmptyPriorityPolicies())
+  }
+
+  const toggleBusinessDay = (day: BusinessDay, enabled: boolean) => {
+    setPolicySchedule((prev) => ({
+      ...prev,
+      [day]: { ...prev[day], enabled },
+    }))
+  }
+
+  const updateBusinessSlot = (day: BusinessDay, index: number, key: 'start' | 'end', value: string) => {
+    setPolicySchedule((prev) => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        slots: prev[day].slots.map((slot, slotIndex) => (slotIndex === index ? { ...slot, [key]: value } : slot)),
+      },
+    }))
+  }
+
+  const addBusinessSlot = (day: BusinessDay) => {
+    setPolicySchedule((prev) => ({
+      ...prev,
+      [day]: {
+        ...prev[day],
+        slots: [...prev[day].slots, { start: '08:00', end: '17:30' }],
+      },
+    }))
+  }
+
+  const removeBusinessSlot = (day: BusinessDay, index: number) => {
+    setPolicySchedule((prev) => {
+      if (prev[day].slots.length <= 1) return prev
+      return {
+        ...prev,
+        [day]: {
+          ...prev[day],
+          slots: prev[day].slots.filter((_, slotIndex) => slotIndex !== index),
+        },
+      }
     })
   }
 
-  const submitSlaForm = async () => {
-    const responseTimeMin = Number(slaForm.responseTimeMin)
-    const resolutionTimeMin = Number(slaForm.resolutionTimeMin)
-    if (!slaForm.name.trim()) return alert('SLA name is required')
-    if (!Number.isFinite(responseTimeMin) || responseTimeMin < 0) return alert('Invalid response time')
-    if (!Number.isFinite(resolutionTimeMin) || resolutionTimeMin < 0) return alert('Invalid resolution time')
+  const submitPolicyForm = async () => {
+    const normalizedName = policyName.trim()
+    if (!normalizedName) return alert('Policy name is required')
+    const selected = SLA_PRIORITIES.filter((priority) => priorityPolicies[priority].enabled)
+    if (!selected.length) return alert('Select at least one priority for SLA')
+    if (policyFormMode === 'create') {
+      const exists = slaRows.some((r) => String(r?.name || '').trim().toLowerCase() === normalizedName.toLowerCase())
+      if (exists) return alert('Policy name already exists')
+    }
     try {
       setSlaBusy(true)
-      const payload = {
-        name: slaForm.name.trim(),
-        priority: slaForm.priority,
-        responseTimeMin,
-        resolutionTimeMin,
-        businessHours: slaForm.businessHours,
-        active: slaForm.active,
+      const existingRows = policyFormMode === 'edit' && editingPolicyName
+        ? slaRows.filter((r) => String(r?.name || '').trim().toLowerCase() === editingPolicyName.trim().toLowerCase())
+        : []
+
+      for (const priority of SLA_PRIORITIES) {
+        const policy = priorityPolicies[priority]
+        const rank = SLA_PRIORITIES.indexOf(priority) + 1
+        const priorityLabel = policyPriorityLabels[rank - 1]
+        const matched = existingRows.find((r) => String(r?.priority || '').toLowerCase() === priority.toLowerCase())
+          || existingRows.find((r) => Number(r?.priorityRank) === rank)
+        if (!policy.enabled) {
+          if (matched?.id) await deleteSlaConfig(Number(matched.id))
+          continue
+        }
+        const responseValue = Number(policy.responseTimeMin)
+        const resolutionValue = Number(policy.resolutionTimeMin)
+        const responseTimeMin = responseValue * getMinutesMultiplier(policy.responseTimeUnit)
+        const resolutionTimeMin = resolutionValue * getMinutesMultiplier(policy.resolutionTimeUnit)
+        if (!Number.isFinite(responseValue) || responseValue < 0) throw new Error(`Invalid response time for ${priority}`)
+        if (!Number.isFinite(resolutionValue) || resolutionValue < 0) throw new Error(`Invalid resolution time for ${priority}`)
+        const payload = {
+          name: normalizedName,
+          priority: priorityLabel,
+          priorityRank: rank,
+          format: policyFormat,
+          responseTimeMin,
+          resolutionTimeMin,
+          businessHours: policy.businessHours,
+          timeZone: policy.businessHours ? policyTimeZone : null,
+          businessSchedule: policy.businessHours ? policySchedule : null,
+          active: policy.active,
+        }
+        if (matched?.id) {
+          await updateSlaConfig(Number(matched.id), payload)
+        } else {
+          await createSlaConfig(payload)
+        }
       }
-      if (editingSlaId) {
-        await updateSlaConfig(editingSlaId, payload)
-      } else {
-        await createSlaConfig(payload)
-      }
-      resetSlaForm()
       await loadSlaRows()
+      closePolicyForm()
     } catch (error: any) {
-      alert(error?.response?.data?.error || 'Failed to save SLA config')
+      alert(error?.response?.data?.error || error?.message || 'Failed to save SLA policy')
+    } finally {
+      setSlaBusy(false)
+    }
+  }
+
+  const deletePolicyGroup = async (name: string) => {
+    const rows = slaRows.filter((r) => String(r?.name || '').trim().toLowerCase() === String(name || '').trim().toLowerCase())
+    if (!rows.length) return
+    if (!window.confirm(`Delete policy "${name}" and all priority SLAs?`)) return
+    try {
+      setSlaBusy(true)
+      for (const row of rows) {
+        if (row?.id) await deleteSlaConfig(Number(row.id))
+      }
+      await loadSlaRows()
+      if (editingPolicyName && editingPolicyName.toLowerCase() === name.toLowerCase()) closePolicyForm()
+    } catch (error: any) {
+      alert(error?.response?.data?.error || 'Failed to delete SLA policy')
     } finally {
       setSlaBusy(false)
     }
@@ -1133,100 +1387,407 @@ export default function AdminView(_props: AdminViewProps) {
               <p>Only administrators can manage SLA policies.</p>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto auto auto', gap: 8, marginBottom: 12 }}>
-                  <input
-                    placeholder="Policy name"
-                    value={slaForm.name}
-                    onChange={(e) => setSlaForm((p) => ({ ...p, name: e.target.value }))}
-                  />
-                  <select value={slaForm.priority} onChange={(e) => setSlaForm((p) => ({ ...p, priority: e.target.value }))}>
-                    <option>High</option>
-                    <option>Medium</option>
-                    <option>Low</option>
-                  </select>
-                  <input
-                    placeholder="Response (min)"
-                    value={slaForm.responseTimeMin}
-                    onChange={(e) => setSlaForm((p) => ({ ...p, responseTimeMin: e.target.value }))}
-                  />
-                  <input
-                    placeholder="Resolution (min)"
-                    value={slaForm.resolutionTimeMin}
-                    onChange={(e) => setSlaForm((p) => ({ ...p, resolutionTimeMin: e.target.value }))}
-                  />
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={slaForm.active}
-                      onChange={(e) => setSlaForm((p) => ({ ...p, active: e.target.checked }))}
-                    />
-                    Active
-                  </label>
-                  <button className="admin-settings-primary" onClick={submitSlaForm} disabled={slaBusy}>
-                    {slaBusy ? 'Saving...' : editingSlaId ? 'Update' : 'Add'}
-                  </button>
-                </div>
-                {editingSlaId ? (
-                  <div style={{ marginBottom: 10 }}>
-                    <button className="admin-settings-ghost" onClick={resetSlaForm}>Cancel edit</button>
+                {!showPolicyForm ? (
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
+                    <button className="admin-settings-primary" onClick={openCreatePolicyForm} disabled={slaBusy}>
+                      Add New Policy
+                    </button>
                   </div>
                 ) : null}
-                {slaLoading ? (
+                {showPolicyForm ? (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '240px 240px 320px 1fr auto auto', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+                      <label style={{ fontWeight: 600 }}>Policy Name</label>
+                      <label style={{ fontWeight: 600 }}>Format</label>
+                      <label style={{ fontWeight: 600 }}>Time Zone</label>
+                      <div />
+                      <div />
+                      <div />
+                      <input
+                        placeholder="Enter policy name"
+                        value={policyName}
+                        disabled={slaBusy}
+                        onChange={(e) => setPolicyName(e.target.value)}
+                        style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                      />
+                      <select
+                        value={policyFormat}
+                        disabled={slaBusy}
+                        onChange={(e) => setPolicyFormat(e.target.value as SlaFormat)}
+                        style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                      >
+                        <option value="critical_set">Critical, High, Medium, Low</option>
+                        <option value="p_set">P1, P2, P3, P4</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                      <select
+                        value={policyTimeZone}
+                        disabled={slaBusy}
+                        onChange={(e) => setPolicyTimeZone(e.target.value)}
+                        style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                      >
+                        {TIME_ZONE_OPTIONS.map((zone) => (
+                          <option key={zone} value={zone}>
+                            {zone}{zone === SYSTEM_TIME_ZONE ? ' (System)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <div />
+                      <button className="admin-settings-ghost" onClick={closePolicyForm} disabled={slaBusy}>Cancel</button>
+                      <button className="admin-settings-primary" onClick={submitPolicyForm} disabled={slaBusy}>
+                        {slaBusy ? 'Saving...' : policyFormMode === 'edit' ? 'Update Policy' : 'Create Policy'}
+                      </button>
+                    </div>
+                    {policyFormat === 'custom' ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+                        <label style={{ fontWeight: 600 }}>Custom Labels</label>
+                        <input
+                          placeholder="Ex: Sev1, Sev2, Sev3, Sev4"
+                          value={customFormatText}
+                          disabled={slaBusy}
+                          onChange={(e) => setCustomFormatText(e.target.value)}
+                          style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                        />
+                      </div>
+                    ) : null}
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: anyBusinessHoursEnabled ? 'minmax(640px, 1fr) 470px' : 'minmax(640px, 1fr)',
+                        gap: 12,
+                        alignItems: 'start',
+                        marginBottom: 10,
+                      }}
+                    >
+                      <div style={{ maxWidth: anyBusinessHoursEnabled ? 780 : '100%' }}>
+                        <table className="rbac-permission-matrix sla-priority-table" style={{ width: '100%', tableLayout: 'fixed' }}>
+                          <colgroup>
+                            <col style={{ width: 78 }} />
+                            <col style={{ width: 52 }} />
+                            <col style={{ width: 188 }} />
+                            <col style={{ width: 188 }} />
+                            <col style={{ width: 96 }} />
+                            <col style={{ width: 62 }} />
+                          </colgroup>
+                          <thead>
+                            <tr>
+                              <th>Need SLA</th>
+                              <th>Priority</th>
+                              <th>Response</th>
+                              <th>Resolution</th>
+                              <th>Business Hours</th>
+                              <th>Active</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {SLA_PRIORITIES.map((priority) => {
+                              const policy = priorityPolicies[priority]
+                              return (
+                                <tr key={priority}>
+                                  <td>
+                                    <input
+                                      type="checkbox"
+                                      checked={policy.enabled}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], enabled: e.target.checked },
+                                        }))
+                                      }
+                                    />
+                                  </td>
+                                  <td>{policyPriorityLabels[SLA_PRIORITIES.indexOf(priority)]}</td>
+                                  <td>
+                                    <div
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 74px',
+                                        minWidth: 156,
+                                        border: '1px solid #cbd5e1',
+                                        borderRadius: 8,
+                                        overflow: 'hidden',
+                                        background: '#fff',
+                                      }}
+                                    >
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        value={policy.responseTimeMin}
+                                        disabled={!policy.enabled || slaBusy}
+                                        onChange={(e) =>
+                                          setPriorityPolicies((prev) => ({
+                                            ...prev,
+                                            [priority]: { ...prev[priority], responseTimeMin: e.target.value },
+                                          }))
+                                        }
+                                        style={{ border: 'none', borderRight: '1px solid #cbd5e1', padding: '0 8px', height: 30 }}
+                                      />
+                                      <select
+                                        value={policy.responseTimeUnit}
+                                        disabled={!policy.enabled || slaBusy}
+                                        onChange={(e) =>
+                                          setPriorityPolicies((prev) => ({
+                                            ...prev,
+                                            [priority]: { ...prev[priority], responseTimeUnit: e.target.value as SlaTimeUnit },
+                                          }))
+                                        }
+                                        style={{ border: 'none', padding: '0 6px', height: 30, background: '#f8fafc' }}
+                                      >
+                                        {SLA_TIME_UNITS.map((unit) => (
+                                          <option key={unit} value={unit}>{unit}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <div
+                                      style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: '1fr 74px',
+                                        minWidth: 156,
+                                        border: '1px solid #cbd5e1',
+                                        borderRadius: 8,
+                                        overflow: 'hidden',
+                                        background: '#fff',
+                                      }}
+                                    >
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={1}
+                                        value={policy.resolutionTimeMin}
+                                        disabled={!policy.enabled || slaBusy}
+                                        onChange={(e) =>
+                                          setPriorityPolicies((prev) => ({
+                                            ...prev,
+                                            [priority]: { ...prev[priority], resolutionTimeMin: e.target.value },
+                                          }))
+                                        }
+                                        style={{ border: 'none', borderRight: '1px solid #cbd5e1', padding: '0 8px', height: 30 }}
+                                      />
+                                      <select
+                                        value={policy.resolutionTimeUnit}
+                                        disabled={!policy.enabled || slaBusy}
+                                        onChange={(e) =>
+                                          setPriorityPolicies((prev) => ({
+                                            ...prev,
+                                            [priority]: { ...prev[priority], resolutionTimeUnit: e.target.value as SlaTimeUnit },
+                                          }))
+                                        }
+                                        style={{ border: 'none', padding: '0 6px', height: 30, background: '#f8fafc' }}
+                                      >
+                                        {SLA_TIME_UNITS.map((unit) => (
+                                          <option key={unit} value={unit}>{unit}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="checkbox"
+                                      checked={policy.businessHours}
+                                      disabled={!policy.enabled || slaBusy}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], businessHours: e.target.checked },
+                                        }))
+                                      }
+                                    />
+                                  </td>
+                                  <td>
+                                    <input
+                                      type="checkbox"
+                                      checked={policy.active}
+                                      disabled={!policy.enabled || slaBusy}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], active: e.target.checked },
+                                        }))
+                                      }
+                                    />
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {anyBusinessHoursEnabled ? (
+                        <div style={{ border: '1px solid #d7dee8', borderRadius: 10, padding: 10, background: '#fff', width: '100%' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Business Hours Schedule</div>
+                        <div style={{ display: 'grid', gap: 6 }}>
+                          {BUSINESS_DAYS.map((day) => {
+                            const dayInfo = policySchedule[day]
+                            return (
+                              <div key={day} style={{ display: 'grid', gridTemplateColumns: '20px 44px 1fr auto', gap: 6, alignItems: 'start' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={dayInfo.enabled}
+                                  disabled={slaBusy}
+                                  onChange={(e) => toggleBusinessDay(day, e.target.checked)}
+                                />
+                                <span style={{ fontSize: 12, marginTop: 4 }}>{day.slice(0, 3)}</span>
+                                <div style={{ display: 'grid', gap: 4 }}>
+                                  {dayInfo.slots.map((slot, slotIndex) => (
+                                    <div key={`${day}-${slotIndex}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto', gap: 4, alignItems: 'center' }}>
+                                      <input
+                                        type="time"
+                                        value={slot.start}
+                                        disabled={!dayInfo.enabled || slaBusy}
+                                        onChange={(e) => updateBusinessSlot(day, slotIndex, 'start', e.target.value)}
+                                      />
+                                      <span style={{ fontSize: 11 }}>to</span>
+                                      <input
+                                        type="time"
+                                        value={slot.end}
+                                        disabled={!dayInfo.enabled || slaBusy}
+                                        onChange={(e) => updateBusinessSlot(day, slotIndex, 'end', e.target.value)}
+                                      />
+                                      <button
+                                        type="button"
+                                        className="admin-settings-ghost"
+                                        disabled={!dayInfo.enabled || slaBusy || dayInfo.slots.length <= 1}
+                                        onClick={() => removeBusinessSlot(day, slotIndex)}
+                                        style={{ padding: '2px 6px' }}
+                                      >
+                                        -
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="admin-settings-ghost"
+                                  disabled={!dayInfo.enabled || slaBusy}
+                                  onClick={() => addBusinessSlot(day)}
+                                  style={{ padding: '2px 6px' }}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : slaLoading ? (
                   <p>Loading SLA policies...</p>
                 ) : (
-                  <table className="rbac-permission-matrix">
+                  <table className="rbac-permission-matrix sla-summary-table">
+                    <colgroup>
+                      <col style={{ width: 130 }} />
+                      <col style={{ width: 88 }} />
+                      <col style={{ width: 96 }} />
+                      <col style={{ width: 76 }} />
+                      <col style={{ width: 82 }} />
+                      <col style={{ width: 44 }} />
+                      <col style={{ width: 50 }} />
+                      <col style={{ width: 76 }} />
+                      <col style={{ width: 82 }} />
+                      <col style={{ width: 44 }} />
+                      <col style={{ width: 50 }} />
+                      <col style={{ width: 76 }} />
+                      <col style={{ width: 82 }} />
+                      <col style={{ width: 44 }} />
+                      <col style={{ width: 50 }} />
+                      <col style={{ width: 76 }} />
+                      <col style={{ width: 82 }} />
+                      <col style={{ width: 44 }} />
+                      <col style={{ width: 50 }} />
+                      <col style={{ width: 104 }} />
+                    </colgroup>
                     <thead>
                       <tr>
-                        <th>Name</th>
-                        <th>Priority</th>
-                        <th>Response (min)</th>
-                        <th>Resolution (min)</th>
-                        <th>Business Hours</th>
+                        <th rowSpan={2}>Policy</th>
+                        <th rowSpan={2}>Format</th>
+                        <th rowSpan={2}>Time Zone</th>
+                        <th colSpan={4}>C/P1</th>
+                        <th colSpan={4}>H/P2</th>
+                        <th colSpan={4}>M/P3</th>
+                        <th colSpan={4}>L/P4</th>
+                        <th rowSpan={2}>Actions</th>
+                      </tr>
+                      <tr>
+                        <th>Response</th>
+                        <th>Resolution</th>
+                        <th>BH</th>
                         <th>Active</th>
-                        <th>Actions</th>
+                        <th>Response</th>
+                        <th>Resolution</th>
+                        <th>BH</th>
+                        <th>Active</th>
+                        <th>Response</th>
+                        <th>Resolution</th>
+                        <th>BH</th>
+                        <th>Active</th>
+                        <th>Response</th>
+                        <th>Resolution</th>
+                        <th>BH</th>
+                        <th>Active</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {slaRows.map((row) => (
-                        <tr key={row.id}>
-                          <td>{row.name}</td>
-                          <td>{row.priority}</td>
-                          <td>{row.responseTimeMin}</td>
-                          <td>{row.resolutionTimeMin}</td>
-                          <td>{row.businessHours ? 'Yes' : 'No'}</td>
-                          <td>{row.active ? 'Yes' : 'No'}</td>
+                      {slaPoliciesGrouped.length === 0 ? (
+                        <tr>
+                          <td colSpan={20}>No SLA policy available.</td>
+                        </tr>
+                      ) : slaPoliciesGrouped.map((group) => (
+                        <tr key={group.name}>
+                          {(() => {
+                            const rows = group.rows.slice()
+                            const byRank = new Map<number, any>()
+                            rows.forEach((r) => {
+                              const rank = Number(r?.priorityRank)
+                              if (Number.isFinite(rank) && rank >= 1 && rank <= 4 && !byRank.has(rank)) {
+                                byRank.set(rank, r)
+                              }
+                            })
+                            const findByLabel = (labels: string[]) =>
+                              rows.find((r) => labels.includes(String(r?.priority || '').trim().toLowerCase()))
+                            const r1 = byRank.get(1) || findByLabel(['critical', 'p1'])
+                            const r2 = byRank.get(2) || findByLabel(['high', 'p2'])
+                            const r3 = byRank.get(3) || findByLabel(['medium', 'p3'])
+                            const r4 = byRank.get(4) || findByLabel(['low', 'p4'])
+                            const mins = (v: any) => (v === undefined || v === null ? '-' : `${v} min`)
+                            const yn = (v: any) => (v === undefined || v === null ? '-' : (v ? 'Yes' : 'No'))
+                            const response = (row?: any) => (row ? mins(row.responseTimeMin) : '-')
+                            const resolution = (row?: any) => (row ? mins(row.resolutionTimeMin) : '-')
+                            const bh = (row?: any) => (row ? yn(row.businessHours) : '-')
+                            const active = (row?: any) => (row ? yn(row.active) : '-')
+                            const format = String(rows[0]?.format || '').trim()
+                            const zone = String(rows[0]?.timeZone || '').trim()
+                            return (
+                              <>
+                                <td>{group.name || '-'}</td>
+                                <td>{format || '-'}</td>
+                                <td>{zone || '-'}</td>
+                                <td>{response(r1)}</td>
+                                <td>{resolution(r1)}</td>
+                                <td>{bh(r1)}</td>
+                                <td>{active(r1)}</td>
+                                <td>{response(r2)}</td>
+                                <td>{resolution(r2)}</td>
+                                <td>{bh(r2)}</td>
+                                <td>{active(r2)}</td>
+                                <td>{response(r3)}</td>
+                                <td>{resolution(r3)}</td>
+                                <td>{bh(r3)}</td>
+                                <td>{active(r3)}</td>
+                                <td>{response(r4)}</td>
+                                <td>{resolution(r4)}</td>
+                                <td>{bh(r4)}</td>
+                                <td>{active(r4)}</td>
+                              </>
+                            )
+                          })()}
                           <td style={{ display: 'flex', gap: 6 }}>
-                            <button
-                              className="admin-settings-ghost"
-                              onClick={() => {
-                                setEditingSlaId(Number(row.id))
-                                setSlaForm({
-                                  name: String(row.name || ''),
-                                  priority: String(row.priority || 'Medium'),
-                                  responseTimeMin: String(row.responseTimeMin ?? '0'),
-                                  resolutionTimeMin: String(row.resolutionTimeMin ?? '0'),
-                                  businessHours: Boolean(row.businessHours),
-                                  active: Boolean(row.active),
-                                })
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="admin-settings-danger"
-                              onClick={async () => {
-                                if (!window.confirm(`Delete SLA policy "${row.name}"?`)) return
-                                try {
-                                  await deleteSlaConfig(Number(row.id))
-                                  await loadSlaRows()
-                                  if (editingSlaId === Number(row.id)) resetSlaForm()
-                                } catch (error: any) {
-                                  alert(error?.response?.data?.error || 'Failed to delete SLA policy')
-                                }
-                              }}
-                            >
-                              Delete
-                            </button>
+                            <button className="admin-settings-ghost" onClick={() => openEditPolicyForm(group.name)} disabled={slaBusy}>Edit</button>
+                            <button className="admin-settings-danger" onClick={() => deletePolicyGroup(group.name)} disabled={slaBusy}>Delete</button>
                           </td>
                         </tr>
                       ))}

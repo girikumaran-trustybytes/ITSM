@@ -22,8 +22,10 @@ import AccountSecurityView from './components/AccountSecurityView'
 import { logout } from './services/auth.service'
 import NotificationsPanel from './components/panels/NotificationsPanel'
 import TodoPanel from './components/panels/TodoPanel'
-import FeedPanel from './components/panels/FeedPanel'
+import FeedPanel, { FEED_FILTERS, type FeedFilter } from './components/panels/FeedPanel'
 import SearchPanel from './components/panels/SearchPanel'
+import { listNotifications as fetchNotifications } from './services/notifications.service'
+import { loadNotificationState } from './utils/notificationsState'
 
 const emptyPagination = {
   page: 1,
@@ -54,13 +56,12 @@ const navPaths: Record<string, string> = {
   admin: '/admin',
 }
 
-type PresenceStatus = 'Available' | 'Away' | 'Do Not Disturb' | 'Busy'
+type PresenceStatus = 'Automatic' | 'Do not disturb' | 'Set as away'
 
-const presenceStatuses: Array<{ value: PresenceStatus; color: string }> = [
-  { value: 'Available', color: '#22c55e' },
-  { value: 'Away', color: '#f59e0b' },
-  { value: 'Do Not Disturb', color: '#ef4444' },
-  { value: 'Busy', color: '#dc2626' },
+const presenceStatuses: Array<{ value: PresenceStatus; color: string; note: string; style: 'solid' | 'ring' }> = [
+  { value: 'Automatic', color: '#16a34a', note: 'Based on chat activity', style: 'solid' },
+  { value: 'Do not disturb', color: '#dc2626', note: 'Mute chat notifications', style: 'solid' },
+  { value: 'Set as away', color: '#4b5563', note: 'Show as away', style: 'ring' },
 ]
 
 function getNavFromPath(pathname: string) {
@@ -83,10 +84,15 @@ function MainShell() {
   const [showPresenceMenu, setShowPresenceMenu] = useState(false)
   const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => {
     const raw = window.localStorage.getItem('itsm.presenceStatus')
-    if (raw === 'Available' || raw === 'Away' || raw === 'Do Not Disturb' || raw === 'Busy') return raw
-    return 'Available'
+    if (raw === 'Automatic' || raw === 'Do not disturb' || raw === 'Set as away') return raw
+    if (raw === 'Available') return 'Automatic'
+    if (raw === 'Away') return 'Set as away'
+    if (raw === 'Do Not Disturb' || raw === 'Busy') return 'Do not disturb'
+    return 'Automatic'
   })
   const [activePanel, setActivePanel] = useState<null | 'search' | 'notifications' | 'todo' | 'feed'>(null)
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>('All Activity')
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [tabToolbarSearch, setTabToolbarSearch] = useState('')
   const [usersPage, setUsersPage] = useState(1)
@@ -138,6 +144,34 @@ function MainShell() {
       searchInputRef.current.focus()
     }
   }, [activePanel])
+
+  useEffect(() => {
+    let mounted = true
+    const refreshUnreadCount = async () => {
+      if (!user) {
+        if (mounted) setUnreadNotificationCount(0)
+        return
+      }
+      try {
+        const rows: any[] = await fetchNotifications({ limit: 120 })
+        const state = loadNotificationState(user)
+        const visible = (Array.isArray(rows) ? rows : []).filter((n: any) => !state.deletedIds.includes(Number(n?.id)))
+        const unread = visible.filter((n: any) => !state.readIds.includes(Number(n?.id))).length
+        if (mounted) setUnreadNotificationCount(unread)
+      } catch {
+        if (mounted) setUnreadNotificationCount(0)
+      }
+    }
+    refreshUnreadCount()
+    const timer = window.setInterval(refreshUnreadCount, 30000)
+    const onStateChange = () => refreshUnreadCount()
+    window.addEventListener('notifications-state-changed', onStateChange as EventListener)
+    return () => {
+      mounted = false
+      window.clearInterval(timer)
+      window.removeEventListener('notifications-state-changed', onStateChange as EventListener)
+    }
+  }, [user])
 
   useEffect(() => {
     if (!user?.role) return
@@ -259,6 +293,7 @@ function MainShell() {
     toolbarTarget === 'admin' ? 'admin-tool-bar' :
     'tickets-tool-bar'
   const activePresence = presenceStatuses.find((item) => item.value === presenceStatus) || presenceStatuses[0]
+  const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
 
   return (
     <div className="app-root">
@@ -340,6 +375,9 @@ function MainShell() {
               <path d="M6 17h12l-1.5-2.5V11a4.5 4.5 0 0 0-9 0v3.5L6 17z" />
               <path d="M10 19a2 2 0 0 0 4 0" />
             </svg>
+            {unreadNotificationCount > 0 ? (
+              <span className="app-icon-badge">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>
+            ) : null}
           </button>
           <div className="profile-menu" ref={profileRef}>
             <button
@@ -349,8 +387,10 @@ function MainShell() {
                 setShowProfileMenu((v) => !v)
                 setShowPresenceMenu(false)
               }}
+              style={{ ['--presence-color' as any]: activePresence.color }}
             >
               {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
+              <span className={`profile-avatar-presence-dot ${presenceDotClass}`} />
             </button>
           </div>
         </div>
@@ -368,13 +408,19 @@ function MainShell() {
               <div className="profile-panel-user">
                 <div className="profile-panel-avatar">
                   {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
-                  <span className="profile-panel-status-dot" style={{ background: activePresence.color }} />
+                  <span
+                    className={`profile-panel-status-dot ${presenceDotClass}`}
+                    style={{ ['--presence-color' as any]: activePresence.color }}
+                  />
                 </div>
-                <div>
+                <div className="profile-panel-user-main">
                   <div className="profile-panel-name">{user?.name || 'User'}</div>
                   <div className="profile-panel-email">{user?.email || 'user@example.com'}</div>
                   <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
-                    <span className="profile-panel-status-indicator" style={{ background: activePresence.color }} />
+                    <span
+                      className={`profile-panel-status-indicator ${presenceDotClass}`}
+                      style={{ ['--presence-color' as any]: activePresence.color }}
+                    />
                     {presenceStatus}
                   </button>
                   {showPresenceMenu && (
@@ -388,8 +434,16 @@ function MainShell() {
                             setShowPresenceMenu(false)
                           }}
                         >
-                          <span className="profile-panel-status-indicator" style={{ background: item.color }} />
-                          {item.value}
+                          <span
+                            className={`profile-panel-status-indicator ${item.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'}`}
+                            style={{ ['--presence-color' as any]: item.color }}
+                          />
+                          <span className="profile-panel-status-option-main">
+                            <span className="profile-panel-status-option-title">{item.value}</span>
+                          </span>
+                          <span className="profile-panel-status-option-check" aria-hidden="true">
+                            {item.value === presenceStatus ? '✓' : ''}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -429,6 +483,33 @@ function MainShell() {
                 {activePanel === 'todo' && 'To-Do'}
                 {activePanel === 'feed' && 'Feed'}
               </div>
+              <div className="app-panel-header-controls">
+                {activePanel === 'notifications' ? (
+                  <>
+                    <button
+                      className="panel-icon-btn"
+                      aria-label="Mark all read"
+                      onClick={() => window.dispatchEvent(new CustomEvent('notifications-mark-all-read'))}
+                    >
+                      Read all
+                    </button>
+                    <button
+                      className="panel-icon-btn"
+                      aria-label="Delete all"
+                      onClick={() => window.dispatchEvent(new CustomEvent('notifications-delete-all'))}
+                    >
+                      Delete all
+                    </button>
+                  </>
+                ) : null}
+                {activePanel === 'feed' ? (
+                  <select value={feedFilter} onChange={(e) => setFeedFilter(e.target.value as FeedFilter)}>
+                    {FEED_FILTERS.map((option) => (
+                      <option key={option}>{option}</option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
               <button className="app-panel-close" onClick={() => setActivePanel(null)} aria-label="Close panel">
                 ×
               </button>
@@ -455,7 +536,7 @@ function MainShell() {
               )}
               {activePanel === 'notifications' && <NotificationsPanel />}
               {activePanel === 'todo' && <TodoPanel />}
-              {activePanel === 'feed' && <FeedPanel />}
+              {activePanel === 'feed' && <FeedPanel filter={feedFilter} />}
             </div>
           </div>
         )}

@@ -14,6 +14,7 @@ import servicesRoutes from '../modules/services/services.routes'
 import incidentsRoutes from '../modules/incidents/routes'
 import mailRoutes from '../modules/mail/mail.routes'
 import eventsRoutes from '../modules/events/routes'
+import notificationsRoutes from '../modules/notifications/notifications.routes'
 
 const router = Router()
 
@@ -33,5 +34,6 @@ router.use('/services', servicesRoutes)
 router.use('/incidents', incidentsRoutes)
 router.use('/mail', mailRoutes)
 router.use('/events', eventsRoutes)
+router.use('/notifications', notificationsRoutes)
 
 export default router

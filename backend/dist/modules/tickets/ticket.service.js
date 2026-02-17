@@ -202,13 +202,9 @@ async function resolveChangedById(user) {
     const direct = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [parsed]);
     if (direct?.id)
         return direct.id;
-    // Fallback path: auth token subject is app_user.user_id; map via email to "User"
-    const appUser = await (0, db_1.queryOne)('SELECT email FROM app_user WHERE user_id = $1', [parsed]);
-    const email = String(appUser?.email || '').trim().toLowerCase();
-    if (!email)
-        return null;
-    const mapped = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1)', [email]);
-    return mapped?.id ?? null;
+    // Compatibility fallback: token subject may be "ServiceAccounts"."id"
+    const serviceAccount = await (0, db_1.queryOne)('SELECT "userId" FROM "ServiceAccounts" WHERE "id" = $1 AND "enabled" = TRUE', [parsed]);
+    return serviceAccount?.userId ?? null;
 }
 function buildInsert(table, data) {
     const keys = Object.keys(data).filter((k) => data[k] !== undefined);

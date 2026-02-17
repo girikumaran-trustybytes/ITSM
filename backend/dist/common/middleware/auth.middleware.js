@@ -14,11 +14,14 @@ function mockAuth(req, _res, next) {
 }
 exports.mockAuth = mockAuth;
 function authenticateJWT(req, res, next) {
+    // Let CORS preflight checks pass through without token validation.
+    if (req.method === 'OPTIONS')
+        return next();
     const auth = req.header('Authorization');
     if (!auth)
         return res.status(401).json({ error: 'Missing Authorization header' });
     const parts = auth.split(' ');
-    if (parts.length !== 2 || parts[0] !== 'Bearer')
+    if (parts.length !== 2 || parts[0].toLowerCase() !== 'bearer')
         return res.status(401).json({ error: 'Invalid Authorization format' });
     const token = parts[1];
     try {

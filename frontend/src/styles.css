@@ -368,13 +368,30 @@ html,
 .profile-avatar-btn {
   width: 30px;
   height: 30px;
-  border-radius: 50%;
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 999px;
   border: 1px solid #1f2937;
   background: #1f2937;
   color: #fff;
   font-weight: 700;
   font-size: 12px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0;
+  line-height: 1;
+}
+.profile-avatar-presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #fff;
 }
 .profile-dropdown {
   position: absolute;
@@ -443,8 +460,12 @@ html,
 .profile-panel-user {
   display: flex;
   gap: 12px;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 12px;
+}
+.profile-panel-user-main {
+  min-width: 0;
+  flex: 1;
 }
 .profile-panel-avatar {
   width: 42px;
@@ -465,8 +486,14 @@ html,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #22c55e;
   border: 2px solid #f7fbff;
+}
+.presence-dot-solid {
+  background: var(--presence-color, #22c55e);
+}
+.presence-dot-ring {
+  background: #fff;
+  box-shadow: inset 0 0 0 2px var(--presence-color, #6b7280);
 }
 .profile-panel-name {
   font-weight: 700;
@@ -516,10 +543,29 @@ html,
   font-size: 12px;
   padding: 8px 10px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   cursor: pointer;
   text-align: left;
+}
+.profile-panel-status-option-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+.profile-panel-status-option-title {
+  font-weight: 600;
+}
+.profile-panel-status-option-note {
+  color: #6b7280;
+  font-size: 11px;
+}
+.profile-panel-status-option-check {
+  min-width: 12px;
+  color: #111827;
+  font-weight: 700;
+  line-height: 1.3;
 }
 .profile-panel-status-option:hover {
   background: #f3f4f6;
@@ -1167,6 +1213,24 @@ html,
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  position: relative;
+  overflow: visible;
+}
+.app-icon-badge {
+  position: absolute;
+  bottom: -6px;
+  right: -8px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  border: 1px solid #fff;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  padding: 0 4px;
+  font-weight: 700;
 }
 .app-icon-btn-active {
   border-color: #9aa4b2;
@@ -1198,7 +1262,8 @@ html,
 .app-panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 8px;
   padding: 16px;
   border-bottom: 1px solid #e3e8f0;
   font-weight: 700;
@@ -1206,6 +1271,19 @@ html,
 }
 .app-panel-title {
   font-size: 18px;
+}
+.app-panel-header-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.app-panel-header-controls select {
+  height: 32px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fff;
 }
 .app-panel-close {
   width: 28px;
@@ -2508,6 +2586,11 @@ body.is-column-resizing * {
   color: #7c2d12;
 }
 
+.priority-badge.critical {
+  background: #dc2626;
+  color: #fff;
+}
+
 .status-badge {
   display: inline-block;
   padding: 4px 10px;
@@ -3044,6 +3127,9 @@ body.is-column-resizing * {
   padding: 12px 14px;
   box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
 }
+.panel-card-read {
+  opacity: 0.75;
+}
 .panel-card-time {
   font-size: 11px;
   opacity: 0.9;
@@ -3056,6 +3142,56 @@ body.is-column-resizing * {
 .panel-card-sub {
   font-size: 12px;
   opacity: 0.85;
+}
+.panel-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.panel-card-btn {
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.panel-card-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.panel-card-btn-danger {
+  border-color: rgba(248, 113, 113, 0.9);
+  color: #fecaca;
+}
+
+.sla-priority-table th,
+.sla-priority-table td {
+  padding: 6px 8px;
+}
+
+.sla-priority-table th {
+  font-size: 13px;
+}
+
+.sla-summary-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.sla-summary-table th,
+.sla-summary-table td {
+  padding: 6px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sla-summary-table th:nth-child(n+4):nth-child(-n+19),
+.sla-summary-table td:nth-child(n+4):nth-child(-n+19) {
+  text-align: center;
 }
 
 .todo-list {
