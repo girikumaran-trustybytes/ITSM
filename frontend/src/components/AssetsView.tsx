@@ -692,7 +692,9 @@ export default function AssetsView({
                       setAssetQueueFilter((prev) => prev.type === 'assetGroup' && prev.value === group ? { type: 'all' } : { type: 'assetGroup', value: group })
                     }}
                   >
-                    <div className="queue-avatar">{expanded ? '▼' : '▶'}</div>
+                    <div className="queue-avatar">
+                      <span className={`queue-caret${expanded ? ' queue-caret-down' : ''}`}>{'>'}</span>
+                    </div>
                     <div className="queue-name">{group}</div>
                     <div className="queue-count">{countByGroup(group)}</div>
                   </div>

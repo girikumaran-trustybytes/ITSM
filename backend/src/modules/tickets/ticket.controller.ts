@@ -64,11 +64,11 @@ export const addHistory = async (req: Request, res: Response) => {
 
 export const respond = async (req: Request, res: Response) => {
   const id = req.params.id
-  const { message, sendEmail, to, cc, bcc, subject } = (req as any).validated?.body || req.body || {}
+  const { message, sendEmail, to, cc, bcc, subject, attachmentIds } = (req as any).validated?.body || req.body || {}
   if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' })
   const user = (req as any).user?.id || 'system'
   try {
-    const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject })
+    const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject, attachmentIds })
     res.status(201).json(entry)
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message || 'Failed to add response' })
@@ -77,14 +77,26 @@ export const respond = async (req: Request, res: Response) => {
 
 export const privateNote = async (req: Request, res: Response) => {
   const id = req.params.id
-  const { note } = (req as any).validated?.body || req.body || {}
+  const { note, attachmentIds } = (req as any).validated?.body || req.body || {}
   if (!note || !note.trim()) return res.status(400).json({ error: 'Note is required' })
   const user = (req as any).user?.id || 'system'
   try {
-    const entry = await ticketService.addPrivateNote(id, { note, user })
+    const entry = await ticketService.addPrivateNote(id, { note, user, attachmentIds })
     res.status(201).json(entry)
   } catch (err: any) {
     res.status(err.status || 500).json({ error: err.message || 'Failed to add private note' })
+  }
+}
+
+export const uploadAttachments = async (req: Request, res: Response) => {
+  const id = req.params.id
+  const { files, note, internal } = (req as any).validated?.body || req.body || {}
+  const user = (req as any).user?.id || 'system'
+  try {
+    const result = await ticketService.uploadTicketAttachments(id, { files, user, note, internal })
+    res.status(201).json(result)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to upload attachments' })
   }
 }
 

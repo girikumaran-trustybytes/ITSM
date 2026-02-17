@@ -7,7 +7,7 @@ ENV VITE_API_BASE=$VITE_API_BASE
 
 # Install deps
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # Build
 COPY . .
@@ -17,5 +17,7 @@ RUN npm run build
 FROM nginx:stable-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker-entrypoint.sh /docker-entrypoint.d/40-env.sh
+RUN chmod +x /docker-entrypoint.d/40-env.sh
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

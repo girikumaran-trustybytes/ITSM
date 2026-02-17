@@ -6,6 +6,9 @@ export type RbacUserRow = {
   email: string
   role: string
   status: string
+  isServiceAccount?: boolean
+  autoUpgradeQueues?: boolean
+  queueIds?: string[]
   inviteStatus?: string
   createdAt?: string
 }
@@ -23,9 +26,8 @@ export async function getUserPermissions(userId: number) {
 export async function createRbacUser(payload: {
   fullName: string
   email: string
+  mailId?: string
   phone?: string
-  personalEmail?: string
-  workEmail?: string
   employeeId?: string
   department?: string
   reportingManager?: string
@@ -34,6 +36,9 @@ export async function createRbacUser(payload: {
   workMode?: string
   designation?: string
   role: string
+  isServiceAccount?: boolean
+  autoUpgradeQueues?: boolean
+  queueIds?: string[]
   defaultPermissionTemplate?: string
   inviteMode?: 'now' | 'later'
 }) {
@@ -41,8 +46,7 @@ export async function createRbacUser(payload: {
     name: payload.fullName,
     email: payload.email,
     phone: payload.phone || null,
-    personalEmail: payload.personalEmail || null,
-    workEmail: payload.workEmail || null,
+    workEmail: payload.mailId || payload.email || null,
     employeeId: payload.employeeId || null,
     department: payload.department || null,
     reportingManager: payload.reportingManager || null,
@@ -51,6 +55,9 @@ export async function createRbacUser(payload: {
     workMode: payload.workMode || null,
     designation: payload.designation || null,
     role: payload.role,
+    isServiceAccount: payload.isServiceAccount,
+    autoUpgradeQueues: payload.autoUpgradeQueues,
+    queueIds: payload.queueIds,
     status: payload.inviteMode ? 'INVITED' : 'ACTIVE',
     inviteMode: payload.inviteMode,
     defaultPermissionTemplate: payload.defaultPermissionTemplate,
@@ -65,6 +72,20 @@ export async function sendUserInvite(userId: number) {
 
 export async function markInvitePending(userId: number) {
   const res = await api.post(`/users/${userId}/mark-invite-pending`)
+  return res.data
+}
+
+export async function sendServiceAccountInvite(userId: number, toEmail?: string) {
+  const res = await api.post(`/users/${userId}/service-account/invite`, {
+    toEmail: toEmail || undefined,
+  })
+  return res.data
+}
+
+export async function reinviteServiceAccount(userId: number, toEmail?: string) {
+  const res = await api.post(`/users/${userId}/service-account/reinvite`, {
+    toEmail: toEmail || undefined,
+  })
   return res.data
 }
 

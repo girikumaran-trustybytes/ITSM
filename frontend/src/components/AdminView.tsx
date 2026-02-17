@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { loadLeftPanelConfig, resetLeftPanelConfig, saveLeftPanelConfig, type LeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
 import RbacModule from './RbacModule'
+import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 
 type PaginationMeta = {
   page: number
@@ -569,7 +570,6 @@ export default function AdminView(_props: AdminViewProps) {
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
   const role = String(user?.role || 'USER')
 
-  const [panelQuery, setPanelQuery] = useState('')
   const [subSidebarQuery, setSubSidebarQuery] = useState('')
   const [settingsQuery, setSettingsQuery] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -590,6 +590,18 @@ export default function AdminView(_props: AdminViewProps) {
   ])
   const [leftPanelConfig, setLeftPanelConfig] = useState<LeftPanelConfig>(() => loadLeftPanelConfig())
   const [queuePanelKey, setQueuePanelKey] = useState<'ticketsMyLists' | 'users' | 'assets' | 'suppliers'>('ticketsMyLists')
+  const [slaLoading, setSlaLoading] = useState(false)
+  const [slaBusy, setSlaBusy] = useState(false)
+  const [slaRows, setSlaRows] = useState<any[]>([])
+  const [editingSlaId, setEditingSlaId] = useState<number | null>(null)
+  const [slaForm, setSlaForm] = useState({
+    name: '',
+    priority: 'Medium',
+    responseTimeMin: '60',
+    resolutionTimeMin: '1440',
+    businessHours: false,
+    active: true,
+  })
 
   const visibleSections = useMemo(() => {
     return settingsMenu
@@ -617,6 +629,11 @@ export default function AdminView(_props: AdminViewProps) {
     window.addEventListener('left-panel-config-updated', handler as EventListener)
     return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
   }, [])
+  useEffect(() => {
+    if (activeItem === 'sla-policies' && role === 'ADMIN') {
+      loadSlaRows()
+    }
+  }, [activeItem, role])
 
   const selectedSection = visibleSections.find((s) => s.id === activeSection) || visibleSections[0]
   const selectedItem = selectedSection?.items.find((i) => i.id === activeItem) || selectedSection?.items[0]
@@ -635,6 +652,7 @@ export default function AdminView(_props: AdminViewProps) {
   const title = selectedItem?.label || 'Settings'
   const isQueueManagement = activeItem === 'queue-management'
   const isRolesPermissionsView = activeItem === 'roles-permissions'
+  const isSlaPoliciesView = activeItem === 'sla-policies'
 
   const matches = (text: string) => {
     const q = settingsQuery.trim().toLowerCase()
@@ -729,6 +747,62 @@ export default function AdminView(_props: AdminViewProps) {
 
   const update = (key: string, next: string | boolean) => {
     setValues((prev) => ({ ...prev, [key]: next }))
+  }
+
+  const loadSlaRows = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      setSlaLoading(true)
+      const data = await listSlaConfigs()
+      setSlaRows(Array.isArray(data) ? data : [])
+    } catch (error: any) {
+      alert(error?.response?.data?.error || 'Failed to load SLA configs')
+      setSlaRows([])
+    } finally {
+      setSlaLoading(false)
+    }
+  }
+
+  const resetSlaForm = () => {
+    setEditingSlaId(null)
+    setSlaForm({
+      name: '',
+      priority: 'Medium',
+      responseTimeMin: '60',
+      resolutionTimeMin: '1440',
+      businessHours: false,
+      active: true,
+    })
+  }
+
+  const submitSlaForm = async () => {
+    const responseTimeMin = Number(slaForm.responseTimeMin)
+    const resolutionTimeMin = Number(slaForm.resolutionTimeMin)
+    if (!slaForm.name.trim()) return alert('SLA name is required')
+    if (!Number.isFinite(responseTimeMin) || responseTimeMin < 0) return alert('Invalid response time')
+    if (!Number.isFinite(resolutionTimeMin) || resolutionTimeMin < 0) return alert('Invalid resolution time')
+    try {
+      setSlaBusy(true)
+      const payload = {
+        name: slaForm.name.trim(),
+        priority: slaForm.priority,
+        responseTimeMin,
+        resolutionTimeMin,
+        businessHours: slaForm.businessHours,
+        active: slaForm.active,
+      }
+      if (editingSlaId) {
+        await updateSlaConfig(editingSlaId, payload)
+      } else {
+        await createSlaConfig(payload)
+      }
+      resetSlaForm()
+      await loadSlaRows()
+    } catch (error: any) {
+      alert(error?.response?.data?.error || 'Failed to save SLA config')
+    } finally {
+      setSlaBusy(false)
+    }
   }
 
   const handleSelectSection = (sectionId: string) => {
@@ -960,12 +1034,7 @@ export default function AdminView(_props: AdminViewProps) {
     return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
   }, [hasChanges, savedValues, values, title])
 
-  const panelSections = visibleSections.filter((section) => {
-    const q = panelQuery.trim().toLowerCase()
-    if (!q) return true
-    if (section.label.toLowerCase().includes(q)) return true
-    return section.items.some((item) => item.label.toLowerCase().includes(q))
-  })
+  const panelSections = visibleSections
   const renderPanelIcon = (sectionId: string) => {
     if (sectionId === 'user-access') {
       return (
@@ -1002,20 +1071,23 @@ export default function AdminView(_props: AdminViewProps) {
   }
   const adminLeftPanel = (!sidebarCollapsed && queueRoot) ? createPortal(
     <aside className="admin-left-panel">
-      <div className="queue-search">
-        <input placeholder="Search settings..." value={panelQuery} onChange={(e) => setPanelQuery(e.target.value)} />
-      </div>
       <div className="queue-header">
+        <div className="queue-title-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+        </div>
+        <div className="queue-title">
+          <button className="queue-title-btn" title="Admin settings">
+            <div className="queue-title-text">Admin Settings</div>
+          </button>
+        </div>
         <button className="queue-collapse-btn" title="Hide Menu" onClick={() => setSidebarCollapsed(true)}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <div className="queue-title">
-          <button className="queue-title-btn" onClick={() => setPanelQuery('')} title="Show all settings sections">
-            <div className="queue-title-text">Admin Settings</div>
-          </button>
-        </div>
       </div>
       <div className="queue-list">
         {panelSections.map((section) => (
@@ -1046,6 +1118,125 @@ export default function AdminView(_props: AdminViewProps) {
     return (
       <>
         {adminLeftPanel}
+      </>
+    )
+  }
+
+  if (isSlaPoliciesView) {
+    return (
+      <>
+        {adminLeftPanel}
+        <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
+          <div style={{ padding: 16 }}>
+            <h3 style={{ marginTop: 0 }}>SLA Policies</h3>
+            {role !== 'ADMIN' ? (
+              <p>Only administrators can manage SLA policies.</p>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto auto auto', gap: 8, marginBottom: 12 }}>
+                  <input
+                    placeholder="Policy name"
+                    value={slaForm.name}
+                    onChange={(e) => setSlaForm((p) => ({ ...p, name: e.target.value }))}
+                  />
+                  <select value={slaForm.priority} onChange={(e) => setSlaForm((p) => ({ ...p, priority: e.target.value }))}>
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                  </select>
+                  <input
+                    placeholder="Response (min)"
+                    value={slaForm.responseTimeMin}
+                    onChange={(e) => setSlaForm((p) => ({ ...p, responseTimeMin: e.target.value }))}
+                  />
+                  <input
+                    placeholder="Resolution (min)"
+                    value={slaForm.resolutionTimeMin}
+                    onChange={(e) => setSlaForm((p) => ({ ...p, resolutionTimeMin: e.target.value }))}
+                  />
+                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={slaForm.active}
+                      onChange={(e) => setSlaForm((p) => ({ ...p, active: e.target.checked }))}
+                    />
+                    Active
+                  </label>
+                  <button className="admin-settings-primary" onClick={submitSlaForm} disabled={slaBusy}>
+                    {slaBusy ? 'Saving...' : editingSlaId ? 'Update' : 'Add'}
+                  </button>
+                </div>
+                {editingSlaId ? (
+                  <div style={{ marginBottom: 10 }}>
+                    <button className="admin-settings-ghost" onClick={resetSlaForm}>Cancel edit</button>
+                  </div>
+                ) : null}
+                {slaLoading ? (
+                  <p>Loading SLA policies...</p>
+                ) : (
+                  <table className="rbac-permission-matrix">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Priority</th>
+                        <th>Response (min)</th>
+                        <th>Resolution (min)</th>
+                        <th>Business Hours</th>
+                        <th>Active</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {slaRows.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.name}</td>
+                          <td>{row.priority}</td>
+                          <td>{row.responseTimeMin}</td>
+                          <td>{row.resolutionTimeMin}</td>
+                          <td>{row.businessHours ? 'Yes' : 'No'}</td>
+                          <td>{row.active ? 'Yes' : 'No'}</td>
+                          <td style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              className="admin-settings-ghost"
+                              onClick={() => {
+                                setEditingSlaId(Number(row.id))
+                                setSlaForm({
+                                  name: String(row.name || ''),
+                                  priority: String(row.priority || 'Medium'),
+                                  responseTimeMin: String(row.responseTimeMin ?? '0'),
+                                  resolutionTimeMin: String(row.resolutionTimeMin ?? '0'),
+                                  businessHours: Boolean(row.businessHours),
+                                  active: Boolean(row.active),
+                                })
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="admin-settings-danger"
+                              onClick={async () => {
+                                if (!window.confirm(`Delete SLA policy "${row.name}"?`)) return
+                                try {
+                                  await deleteSlaConfig(Number(row.id))
+                                  await loadSlaRows()
+                                  if (editingSlaId === Number(row.id)) resetSlaForm()
+                                } catch (error: any) {
+                                  alert(error?.response?.data?.error || 'Failed to delete SLA policy')
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+          </div>
+        </section>
       </>
     )
   }

@@ -117,9 +117,9 @@ export default function UsersView({
   const loadUsers = async () => {
     setLoading(true)
     try {
-      const data = await userService.listUsers({ q: search || undefined, role: 'USER' })
+      const data = await userService.listUsers({ q: search || undefined })
       const list = Array.isArray(data) ? data : []
-      setUsers(list.filter((u: any) => String(u?.role || '').toUpperCase() === 'USER'))
+      setUsers(list)
     } catch (e) {
       console.warn('Failed to fetch users', e)
       setUsers([])

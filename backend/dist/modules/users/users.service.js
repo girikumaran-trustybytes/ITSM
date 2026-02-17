@@ -12,7 +12,68 @@ function normalizeRole(input) {
         return value;
     return 'USER';
 }
+let userSchemaReady = null;
+async function ensureUserCrudSchema() {
+    if (!userSchemaReady) {
+        userSchemaReady = (async () => {
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "personalEmail" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workEmail" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employeeId" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "designation" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "department" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "reportingManager" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dateOfJoining" DATE`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT`);
+            await (0, db_1.query)(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId")`);
+            await (0, db_1.query)(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail")`);
+            await (0, db_1.query)(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail")`);
+            await (0, db_1.query)(`
+        CREATE TABLE IF NOT EXISTS "ServiceAccounts" (
+          "id" SERIAL PRIMARY KEY,
+          "userId" INTEGER NOT NULL UNIQUE REFERENCES "User"("id") ON DELETE CASCADE,
+          "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
+          "autoUpgradeQueues" BOOLEAN NOT NULL DEFAULT TRUE,
+          "queueIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+            await (0, db_1.query)(`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_accounts_user_id ON "ServiceAccounts"("userId")`);
+        })();
+    }
+    await userSchemaReady;
+}
+function normalizeQueueIds(input) {
+    if (!Array.isArray(input))
+        return [];
+    return input
+        .map((v) => String(v || '').trim())
+        .filter((v) => v.length > 0);
+}
+async function syncServiceAccount(userId, enabled, opts = {}) {
+    if (!enabled) {
+        await (0, db_1.query)(`DELETE FROM "ServiceAccounts" WHERE "userId" = $1`, [userId]);
+        return;
+    }
+    const existing = await (0, db_1.queryOne)(`SELECT "autoUpgradeQueues", "queueIds" FROM "ServiceAccounts" WHERE "userId" = $1`, [userId]);
+    const autoUpgradeQueues = typeof opts.autoUpgradeQueues === 'boolean'
+        ? opts.autoUpgradeQueues
+        : (existing?.autoUpgradeQueues ?? true);
+    const queueIds = Array.isArray(opts.queueIds)
+        ? normalizeQueueIds(opts.queueIds)
+        : (existing?.queueIds ?? []);
+    await (0, db_1.query)(`INSERT INTO "ServiceAccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
+     VALUES ($1, TRUE, $2, $3, NOW(), NOW())
+     ON CONFLICT ("userId")
+     DO UPDATE SET
+       "enabled" = TRUE,
+       "autoUpgradeQueues" = EXCLUDED."autoUpgradeQueues",
+       "queueIds" = EXCLUDED."queueIds",
+       "updatedAt" = NOW()`, [userId, autoUpgradeQueues, queueIds]);
+}
 async function listUsers(opts = {}) {
+    await ensureUserCrudSchema();
     const conditions = [];
     const params = [];
     if (opts.role) {
@@ -26,15 +87,59 @@ async function listUsers(opts = {}) {
     const take = opts.limit && opts.limit > 0 ? opts.limit : 50;
     params.push(take);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const inviteTable = await (0, db_1.queryOne)(`SELECT to_regclass('public.user_invites')::text AS exists`);
+    const hasInvites = Boolean(inviteTable?.exists);
+    if (!hasInvites) {
+        return (0, db_1.query)(`SELECT
+         u."id",
+         u."name",
+         u."email",
+         u."personalEmail",
+         u."workEmail",
+         u."phone",
+         u."employeeId",
+         u."designation",
+         u."department",
+         u."reportingManager",
+         u."dateOfJoining",
+         u."employmentType",
+         u."workMode",
+         u."role",
+         u."status",
+         u."createdAt",
+         COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
+         COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
+         COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds",
+         'none'::text AS "inviteStatus"
+       FROM "User" u
+       LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+       ${where}
+       ORDER BY u."name" ASC NULLS LAST, u."email" ASC
+       LIMIT $${params.length}`, params);
+    }
     return (0, db_1.query)(`SELECT
        u."id",
        u."name",
        u."email",
+       u."personalEmail",
+       u."workEmail",
+       u."phone",
+       u."employeeId",
+       u."designation",
+       u."department",
+       u."reportingManager",
+       u."dateOfJoining",
+       u."employmentType",
+       u."workMode",
        u."role",
        u."status",
        u."createdAt",
+       COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
+       COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
+       COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds",
        COALESCE(ui.status, 'none') AS "inviteStatus"
      FROM "User" u
+     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
      LEFT JOIN LATERAL (
        SELECT status
        FROM user_invites
@@ -48,10 +153,38 @@ async function listUsers(opts = {}) {
 }
 exports.listUsers = listUsers;
 async function getUserById(id) {
-    return (0, db_1.queryOne)('SELECT "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt" FROM "User" WHERE "id" = $1', [id]);
+    await ensureUserCrudSchema();
+    return (0, db_1.queryOne)(`SELECT
+      u."id",
+      u."name",
+      u."email",
+      u."role",
+      u."phone",
+      u."client",
+      u."site",
+      u."accountManager",
+      u."personalEmail",
+      u."workEmail",
+      u."employeeId",
+      u."designation",
+      u."department",
+      u."reportingManager",
+      u."dateOfJoining",
+      u."employmentType",
+      u."workMode",
+      u."status",
+      u."createdAt",
+      u."updatedAt",
+      COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
+      COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
+      COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds"
+    FROM "User" u
+    LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+    WHERE u."id" = $1`, [id]);
 }
 exports.getUserById = getUserById;
 async function createUser(payload) {
+    await ensureUserCrudSchema();
     const email = String(payload.email || '').trim().toLowerCase();
     if (!email)
         throw { status: 400, message: 'Email is required' };
@@ -61,7 +194,7 @@ async function createUser(payload) {
     if (!password) {
         password = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
     }
-    const existing = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "email" = $1', [email]);
+    const existing = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1)', [email]);
     if (existing)
         throw { status: 409, message: 'Email already exists' };
     const hashed = await bcrypt_1.default.hash(password, 12);
@@ -70,17 +203,60 @@ async function createUser(payload) {
         password: hashed,
         name: payload.name ?? null,
         phone: payload.phone ?? null,
+        personalEmail: payload.personalEmail ?? null,
+        workEmail: payload.workEmail ?? null,
+        employeeId: payload.employeeId ?? null,
+        designation: payload.designation ?? null,
+        department: payload.department ?? null,
+        reportingManager: payload.reportingManager ?? null,
+        dateOfJoining: payload.dateOfJoining ?? null,
+        employmentType: payload.employmentType ?? null,
+        workMode: payload.workMode ?? null,
         client: payload.client ?? null,
         site: payload.site ?? null,
         accountManager: payload.accountManager ?? null,
         role: normalizeRole(payload.role),
         status: String(payload.status || 'ACTIVE').trim().toUpperCase(),
     };
-    const rows = await (0, db_1.query)('INSERT INTO "User" ("email", "password", "name", "phone", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()) RETURNING "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt"', [data.email, data.password, data.name, data.phone, data.client, data.site, data.accountManager, data.role, data.status]);
-    return rows[0];
+    const explicitServiceAccount = payload.isServiceAccount === true || payload.isServiceAccount === false
+        ? Boolean(payload.isServiceAccount)
+        : null;
+    const shouldEnableServiceAccount = explicitServiceAccount !== null
+        ? explicitServiceAccount
+        : data.role === 'AGENT';
+    if (shouldEnableServiceAccount)
+        data.role = 'AGENT';
+    try {
+        const rows = await (0, db_1.query)(`INSERT INTO "User" (
+        "email", "password", "name", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department",
+        "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt"
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9,
+        $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW()
+      )
+      RETURNING "id", "name", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, [
+            data.email, data.password, data.name, data.phone, data.personalEmail, data.workEmail, data.employeeId, data.designation, data.department,
+            data.reportingManager, data.dateOfJoining, data.employmentType, data.workMode, data.client, data.site, data.accountManager, data.role, data.status,
+        ]);
+        const created = rows[0];
+        await syncServiceAccount(Number(created.id), shouldEnableServiceAccount, {
+            autoUpgradeQueues: payload.autoUpgradeQueues,
+            queueIds: payload.queueIds,
+        });
+        return getUserById(Number(created.id));
+    }
+    catch (err) {
+        if (err?.code === '23505')
+            throw { status: 409, message: 'Email already exists' };
+        throw err;
+    }
 }
 exports.createUser = createUser;
 async function updateUser(id, payload) {
+    await ensureUserCrudSchema();
+    const currentUser = await (0, db_1.queryOne)('SELECT "id", "role" FROM "User" WHERE "id" = $1', [id]);
+    if (!currentUser)
+        throw { status: 404, message: 'User not found' };
     const data = {};
     if (payload.email !== undefined)
         data.email = String(payload.email).trim().toLowerCase();
@@ -88,6 +264,24 @@ async function updateUser(id, payload) {
         data.name = payload.name;
     if (payload.phone !== undefined)
         data.phone = payload.phone;
+    if (payload.personalEmail !== undefined)
+        data.personalEmail = payload.personalEmail;
+    if (payload.workEmail !== undefined)
+        data.workEmail = payload.workEmail;
+    if (payload.employeeId !== undefined)
+        data.employeeId = payload.employeeId;
+    if (payload.designation !== undefined)
+        data.designation = payload.designation;
+    if (payload.department !== undefined)
+        data.department = payload.department;
+    if (payload.reportingManager !== undefined)
+        data.reportingManager = payload.reportingManager;
+    if (payload.dateOfJoining !== undefined)
+        data.dateOfJoining = payload.dateOfJoining;
+    if (payload.employmentType !== undefined)
+        data.employmentType = payload.employmentType;
+    if (payload.workMode !== undefined)
+        data.workMode = payload.workMode;
     if (payload.client !== undefined)
         data.client = payload.client;
     if (payload.site !== undefined)
@@ -98,6 +292,14 @@ async function updateUser(id, payload) {
         data.role = normalizeRole(payload.role);
     if (payload.status !== undefined)
         data.status = String(payload.status).trim().toUpperCase();
+    const explicitServiceAccount = payload.isServiceAccount === true || payload.isServiceAccount === false
+        ? Boolean(payload.isServiceAccount)
+        : null;
+    if (explicitServiceAccount === true)
+        data.role = 'AGENT';
+    if (explicitServiceAccount === false && payload.role === undefined && String(currentUser.role || '').toUpperCase() === 'AGENT') {
+        data.role = 'USER';
+    }
     if (payload.password) {
         if (String(payload.password).length < 6)
             throw { status: 400, message: 'Password must be at least 6 characters' };
@@ -112,10 +314,23 @@ async function updateUser(id, payload) {
         }
         setParts.push('"updatedAt" = NOW()');
         params.push(id);
-        const rows = await (0, db_1.query)(`UPDATE "User" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING "id", "name", "email", "role", "phone", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, params);
+        const rows = await (0, db_1.query)(`UPDATE "User" SET ${setParts.join(', ')} WHERE "id" = $${params.length}
+       RETURNING "id", "name", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, params);
         if (!rows[0])
             throw { status: 404, message: 'User not found' };
-        return rows[0];
+        const shouldSyncServiceAccount = explicitServiceAccount !== null ||
+            payload.role !== undefined ||
+            payload.autoUpgradeQueues !== undefined ||
+            payload.queueIds !== undefined;
+        if (shouldSyncServiceAccount) {
+            const nextRole = String(rows[0]?.role || currentUser.role || '').toUpperCase();
+            const enabled = explicitServiceAccount !== null ? explicitServiceAccount : nextRole === 'AGENT';
+            await syncServiceAccount(id, enabled, {
+                autoUpgradeQueues: payload.autoUpgradeQueues,
+                queueIds: payload.queueIds,
+            });
+        }
+        return getUserById(id);
     }
     catch (err) {
         if (err?.status === 404)
@@ -127,7 +342,9 @@ async function updateUser(id, payload) {
 }
 exports.updateUser = updateUser;
 async function deleteUser(id) {
+    await ensureUserCrudSchema();
     try {
+        await (0, db_1.query)('DELETE FROM "ServiceAccounts" WHERE "userId" = $1', [id]);
         const rows = await (0, db_1.query)('DELETE FROM "User" WHERE "id" = $1 RETURNING "id", "name", "email"', [id]);
         if (!rows[0])
             throw { status: 404, message: 'User not found' };

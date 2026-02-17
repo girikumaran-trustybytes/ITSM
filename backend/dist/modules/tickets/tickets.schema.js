@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ticketsAuditQuerySchema = exports.ticketsUnassignAssetBodySchema = exports.ticketsAssignAssetBodySchema = exports.ticketsResolveBodySchema = exports.ticketsPrivateNoteBodySchema = exports.ticketsRespondBodySchema = exports.ticketsHistoryBodySchema = exports.ticketsTransitionBodySchema = exports.ticketsUpdateBodySchema = exports.ticketsCreateBodySchema = exports.ticketIdParamsSchema = exports.ticketsListQuerySchema = void 0;
+exports.ticketsUploadAttachmentsBodySchema = exports.ticketUploadFileSchema = exports.ticketsAuditQuerySchema = exports.ticketsUnassignAssetBodySchema = exports.ticketsAssignAssetBodySchema = exports.ticketsResolveBodySchema = exports.ticketsPrivateNoteBodySchema = exports.ticketsRespondBodySchema = exports.ticketsHistoryBodySchema = exports.ticketsTransitionBodySchema = exports.ticketsUpdateBodySchema = exports.ticketsCreateBodySchema = exports.ticketIdParamsSchema = exports.ticketsListQuerySchema = void 0;
 const zod_1 = require("zod");
 const common_1 = require("../../schema/common");
 exports.ticketsListQuerySchema = zod_1.z.object({
@@ -57,9 +57,11 @@ exports.ticketsRespondBodySchema = zod_1.z.object({
     cc: zod_1.z.string().optional(),
     bcc: zod_1.z.string().optional(),
     subject: zod_1.z.string().min(1).optional(),
+    attachmentIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
 });
 exports.ticketsPrivateNoteBodySchema = zod_1.z.object({
     note: zod_1.z.string().min(1),
+    attachmentIds: zod_1.z.array(zod_1.z.number().int().positive()).optional(),
 });
 exports.ticketsResolveBodySchema = zod_1.z.object({
     resolution: zod_1.z.string().min(1),
@@ -71,3 +73,14 @@ exports.ticketsAssignAssetBodySchema = zod_1.z.object({
 });
 exports.ticketsUnassignAssetBodySchema = zod_1.z.object({});
 exports.ticketsAuditQuerySchema = zod_1.z.object({});
+exports.ticketUploadFileSchema = zod_1.z.object({
+    name: zod_1.z.string().min(1),
+    type: zod_1.z.string().optional(),
+    size: zod_1.z.number().int().nonnegative(),
+    contentBase64: zod_1.z.string().min(1),
+});
+exports.ticketsUploadAttachmentsBodySchema = zod_1.z.object({
+    files: zod_1.z.array(exports.ticketUploadFileSchema).min(1),
+    note: zod_1.z.string().optional(),
+    internal: zod_1.z.boolean().optional(),
+});

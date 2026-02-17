@@ -14,6 +14,7 @@ import {
 	ticketsPrivateNoteBodySchema,
 	ticketsAssignAssetBodySchema,
 	ticketsResolveBodySchema,
+	ticketsUploadAttachmentsBodySchema,
 } from './tickets.schema'
 
 const router = Router()
@@ -29,6 +30,7 @@ router.post('/:id/transition', permit(['ADMIN','AGENT']), validate({ params: tic
 router.post('/:id/history', permit(['ADMIN','AGENT']), validate({ params: ticketIdParamsSchema, body: ticketsHistoryBodySchema }), ctrl.addHistory)
 router.post('/:id/respond', permit(['ADMIN','AGENT']), validate({ params: ticketIdParamsSchema, body: ticketsRespondBodySchema }), ctrl.respond)
 router.post('/:id/private-note', permit(['ADMIN','AGENT']), validate({ params: ticketIdParamsSchema, body: ticketsPrivateNoteBodySchema }), ctrl.privateNote)
+router.post('/:id/attachments', permit(['ADMIN','AGENT','USER']), validate({ params: ticketIdParamsSchema, body: ticketsUploadAttachmentsBodySchema }), ctrl.uploadAttachments)
 router.post('/:id/resolve', permit(['ADMIN','AGENT']), validate({ params: ticketIdParamsSchema, body: ticketsResolveBodySchema }), ctrl.resolveTicket)
 router.post('/:id/asset', permit(['ADMIN','AGENT']), validate({ params: ticketIdParamsSchema, body: ticketsAssignAssetBodySchema }), ctrl.assignAsset)
 router.delete('/:id/asset', permit(['ADMIN','AGENT']), validate({ params: ticketIdParamsSchema }), ctrl.unassignAsset)

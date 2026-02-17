@@ -343,6 +343,8 @@ export async function ensureRbacSeeded() {
             ALTER TABLE permissions ADD COLUMN IF NOT EXISTS action TEXT;
             ALTER TABLE permissions ADD COLUMN IF NOT EXISTS queue TEXT;
             ALTER TABLE permissions ADD COLUMN IF NOT EXISTS label TEXT;
+            ALTER TABLE permissions ADD COLUMN IF NOT EXISTS permission_name TEXT;
+            ALTER TABLE permissions ADD COLUMN IF NOT EXISTS module_name TEXT;
             ALTER TABLE permissions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
             IF EXISTS (
@@ -351,18 +353,30 @@ export async function ensureRbacSeeded() {
             ) THEN
               UPDATE permissions
               SET permission_key = COALESCE(permission_key, permission_name),
+                  permission_name = COALESCE(permission_name, permission_key),
                   label = COALESCE(label, permission_name),
-                  module = COALESCE(module, module_name, 'legacy'),
+                  module = COALESCE(module, 'legacy'),
+                  module_name = COALESCE(module_name, module, 'legacy'),
                   action = COALESCE(action, lower(regexp_replace(permission_name, '[^a-zA-Z0-9]+', '_', 'g')))
               WHERE permission_key IS NULL OR label IS NULL OR module IS NULL OR action IS NULL;
             END IF;
 
             UPDATE permissions
             SET permission_key = COALESCE(permission_key, concat(module, ':*:', action)),
+                permission_name = COALESCE(permission_name, permission_key, concat(module, ':*:', action)),
                 module = COALESCE(module, 'legacy'),
+                module_name = COALESCE(module_name, module, 'legacy'),
                 action = COALESCE(action, 'read'),
                 label = COALESCE(label, permission_key)
             WHERE permission_key IS NULL OR module IS NULL OR action IS NULL OR label IS NULL;
+
+            UPDATE permissions
+            SET permission_name = COALESCE(permission_name, permission_key, label, concat(module, ':*:', action))
+            WHERE permission_name IS NULL;
+
+            UPDATE permissions
+            SET module_name = COALESCE(module_name, module, 'legacy')
+            WHERE module_name IS NULL;
           END IF;
         END$$;
       `)
@@ -515,9 +529,15 @@ export async function ensureRbacSeeded() {
       }
 
       for (const permission of baseModulePermissions) {
+        const permissionKey = buildModulePermissionKey(permission.module, permission.action)
         await client.query(
-          'INSERT INTO permissions (permission_key, module, action, queue, label) VALUES ($1, $2, $3, NULL, $4) ON CONFLICT (permission_key) DO NOTHING',
-          [buildModulePermissionKey(permission.module, permission.action), permission.module, permission.action, permission.label]
+          `INSERT INTO permissions (permission_key, permission_name, module, module_name, action, queue, label)
+           VALUES ($1, $2, $3, $4, $5, NULL, $6)
+           ON CONFLICT (permission_key) DO UPDATE
+           SET permission_name = COALESCE(permissions.permission_name, EXCLUDED.permission_name),
+               module_name = COALESCE(permissions.module_name, EXCLUDED.module_name),
+               label = COALESCE(permissions.label, EXCLUDED.label)`,
+          [permissionKey, permissionKey, permission.module, permission.module, permission.action, permission.label]
         )
       }
 
@@ -533,14 +553,23 @@ export async function ensureRbacSeeded() {
       )
 
       for (const row of actions.rows) {
+        const permissionKey = buildTicketPermissionKey(row.queue_key, row.action_key)
+        const permissionLabel = `Ticket - ${row.queue_label} - ${row.action_label}`
         await client.query(
-          'INSERT INTO permissions (permission_key, module, action, queue, label) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (permission_key) DO NOTHING',
+          `INSERT INTO permissions (permission_key, permission_name, module, module_name, action, queue, label)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (permission_key) DO UPDATE
+           SET permission_name = COALESCE(permissions.permission_name, EXCLUDED.permission_name),
+               module_name = COALESCE(permissions.module_name, EXCLUDED.module_name),
+               label = COALESCE(permissions.label, EXCLUDED.label)`,
           [
-            buildTicketPermissionKey(row.queue_key, row.action_key),
+            permissionKey,
+            permissionKey,
+            'ticket',
             'ticket',
             row.action_key,
             row.queue_key,
-            `Ticket - ${row.queue_label} - ${row.action_label}`,
+            permissionLabel,
           ]
         )
       }
@@ -943,29 +972,205 @@ export async function markInvitePending(userId: number, actorUserId?: number) {
   })
 }
 
-async function sendInviteEmail(email: string, name: string | null, inviteLink: string, expiresAt: Date) {
-  const orgName = process.env.ORG_NAME || 'ITSM'
-  const subject = `${orgName}: Activate your account`
-  const text = [
-    `Hello ${name || 'User'},`,
-    '',
-    `You have been invited to join ${orgName}.`,
-    `Activation link: ${inviteLink}`,
-    `This link expires on ${expiresAt.toISOString()}.`,
-    '',
-    'If you did not expect this invite, you can ignore this email.',
-  ].join('\n')
-  await sendSmtpMail({ to: email, subject, text })
+type InviteMailMode = 'invite' | 'reinvite'
+
+function htmlEscape(value: string) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
-export async function sendUserInvite(userId: number, actorUserId?: number) {
-  const user = await queryOne<{ id: number; email: string; name: string | null }>(
-    'SELECT "id", "email", "name" FROM "User" WHERE "id" = $1',
+function trimSlash(url: string) {
+  return String(url || '').replace(/\/+$/, '')
+}
+
+function invitationContext() {
+  const appName = String(
+    process.env.APPLICATION_NAME ||
+    process.env.APP_NAME ||
+    process.env.ORG_NAME ||
+    'ITSM'
+  ).trim()
+  const appBaseUrl = trimSlash(
+    String(process.env.APP_URL || process.env.WEB_APP_URL || 'http://localhost:3000').trim()
+  )
+  const loginUrl = `${appBaseUrl}/login`
+  const companyName = String(process.env.COMPANY_NAME || appName).trim()
+  const senderName = String(process.env.INVITE_SENDER_NAME || 'ITSM Support').trim()
+  const senderTitle = String(process.env.INVITE_SENDER_TITLE || 'Support Team').trim()
+  const supportEmail = String(
+    process.env.SUPPORT_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || ''
+  ).trim()
+  const appBaseMail = String(
+    process.env.APPLICATION_BASE_MAIL ||
+    process.env.APP_BASE_MAIL ||
+    process.env.SMTP_FROM ||
+    process.env.SMTP_USER ||
+    'no-reply@itsm.local'
+  ).trim()
+  const supportPhone = String(process.env.SUPPORT_PHONE || '').trim()
+  const purpose = String(
+    process.env.APP_PURPOSE || 'manage tickets, track tasks, and monitor assets'
+  ).trim()
+
+  return {
+    appName,
+    appBaseUrl,
+    loginUrl,
+    companyName,
+    senderName,
+    senderTitle,
+    supportEmail,
+    appBaseMail,
+    supportPhone,
+    purpose,
+  }
+}
+
+async function sendInviteEmail(
+  email: string,
+  name: string | null,
+  inviteLink: string,
+  expiresAt: Date,
+  mode: InviteMailMode,
+  actor?: { name: string | null; email: string | null } | null
+) {
+  const ctx = invitationContext()
+  const person = (name || 'User').trim()
+  const actorName = String(actor?.name || ctx.senderName).trim()
+  const actorEmail = String(actor?.email || ctx.supportEmail).trim()
+  const expiresText = expiresAt.toISOString()
+  const contactLine = [ctx.supportEmail, ctx.supportPhone].filter(Boolean).join(' | ')
+  const signatureContact = contactLine || actorEmail || 'Support Desk'
+
+  const subject =
+    mode === 'reinvite'
+      ? `Reminder: Access to ${ctx.appName} Web Application`
+      : `Invitation to Access the ${ctx.appName} Web Application`
+
+  const text = mode === 'reinvite'
+    ? [
+      `Dear ${person},`,
+      '',
+      `This is a gentle reminder regarding your access to the ${ctx.appName} web application.`,
+      '',
+      `If you have not yet logged in, please use the link below to access the system:`,
+      `${ctx.loginUrl}`,
+      '',
+      `Activation / reset link:`,
+      `${inviteLink}`,
+      `Link expiry: ${expiresText}`,
+      '',
+      `Username: ${email}`,
+      `Password setup: Use the activation/reset link above to set a new password.`,
+      '',
+      `If you need a new activation link or have forgotten your login details, please let us know and we will be happy to assist.`,
+      '',
+      `Best regards,`,
+      actorName,
+      ctx.senderTitle,
+      ctx.companyName,
+      signatureContact,
+    ].join('\n')
+    : [
+      `Dear ${person},`,
+      '',
+      `We are pleased to invite you to access our web application, ${ctx.appName}.`,
+      `The application is designed to help you ${ctx.purpose}.`,
+      '',
+      `You can access the application using the link below:`,
+      `${ctx.loginUrl}`,
+      '',
+      `Login details:`,
+      `Username: ${email}`,
+      `Temporary Password: Set your password using the activation link below.`,
+      `Activation link: ${inviteLink}`,
+      `Link expiry: ${expiresText}`,
+      '',
+      `For security reasons, we recommend changing your password upon first login.`,
+      '',
+      `If you experience any issues accessing the application, please contact us.`,
+      '',
+      `Best regards,`,
+      actorName,
+      ctx.senderTitle,
+      ctx.companyName,
+      signatureContact,
+    ].join('\n')
+
+  const html = mode === 'reinvite'
+    ? `
+      <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111827">
+        <p>Dear ${htmlEscape(person)},</p>
+        <p>This is a gentle reminder regarding your access to the <strong>${htmlEscape(ctx.appName)}</strong> web application.</p>
+        <p>If you have not yet logged in, please use the link below to access the system:<br/>
+        <a href="${htmlEscape(ctx.loginUrl)}">${htmlEscape(ctx.loginUrl)}</a></p>
+        <p><strong>Activation / reset link:</strong><br/>
+        <a href="${htmlEscape(inviteLink)}">${htmlEscape(inviteLink)}</a><br/>
+        <small>Link expiry: ${htmlEscape(expiresText)}</small></p>
+        <p><strong>Username:</strong> ${htmlEscape(email)}<br/>
+        <strong>Password setup:</strong> Use the activation/reset link above to set a new password.</p>
+        <p>If you need a new activation link or have forgotten your login details, please let us know and we will be happy to assist.</p>
+        <p>Best regards,<br/>
+        ${htmlEscape(actorName)}<br/>
+        ${htmlEscape(ctx.senderTitle)}<br/>
+        ${htmlEscape(ctx.companyName)}<br/>
+        ${htmlEscape(signatureContact)}</p>
+      </div>
+    `
+    : `
+      <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111827">
+        <p>Dear ${htmlEscape(person)},</p>
+        <p>We are pleased to invite you to access our web application, <strong>${htmlEscape(ctx.appName)}</strong>.</p>
+        <p>The application is designed to help you ${htmlEscape(ctx.purpose)}.</p>
+        <p>You can access the application using the link below:<br/>
+        <a href="${htmlEscape(ctx.loginUrl)}">${htmlEscape(ctx.loginUrl)}</a></p>
+        <p><strong>Login details</strong><br/>
+        Username: ${htmlEscape(email)}<br/>
+        Temporary Password: Set your password using the activation link below.<br/>
+        Activation link: <a href="${htmlEscape(inviteLink)}">${htmlEscape(inviteLink)}</a><br/>
+        <small>Link expiry: ${htmlEscape(expiresText)}</small></p>
+        <p>For security reasons, we recommend changing your password upon first login.</p>
+        <p>If you experience any issues accessing the application, please contact us.</p>
+        <p>Best regards,<br/>
+        ${htmlEscape(actorName)}<br/>
+        ${htmlEscape(ctx.senderTitle)}<br/>
+        ${htmlEscape(ctx.companyName)}<br/>
+        ${htmlEscape(signatureContact)}</p>
+      </div>
+    `
+
+  await sendSmtpMail({
+    to: email,
+    from: ctx.appBaseMail,
+    subject,
+    text,
+    html,
+  })
+}
+
+export async function sendUserInvite(
+  userId: number,
+  actorUserId?: number,
+  options?: { mode?: 'invite' | 'reinvite'; toEmail?: string }
+) {
+  const user = await queryOne<{ id: number; email: string; workEmail: string | null; name: string | null }>(
+    'SELECT "id", "email", "workEmail", "name" FROM "User" WHERE "id" = $1',
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
 
+  const mode: InviteMailMode = options?.mode || 'invite'
   const latestStatus = await getLatestInviteStatus(userId)
+  if (mode === 'invite' && latestStatus === 'invited_not_accepted') {
+    throw { status: 400, message: 'User already invited. Use re-invite.' }
+  }
+  if (mode === 'reinvite' && !['invite_pending', 'invited_not_accepted'].includes(latestStatus)) {
+    throw { status: 400, message: `User cannot be re-invited from status: ${latestStatus}` }
+  }
   if (!['none', 'invite_pending', 'invited_not_accepted'].includes(latestStatus)) {
     throw { status: 400, message: `User cannot be re-invited from status: ${latestStatus}` }
   }
@@ -981,9 +1186,20 @@ export async function sendUserInvite(userId: number, actorUserId?: number) {
   )
   await query('UPDATE "User" SET "status" = $1, "updatedAt" = NOW() WHERE "id" = $2', ['INVITED', userId])
 
-  const appUrl = process.env.APP_URL || 'http://localhost:3000'
-  const inviteLink = `${appUrl}/activate?token=${token}&user=${userId}`
-  await sendInviteEmail(user.email, user.name, inviteLink, expiresAt)
+  const ctx = invitationContext()
+  const inviteLink = `${ctx.appBaseUrl}/activate?token=${token}&user=${userId}`
+  const actor = actorUserId
+    ? await queryOne<{ name: string | null; email: string | null }>(
+      'SELECT "name", "email" FROM "User" WHERE "id" = $1',
+      [actorUserId]
+    )
+    : null
+  const workEmail = String(user.workEmail || '').trim()
+  const primaryEmail = String(user.email || '').trim()
+  const recipientEmail = workEmail || primaryEmail
+  if (!recipientEmail) throw { status: 400, message: 'User does not have a valid mail ID to send invite' }
+
+  await sendInviteEmail(recipientEmail, user.name, inviteLink, expiresAt, mode, actor)
 
   await auditLog({
     action: 'invite_sent',
@@ -996,5 +1212,28 @@ export async function sendUserInvite(userId: number, actorUserId?: number) {
   return {
     inviteStatus: 'invited_not_accepted',
     expiresAt: expiresAt.toISOString(),
+    sentTo: recipientEmail,
+    sentFrom: invitationContext().appBaseMail,
   }
+}
+
+export async function sendServiceAccountInvite(
+  userId: number,
+  actorUserId?: number,
+  options?: { mode?: 'invite' | 'reinvite'; toEmail?: string }
+) {
+  await ensureRbacSeeded()
+  const user = await queryOne<{ id: number; role: string }>(
+    'SELECT "id", "role" FROM "User" WHERE "id" = $1',
+    [userId]
+  )
+  if (!user) throw { status: 404, message: 'User not found' }
+  if (String(user.role || '').toUpperCase() !== 'AGENT') {
+    throw { status: 400, message: 'Only service account users can be invited. Convert user to service account first.' }
+  }
+
+  return sendUserInvite(userId, actorUserId, {
+    mode: options?.mode || 'invite',
+    toEmail: options?.toEmail,
+  })
 }

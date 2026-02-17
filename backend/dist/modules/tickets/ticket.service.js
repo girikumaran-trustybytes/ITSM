@@ -3,12 +3,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.unassignAsset = exports.assignAsset = exports.deleteTicket = exports.updateTicket = exports.resolveTicketWithDetails = exports.addPrivateNote = exports.addResponse = exports.createHistoryEntry = exports.transitionTicket = exports.createTicket = exports.getTicketById = exports.getTickets = void 0;
+exports.unassignAsset = exports.assignAsset = exports.deleteTicket = exports.updateTicket = exports.uploadTicketAttachments = exports.resolveTicketWithDetails = exports.addPrivateNote = exports.addResponse = exports.createHistoryEntry = exports.transitionTicket = exports.createTicket = exports.getTicketById = exports.getTickets = void 0;
 const db_1 = require("../../db");
 const workflow_service_1 = require("../workflows/workflow.service");
 const logger_1 = require("../../common/logger/logger");
 const mailer_service_1 = __importDefault(require("../../services/mailer.service"));
+const promises_1 = __importDefault(require("fs/promises"));
+const path_1 = __importDefault(require("path"));
 const isNumericId = (value) => /^\d+$/.test(value);
+const MAX_ATTACHMENT_SIZE_BYTES = 32 * 1024 * 1024;
+const MAX_ATTACHMENT_BATCH_BYTES = 32 * 1024 * 1024;
+const ATTACHMENT_BASE_DIR = path_1.default.resolve(process.cwd(), 'uploads', 'tickets');
+let attachmentSchemaReady = null;
+let slaSchemaReady = null;
 function buildTicketWhere(idOrTicketId, alias = 't', startIndex = 1) {
     if (isNumericId(idOrTicketId)) {
         return { clause: `${alias}."id" = $${startIndex}`, params: [Number(idOrTicketId)] };
@@ -19,12 +26,189 @@ async function getTicketRecord(idOrTicketId) {
     const where = buildTicketWhere(idOrTicketId, 't', 1);
     return (0, db_1.queryOne)(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params);
 }
+function normalizePriority(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'high' || v === 'critical')
+        return 'High';
+    if (v === 'medium')
+        return 'Medium';
+    return 'Low';
+}
+function formatSlaClock(ms) {
+    const sign = ms < 0 ? '-' : '';
+    const abs = Math.abs(ms);
+    const totalMinutes = Math.floor(abs / 60000);
+    const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+    const mm = String(totalMinutes % 60).padStart(2, '0');
+    return `${sign}${hh}:${mm}`;
+}
+async function ensureSlaTrackingSchema() {
+    if (!slaSchemaReady) {
+        slaSchemaReady = (async () => {
+            await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "responseTargetAt" TIMESTAMP(3)');
+            await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolutionTargetAt" TIMESTAMP(3)');
+            await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "firstRespondedAt" TIMESTAMP(3)');
+            await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolvedAt" TIMESTAMP(3)');
+            await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "policyId" INTEGER');
+        })();
+    }
+    await slaSchemaReady;
+}
+async function getSlaPolicyByPriority(priority) {
+    const normalized = normalizePriority(priority);
+    const byPriority = await (0, db_1.queryOne)(`SELECT *
+     FROM "SlaConfig"
+     WHERE "active" = TRUE
+       AND LOWER("priority") = LOWER($1)
+     ORDER BY "updatedAt" DESC
+     LIMIT 1`, [normalized]);
+    if (byPriority)
+        return byPriority;
+    const fallback = await (0, db_1.queryOne)(`SELECT *
+     FROM "SlaConfig"
+     WHERE "active" = TRUE
+     ORDER BY "updatedAt" DESC
+     LIMIT 1`);
+    return fallback;
+}
+function fallbackSlaMinutes(priority) {
+    const normalized = normalizePriority(priority);
+    if (normalized === 'High')
+        return { responseTimeMin: 30, resolutionTimeMin: 8 * 60 };
+    if (normalized === 'Medium')
+        return { responseTimeMin: 60, resolutionTimeMin: 24 * 60 };
+    return { responseTimeMin: 240, resolutionTimeMin: 72 * 60 };
+}
+async function upsertSlaTrackingForTicket(ticket, options) {
+    await ensureSlaTrackingSchema();
+    const policy = await getSlaPolicyByPriority(ticket.priority);
+    const fallback = fallbackSlaMinutes(ticket.priority);
+    const responseMin = Number(policy?.responseTimeMin ?? fallback.responseTimeMin);
+    const resolutionMin = Number(policy?.resolutionTimeMin ?? fallback.resolutionTimeMin);
+    const startTime = ticket.slaStart ? new Date(ticket.slaStart) : (ticket.createdAt ? new Date(ticket.createdAt) : new Date());
+    const responseTargetAt = new Date(startTime.getTime() + responseMin * 60 * 1000);
+    const resolutionTargetAt = new Date(startTime.getTime() + resolutionMin * 60 * 1000);
+    const status = ['Resolved', 'Closed'].includes(String(ticket.status || '')) ? 'resolved' : 'running';
+    await (0, db_1.query)(`INSERT INTO "SlaTracking" (
+      "ticketId", "slaName", "startTime", "breachTime", "status", "policyId",
+      "responseTargetAt", "resolutionTargetAt", "firstRespondedAt", "resolvedAt", "createdAt", "updatedAt"
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL, NOW(), NOW())
+    ON CONFLICT ("ticketId") DO UPDATE
+    SET
+      "slaName" = EXCLUDED."slaName",
+      "startTime" = EXCLUDED."startTime",
+      "breachTime" = EXCLUDED."breachTime",
+      "status" = EXCLUDED."status",
+      "policyId" = EXCLUDED."policyId",
+      "responseTargetAt" = EXCLUDED."responseTargetAt",
+      "resolutionTargetAt" = EXCLUDED."resolutionTargetAt",
+      "firstRespondedAt" = CASE WHEN $9 THEN "SlaTracking"."firstRespondedAt" ELSE EXCLUDED."firstRespondedAt" END,
+      "resolvedAt" = CASE WHEN $10 THEN "SlaTracking"."resolvedAt" ELSE EXCLUDED."resolvedAt" END,
+      "updatedAt" = NOW()`, [
+        ticket.id,
+        policy?.name || `${normalizePriority(ticket.priority)} SLA`,
+        startTime,
+        resolutionTargetAt,
+        status,
+        policy?.id || null,
+        responseTargetAt,
+        resolutionTargetAt,
+        Boolean(options?.keepFirstResponse),
+        Boolean(options?.keepResolvedAt),
+    ]);
+}
+function toIsoOrNull(value) {
+    if (!value)
+        return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime()))
+        return null;
+    return d.toISOString();
+}
+function buildSlaSnapshot(ticket, tracking) {
+    if (!tracking)
+        return null;
+    const now = Date.now();
+    const responseTargetMs = tracking.responseTargetAt ? new Date(tracking.responseTargetAt).getTime() : null;
+    const resolutionTargetMs = tracking.resolutionTargetAt ? new Date(tracking.resolutionTargetAt).getTime() : null;
+    const responseDone = Boolean(tracking.firstRespondedAt);
+    const resolutionDone = Boolean(tracking.resolvedAt) || ['Resolved', 'Closed'].includes(String(ticket.status || ''));
+    const responseRemainingMs = responseTargetMs === null ? null : responseTargetMs - now;
+    const resolutionRemainingMs = resolutionTargetMs === null ? null : resolutionTargetMs - now;
+    const responseBreached = !responseDone && responseRemainingMs !== null && responseRemainingMs < 0;
+    const resolutionBreached = !resolutionDone && resolutionRemainingMs !== null && resolutionRemainingMs < 0;
+    return {
+        policyName: tracking.slaName || null,
+        priority: normalizePriority(ticket.priority),
+        response: {
+            targetAt: toIsoOrNull(tracking.responseTargetAt),
+            completedAt: toIsoOrNull(tracking.firstRespondedAt),
+            breached: responseBreached,
+            remainingMs: responseRemainingMs,
+            remainingLabel: responseRemainingMs === null ? '--:--' : formatSlaClock(responseRemainingMs),
+        },
+        resolution: {
+            targetAt: toIsoOrNull(tracking.resolutionTargetAt),
+            completedAt: toIsoOrNull(tracking.resolvedAt || ticket.resolvedAt),
+            breached: resolutionBreached,
+            remainingMs: resolutionRemainingMs,
+            remainingLabel: resolutionRemainingMs === null ? '--:--' : formatSlaClock(resolutionRemainingMs),
+        },
+        breached: responseBreached || resolutionBreached,
+        state: resolutionDone ? 'resolved' : responseDone ? 'responded' : 'running',
+    };
+}
+async function attachSlaData(items) {
+    if (!Array.isArray(items) || items.length === 0)
+        return items;
+    await ensureSlaTrackingSchema();
+    const ids = items.map((t) => Number(t.id)).filter((id) => Number.isFinite(id));
+    if (!ids.length)
+        return items;
+    const rows = await (0, db_1.query)('SELECT * FROM "SlaTracking" WHERE "ticketId" = ANY($1::int[])', [ids]);
+    const map = new Map();
+    rows.forEach((row) => map.set(Number(row.ticketId), row));
+    items.forEach((ticket) => {
+        const tracking = map.get(Number(ticket.id));
+        const snapshot = buildSlaSnapshot(ticket, tracking);
+        ticket.sla = snapshot;
+        ticket.slaTimeLeft = snapshot?.resolution?.remainingLabel || '--:--';
+    });
+    return items;
+}
+async function ensureAttachmentSchema() {
+    if (!attachmentSchemaReady) {
+        attachmentSchemaReady = (async () => {
+            await (0, db_1.query)('ALTER TABLE "Attachment" ADD COLUMN IF NOT EXISTS "sizeBytes" INTEGER');
+            await (0, db_1.query)('ALTER TABLE "Attachment" ADD COLUMN IF NOT EXISTS "contentType" TEXT');
+        })();
+    }
+    await attachmentSchemaReady;
+}
+function sanitizeFilename(name) {
+    return String(name || 'file').replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').slice(0, 180) || 'file';
+}
+function decodeBase64Payload(input) {
+    const raw = String(input || '');
+    const cleaned = raw.includes(',') ? raw.split(',').pop() || '' : raw;
+    return Buffer.from(cleaned, 'base64');
+}
 async function resolveChangedById(user) {
     const parsed = typeof user === 'number' ? user : parseInt(String(user), 10);
     if (!Number.isFinite(parsed) || parsed <= 0)
         return null;
-    const exists = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [parsed]);
-    return exists?.id ?? null;
+    // Primary path: auth id directly matches "User"."id"
+    const direct = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [parsed]);
+    if (direct?.id)
+        return direct.id;
+    // Fallback path: auth token subject is app_user.user_id; map via email to "User"
+    const appUser = await (0, db_1.queryOne)('SELECT email FROM app_user WHERE user_id = $1', [parsed]);
+    const email = String(appUser?.email || '').trim().toLowerCase();
+    if (!email)
+        return null;
+    const mapped = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1)', [email]);
+    return mapped?.id ?? null;
 }
 function buildInsert(table, data) {
     const keys = Object.keys(data).filter((k) => data[k] !== undefined);
@@ -73,6 +257,7 @@ const getTickets = async (opts = {}, viewer) => {
        LIMIT $${params.length + 2}`, [...params, offset, pageSize]),
         (0, db_1.queryOne)(`SELECT COUNT(*)::text AS count FROM "Ticket" t ${where}`, params),
     ]);
+    await attachSlaData(items);
     const total = Number(totalRow?.count || 0);
     return { items, total, page, pageSize };
 };
@@ -94,8 +279,11 @@ const getTicketById = async (id, viewer) => {
         (0, db_1.query)('SELECT * FROM "Attachment" WHERE "ticketId" = $1', [t.id]),
         (0, db_1.query)('SELECT * FROM "TicketHistory" WHERE "ticketId" = $1', [t.id]),
     ]);
+    const tracking = await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [t.id]);
     t.attachments = attachments;
     t.history = history;
+    t.sla = buildSlaSnapshot(t, tracking);
+    t.slaTimeLeft = t.sla?.resolution?.remainingLabel || '--:--';
     return t;
 };
 exports.getTicketById = getTicketById;
@@ -159,7 +347,7 @@ const createTicket = async (payload, creator = 'system') => {
     const created = createdRows[0];
     // start SLA tracking record
     try {
-        await (0, db_1.query)('INSERT INTO "SlaTracking" ("ticketId", "slaName", "startTime", "breachTime", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW(), NOW())', [created.id, `${created.priority} SLA`, now, computeSlaBreachTime(now, priority), 'running']);
+        await upsertSlaTrackingForTicket(created);
     }
     catch (e) {
         console.warn('Failed creating SLA tracking record', e);
@@ -174,6 +362,9 @@ const createTicket = async (payload, creator = 'system') => {
     if (payload.requesterEmail) {
         await mailer_service_1.default.sendTicketCreated(payload.requesterEmail, created);
     }
+    const tracking = await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [created.id]);
+    created.sla = buildSlaSnapshot(created, tracking);
+    created.slaTimeLeft = created.sla?.resolution?.remainingLabel || '--:--';
     return created;
 };
 exports.createTicket = createTicket;
@@ -188,6 +379,10 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
     const where = buildTicketWhere(ticketId, 't', 2);
     const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [toState, ...where.params]);
     const updated = updatedRows[0];
+    if (['Resolved', 'Closed'].includes(String(toState || ''))) {
+        await ensureSlaTrackingSchema();
+        await (0, db_1.query)('UPDATE "SlaTracking" SET "resolvedAt" = COALESCE("resolvedAt", NOW()), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2', ['resolved', t.id]);
+    }
     const changedById = await resolveChangedById(user);
     await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
         t.id,
@@ -242,21 +437,50 @@ const createHistoryEntry = async (ticketId, opts) => {
     return created;
 };
 exports.createHistoryEntry = createHistoryEntry;
+async function resolveAttachmentRows(ticketDbId, attachmentIds = []) {
+    if (!attachmentIds.length)
+        return [];
+    const unique = Array.from(new Set(attachmentIds.filter((id) => Number.isFinite(id) && id > 0)));
+    if (!unique.length)
+        return [];
+    const rows = await (0, db_1.query)(`SELECT * FROM "Attachment"
+     WHERE "ticketId" = $1
+       AND "id" = ANY($2::int[])`, [ticketDbId, unique]);
+    if (rows.length !== unique.length) {
+        throw { status: 400, message: 'One or more attachments are invalid for this ticket' };
+    }
+    return rows;
+}
+function appendAttachmentSummary(text, rows) {
+    if (!rows.length)
+        return text;
+    const names = rows.map((r) => String(r.filename || `Attachment #${r.id}`)).join(', ');
+    return `${text}\nAttachments: ${names}`;
+}
 const addResponse = async (ticketId, opts) => {
     const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
+    const attachmentRows = await resolveAttachmentRows(t.id, opts.attachmentIds || []);
+    const messageWithAttachments = appendAttachmentSummary(opts.message, attachmentRows);
     const changedById = await resolveChangedById(opts.user);
     const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
         t.id,
         t.status,
         t.status,
         changedById,
-        opts.message,
+        messageWithAttachments,
         false,
     ]);
     const created = rows[0];
-    await (0, logger_1.auditLog)({ action: 'respond', ticketId: t.ticketId, user: opts.user, meta: { message: opts.message } });
+    await ensureSlaTrackingSchema();
+    await (0, db_1.query)('UPDATE "SlaTracking" SET "firstRespondedAt" = COALESCE("firstRespondedAt", NOW()), "status" = CASE WHEN "status" = \'resolved\' THEN "status" ELSE \'responded\' END, "updatedAt" = NOW() WHERE "ticketId" = $1', [t.id]);
+    await (0, logger_1.auditLog)({
+        action: 'respond',
+        ticketId: t.ticketId,
+        user: opts.user,
+        meta: { message: opts.message, attachmentIds: attachmentRows.map((a) => a.id) },
+    });
     if (opts.sendEmail) {
         let targetEmail = String(opts.to || '').trim();
         if (!targetEmail && t.requesterId) {
@@ -266,7 +490,11 @@ const addResponse = async (ticketId, opts) => {
         if (!targetEmail) {
             throw { status: 400, message: 'Recipient email is required for sending response' };
         }
-        await mailer_service_1.default.sendTicketResponseStrict(targetEmail, t, opts.message, opts.subject, opts.cc, opts.bcc);
+        await mailer_service_1.default.sendTicketResponseStrict(targetEmail, t, messageWithAttachments, opts.subject, opts.cc, opts.bcc, attachmentRows.map((a) => ({
+            filename: String(a.filename || `attachment-${a.id}`),
+            path: String(a.path || ''),
+            contentType: String(a.contentType || ''),
+        })));
     }
     return created;
 };
@@ -275,17 +503,24 @@ const addPrivateNote = async (ticketId, opts) => {
     const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
+    const attachmentRows = await resolveAttachmentRows(t.id, opts.attachmentIds || []);
+    const noteWithAttachments = appendAttachmentSummary(opts.note, attachmentRows);
     const changedById = await resolveChangedById(opts.user);
     const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
         t.id,
         t.status,
         t.status,
         changedById,
-        opts.note,
+        noteWithAttachments,
         true,
     ]);
     const created = rows[0];
-    await (0, logger_1.auditLog)({ action: 'private_note', ticketId: t.ticketId, user: opts.user, meta: { note: opts.note } });
+    await (0, logger_1.auditLog)({
+        action: 'private_note',
+        ticketId: t.ticketId,
+        user: opts.user,
+        meta: { note: opts.note, attachmentIds: attachmentRows.map((a) => a.id) },
+    });
     return created;
 };
 exports.addPrivateNote = addPrivateNote;
@@ -302,6 +537,8 @@ const resolveTicketWithDetails = async (ticketId, opts) => {
         ...where.params,
     ]);
     const updated = updatedRows[0];
+    await ensureSlaTrackingSchema();
+    await (0, db_1.query)('UPDATE "SlaTracking" SET "resolvedAt" = NOW(), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2', ['resolved', t.id]);
     const changedById = await resolveChangedById(opts.user);
     await (0, db_1.query)('INSERT INTO "TicketStatusHistory" ("ticketId", "oldStatus", "newStatus", "changedById", "changedAt") VALUES ($1, $2, $3, $4, NOW())', [
         t.id,
@@ -323,6 +560,70 @@ const resolveTicketWithDetails = async (ticketId, opts) => {
     return updated;
 };
 exports.resolveTicketWithDetails = resolveTicketWithDetails;
+const uploadTicketAttachments = async (ticketId, opts) => {
+    const t = await getTicketRecord(ticketId);
+    if (!t)
+        throw { status: 404, message: 'Ticket not found' };
+    await ensureAttachmentSchema();
+    const files = Array.isArray(opts.files) ? opts.files : [];
+    if (!files.length)
+        throw { status: 400, message: 'No files selected' };
+    const totalDeclared = files.reduce((sum, f) => sum + Number(f?.size || 0), 0);
+    if (totalDeclared > MAX_ATTACHMENT_BATCH_BYTES) {
+        throw { status: 400, message: 'Total attachment size must be 32MB or less' };
+    }
+    const changedById = await resolveChangedById(opts.user);
+    const ticketDir = path_1.default.join(ATTACHMENT_BASE_DIR, String(t.ticketId || t.id));
+    await promises_1.default.mkdir(ticketDir, { recursive: true });
+    const saved = [];
+    for (const file of files) {
+        const declaredSize = Number(file?.size || 0);
+        if (declaredSize <= 0)
+            throw { status: 400, message: 'Attachment size is invalid' };
+        if (declaredSize > MAX_ATTACHMENT_SIZE_BYTES) {
+            throw { status: 400, message: `Attachment "${file?.name || 'file'}" exceeds 32MB` };
+        }
+        const binary = decodeBase64Payload(file.contentBase64);
+        if (binary.length !== declaredSize) {
+            throw { status: 400, message: `Attachment "${file?.name || 'file'}" is corrupted` };
+        }
+        const safe = sanitizeFilename(file.name);
+        const storedName = `${Date.now()}-${Math.random().toString(16).slice(2, 8)}-${safe}`;
+        const fullPath = path_1.default.join(ticketDir, storedName);
+        await promises_1.default.writeFile(fullPath, binary);
+        const created = await (0, db_1.queryOne)(`INSERT INTO "Attachment" ("filename", "path", "ticketId", "uploadedById", "sizeBytes", "contentType", "createdAt")
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       RETURNING *`, [safe, fullPath, t.id, changedById, declaredSize, String(file.type || '') || null]);
+        if (created)
+            saved.push(created);
+    }
+    if (opts.note && String(opts.note).trim()) {
+        await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
+            t.id,
+            t.status,
+            t.status,
+            changedById,
+            appendAttachmentSummary(String(opts.note).trim(), saved),
+            Boolean(opts.internal),
+        ]);
+    }
+    await (0, logger_1.auditLog)({
+        action: 'upload_attachments',
+        ticketId: t.ticketId,
+        user: opts.user,
+        meta: { count: saved.length, names: saved.map((s) => s.filename) },
+    });
+    return {
+        items: saved.map((row) => ({
+            id: row.id,
+            filename: row.filename,
+            sizeBytes: row.sizeBytes ?? null,
+            contentType: row.contentType ?? null,
+            createdAt: row.createdAt,
+        })),
+    };
+};
+exports.uploadTicketAttachments = uploadTicketAttachments;
 const updateTicket = async (ticketId, payload, user) => {
     const t = await getTicketRecord(ticketId);
     if (!t)
@@ -354,6 +655,9 @@ const updateTicket = async (ticketId, payload, user) => {
     const where = buildTicketWhere(ticketId, 't', params.length + 1);
     const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET ${setParts.join(', ')} WHERE ${where.clause} RETURNING *`, [...params, ...where.params]);
     const updated = updatedRows[0];
+    if (payload.priority !== undefined || payload.slaStart !== undefined) {
+        await upsertSlaTrackingForTicket(updated, { keepFirstResponse: true, keepResolvedAt: true });
+    }
     const changedById = await resolveChangedById(user);
     await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
         t.id,
@@ -364,6 +668,9 @@ const updateTicket = async (ticketId, payload, user) => {
         false,
     ]);
     await (0, logger_1.auditLog)({ action: 'update_ticket', ticketId: updated.ticketId, user, meta: { changes: data } });
+    const tracking = await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id]);
+    updated.sla = buildSlaSnapshot(updated, tracking);
+    updated.slaTimeLeft = updated.sla?.resolution?.remainingLabel || '--:--';
     return updated;
 };
 exports.updateTicket = updateTicket;

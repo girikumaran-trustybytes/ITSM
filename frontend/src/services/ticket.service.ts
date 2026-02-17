@@ -25,13 +25,25 @@ export async function getTicket(id: string) {
   return res.data
 }
 
-export async function respond(id: string, payload: { message: string; sendEmail?: boolean; to?: string; cc?: string; bcc?: string; subject?: string }) {
+export async function respond(id: string, payload: { message: string; sendEmail?: boolean; to?: string; cc?: string; bcc?: string; subject?: string; attachmentIds?: number[] }) {
   const res = await api.post(`/tickets/${encodeURIComponent(id)}/respond`, payload)
   return res.data
 }
 
-export async function privateNote(id: string, payload: { note: string }) {
+export async function privateNote(id: string, payload: { note: string; attachmentIds?: number[] }) {
   const res = await api.post(`/tickets/${encodeURIComponent(id)}/private-note`, payload)
+  return res.data
+}
+
+export async function uploadAttachments(
+  id: string,
+  payload: {
+    files: Array<{ name: string; type?: string; size: number; contentBase64: string }>
+    note?: string
+    internal?: boolean
+  }
+) {
+  const res = await api.post(`/tickets/${encodeURIComponent(id)}/attachments`, payload)
   return res.data
 }
 

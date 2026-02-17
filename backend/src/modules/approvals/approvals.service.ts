@@ -1,15 +1,30 @@
-import { query } from '../../db'
+import { query, queryOne } from '../../db'
 
-export async function createApproval(ticketId: number, approverId?: number) {
+async function resolveTicketDbId(ticketRef: string | number): Promise<number> {
+  const raw = String(ticketRef || '').trim()
+  if (!raw) throw { status: 400, message: 'ticketId is required' }
+  if (/^\d+$/.test(raw)) {
+    const row = await queryOne<{ id: number }>('SELECT "id" FROM "Ticket" WHERE "id" = $1', [Number(raw)])
+    if (!row?.id) throw { status: 404, message: 'Ticket not found' }
+    return row.id
+  }
+  const row = await queryOne<{ id: number }>('SELECT "id" FROM "Ticket" WHERE "ticketId" = $1', [raw])
+  if (!row?.id) throw { status: 404, message: 'Ticket not found' }
+  return row.id
+}
+
+export async function createApproval(ticketId: string | number, approverId?: number) {
+  const ticketDbId = await resolveTicketDbId(ticketId)
   const rows = await query(
     'INSERT INTO "Approval" ("ticketId", "approverId", "createdAt") VALUES ($1, $2, NOW()) RETURNING *',
-    [ticketId, approverId || null]
+    [ticketDbId, approverId || null]
   )
   return rows[0]
 }
 
-export async function listApprovalsByTicket(ticketId: number) {
-  return query('SELECT * FROM "Approval" WHERE "ticketId" = $1', [ticketId])
+export async function listApprovalsByTicket(ticketId: string | number) {
+  const ticketDbId = await resolveTicketDbId(ticketId)
+  return query('SELECT * FROM "Approval" WHERE "ticketId" = $1', [ticketDbId])
 }
 
 export async function setApprovalStatus(approvalId: number, status: string, approverId?: number, comment?: string) {

@@ -26,22 +26,37 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateStatus = exports.listByTicket = exports.createTask = void 0;
 const service = __importStar(require("./tasks.service"));
 async function createTask(req, res) {
-    const ticketId = Number(req.params.ticketId);
-    const { name, assignedToId } = req.body;
-    const task = await service.createTask(ticketId, name, assignedToId);
-    res.status(201).json(task);
+    try {
+        const ticketId = String(req.params.ticketId || '');
+        const { name, assignedToId } = req.body;
+        const task = await service.createTask(ticketId, name, assignedToId);
+        res.status(201).json(task);
+    }
+    catch (err) {
+        res.status(err?.status || 500).json({ error: err?.message || 'Failed to create task' });
+    }
 }
 exports.createTask = createTask;
 async function listByTicket(req, res) {
-    const ticketId = Number(req.params.ticketId);
-    const list = await service.listTasksByTicket(ticketId);
-    res.json(list);
+    try {
+        const ticketId = String(req.params.ticketId || '');
+        const list = await service.listTasksByTicket(ticketId);
+        res.json(list);
+    }
+    catch (err) {
+        res.status(err?.status || 500).json({ error: err?.message || 'Failed to list tasks' });
+    }
 }
 exports.listByTicket = listByTicket;
 async function updateStatus(req, res) {
-    const taskId = Number(req.params.taskId);
-    const { status } = req.body;
-    const updated = await service.updateTaskStatus(taskId, status);
-    res.json(updated);
+    try {
+        const taskId = Number(req.params.taskId);
+        const { status } = req.body;
+        const updated = await service.updateTaskStatus(taskId, status);
+        res.json(updated);
+    }
+    catch (err) {
+        res.status(err?.status || 500).json({ error: err?.message || 'Failed to update task status' });
+    }
 }
 exports.updateStatus = updateStatus;

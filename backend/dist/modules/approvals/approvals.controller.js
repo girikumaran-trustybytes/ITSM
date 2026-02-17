@@ -26,31 +26,51 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.reject = exports.approve = exports.listByTicket = exports.createApproval = void 0;
 const service = __importStar(require("./approvals.service"));
 async function createApproval(req, res) {
-    const ticketId = Number(req.params.ticketId);
-    const approverId = req.body.approverId;
-    const approval = await service.createApproval(ticketId, approverId);
-    res.status(201).json(approval);
+    try {
+        const ticketId = String(req.params.ticketId || '');
+        const approverId = req.body.approverId;
+        const approval = await service.createApproval(ticketId, approverId);
+        res.status(201).json(approval);
+    }
+    catch (err) {
+        res.status(err?.status || 500).json({ error: err?.message || 'Failed to create approval' });
+    }
 }
 exports.createApproval = createApproval;
 async function listByTicket(req, res) {
-    const ticketId = Number(req.params.ticketId);
-    const list = await service.listApprovalsByTicket(ticketId);
-    res.json(list);
+    try {
+        const ticketId = String(req.params.ticketId || '');
+        const list = await service.listApprovalsByTicket(ticketId);
+        res.json(list);
+    }
+    catch (err) {
+        res.status(err?.status || 500).json({ error: err?.message || 'Failed to list approvals' });
+    }
 }
 exports.listByTicket = listByTicket;
 async function approve(req, res) {
-    const approvalId = Number(req.params.approvalId);
-    const userId = req.user?.id;
-    const comment = req.body.comment;
-    const updated = await service.setApprovalStatus(approvalId, 'approved', userId, comment);
-    res.json(updated);
+    try {
+        const approvalId = Number(req.params.approvalId);
+        const userId = req.user?.id;
+        const comment = req.body.comment;
+        const updated = await service.setApprovalStatus(approvalId, 'approved', userId, comment);
+        res.json(updated);
+    }
+    catch (err) {
+        res.status(err?.status || 500).json({ error: err?.message || 'Failed to approve' });
+    }
 }
 exports.approve = approve;
 async function reject(req, res) {
-    const approvalId = Number(req.params.approvalId);
-    const userId = req.user?.id;
-    const comment = req.body.comment;
-    const updated = await service.setApprovalStatus(approvalId, 'rejected', userId, comment);
-    res.json(updated);
+    try {
+        const approvalId = Number(req.params.approvalId);
+        const userId = req.user?.id;
+        const comment = req.body.comment;
+        const updated = await service.setApprovalStatus(approvalId, 'rejected', userId, comment);
+        res.json(updated);
+    }
+    catch (err) {
+        res.status(err?.status || 500).json({ error: err?.message || 'Failed to reject' });
+    }
 }
 exports.reject = reject;

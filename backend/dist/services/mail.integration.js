@@ -161,6 +161,7 @@ async function sendSmtpMail(payload, override) {
         subject,
         text: payload.text,
         html: payload.html,
+        attachments: payload.attachments,
     });
     return {
         ok: true,

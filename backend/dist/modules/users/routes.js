@@ -35,8 +35,10 @@ router.post('/rbac/ticket-actions', (0, rbac_middleware_1.permit)(['ADMIN']), (0
 router.get('/:id/permissions', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.getPermissions);
 router.patch('/:id/permissions', (0, rbac_middleware_1.permit)(['ADMIN']), (0, authorize_middleware_1.authorize)('admin', 'edit'), ctrl.updatePermissions);
 router.put('/:id/permissions', (0, rbac_middleware_1.permit)(['ADMIN']), (0, authorize_middleware_1.authorize)('admin', 'edit'), ctrl.updatePermissions);
-router.post('/:id/send-invite', (0, rbac_middleware_1.permit)(['ADMIN']), (0, authorize_middleware_1.authorize)('user', 'edit'), ctrl.sendInvite);
-router.post('/:id/mark-invite-pending', (0, rbac_middleware_1.permit)(['ADMIN']), (0, authorize_middleware_1.authorize)('user', 'edit'), ctrl.markInvitePending);
+router.post('/:id/send-invite', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, authorize_middleware_1.authorize)('user', 'edit'), ctrl.sendInvite);
+router.post('/:id/service-account/invite', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, authorize_middleware_1.authorize)('user', 'edit'), ctrl.sendServiceAccountInvite);
+router.post('/:id/service-account/reinvite', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, authorize_middleware_1.authorize)('user', 'edit'), ctrl.reinviteServiceAccount);
+router.post('/:id/mark-invite-pending', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, authorize_middleware_1.authorize)('user', 'edit'), ctrl.markInvitePending);
 router.get('/:id', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.getOne);
 router.post('/', (0, rbac_middleware_1.permit)(['ADMIN']), ctrl.create);
 router.patch('/:id', (0, rbac_middleware_1.permit)(['ADMIN']), ctrl.update);

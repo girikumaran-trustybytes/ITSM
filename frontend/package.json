@@ -1,10 +1,11 @@
 {
-  "name": "cmdb-frontend",
-  "version": "0.1.0",
+  "name": "itsm-frontend",
+  "version": "1.0.16",
   "private": true,
   "homepage": "https://girikumaran-trustybytes.github.io/ITSM",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node -e \"const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));const v=String(j.version||'1.0.0').split('.').map(Number);if(v.length<3||v.some(Number.isNaN)){throw new Error('Invalid version format')}const minor=Math.max(0,v[1]||0);const patch=Math.max(0,v[2]||0)+1;j.version=['1',String(minor),String(patch)].join('.');fs.writeFileSync(p,JSON.stringify(j,null,2)+'\\n');console.log('ITSM v'+j.version);\"",
     "build": "vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",

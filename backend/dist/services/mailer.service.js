@@ -42,14 +42,14 @@ exports.default = {
         ].join('\n');
         await safeSend(email, subject, text);
     },
-    async sendTicketResponseStrict(email, ticket, message, subjectOverride, cc, bcc) {
+    async sendTicketResponseStrict(email, ticket, message, subjectOverride, cc, bcc, attachments) {
         const subject = String(subjectOverride || `[ITSM] New response: ${ticket?.ticketId || ticket?.id || ''}`).trim();
         const text = [
             'A new response was added to your ticket.',
             `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
             `Message: ${message || '-'}`,
         ].join('\n');
-        await (0, mail_integration_1.sendSmtpMail)({ to: email, cc, bcc, subject, text });
+        await (0, mail_integration_1.sendSmtpMail)({ to: email, cc, bcc, subject, text, attachments });
     },
     async sendTicketResolved(email, ticket) {
         const subject = `[ITSM] Ticket resolved: ${ticket?.ticketId || ticket?.id || ''}`.trim();

@@ -9,6 +9,7 @@ import AdminView from './components/AdminView'
 import UsersView from './components/UsersView'
 import SuppliersView from './components/SuppliersView'
 import ReportsView from './components/ReportsView'
+import AccountsView from './components/AccountsView'
 import Login from './app/Login'
 import ProtectedRoute from './app/ProtectedRoute'
 import Unauthorized from './app/Unauthorized'
@@ -17,6 +18,7 @@ import PortalHome from './components/portal/PortalHome'
 import AssetDetailView from './components/AssetDetailView'
 import UserDetailView from './components/UserDetailView'
 import SupplierDetailView from './components/SupplierDetailView'
+import AccountSecurityView from './components/AccountSecurityView'
 import { logout } from './services/auth.service'
 import NotificationsPanel from './components/panels/NotificationsPanel'
 import TodoPanel from './components/panels/TodoPanel'
@@ -52,6 +54,15 @@ const navPaths: Record<string, string> = {
   admin: '/admin',
 }
 
+type PresenceStatus = 'Available' | 'Away' | 'Do Not Disturb' | 'Busy'
+
+const presenceStatuses: Array<{ value: PresenceStatus; color: string }> = [
+  { value: 'Available', color: '#22c55e' },
+  { value: 'Away', color: '#f59e0b' },
+  { value: 'Do Not Disturb', color: '#ef4444' },
+  { value: 'Busy', color: '#dc2626' },
+]
+
 function getNavFromPath(pathname: string) {
   if (pathname.startsWith('/tickets')) return 'tickets'
   if (pathname.startsWith('/assets')) return 'assets'
@@ -69,6 +80,12 @@ function MainShell() {
   const location = useLocation()
   const navigate = useNavigate()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showPresenceMenu, setShowPresenceMenu] = useState(false)
+  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => {
+    const raw = window.localStorage.getItem('itsm.presenceStatus')
+    if (raw === 'Available' || raw === 'Away' || raw === 'Do Not Disturb' || raw === 'Busy') return raw
+    return 'Available'
+  })
   const [activePanel, setActivePanel] = useState<null | 'search' | 'notifications' | 'todo' | 'feed'>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [tabToolbarSearch, setTabToolbarSearch] = useState('')
@@ -98,6 +115,7 @@ function MainShell() {
         const insidePanel = profilePanelRef.current && profilePanelRef.current.contains(target)
         if (!insideTrigger && !insidePanel) {
           setShowProfileMenu(false)
+          setShowPresenceMenu(false)
         }
       }
       if (activePanel && panelRef.current && !panelRef.current.contains(target)) {
@@ -112,6 +130,10 @@ function MainShell() {
   }, [showProfileMenu, activePanel])
 
   useEffect(() => {
+    window.localStorage.setItem('itsm.presenceStatus', presenceStatus)
+  }, [presenceStatus])
+
+  useEffect(() => {
     if (activePanel === 'search' && searchInputRef.current) {
       searchInputRef.current.focus()
     }
@@ -122,7 +144,8 @@ function MainShell() {
     if (
       user.role === 'USER' &&
       !location.pathname.startsWith('/tickets') &&
-      !location.pathname.startsWith('/reports')
+      !location.pathname.startsWith('/reports') &&
+      !location.pathname.startsWith('/security')
     ) {
       navigate('/tickets', { replace: true })
     }
@@ -183,6 +206,9 @@ function MainShell() {
         { label: 'Settings', path: '/admin' },
       ]
     }
+    if (location.pathname.startsWith('/security')) {
+      return [{ label: 'Account Security', path: '/security' }]
+    }
     const activeKey = activeNav === 'tickets' ? 'tickets' : (activeNav || 'dashboard')
     return [{ label: navLabels[activeKey] || 'Dashboard', path: navPaths[activeKey] || '/dashboard' }]
   }, [activeNav, location.pathname])
@@ -195,7 +221,7 @@ function MainShell() {
   const isAssetsListRoute = location.pathname === '/assets'
   const isSuppliersListRoute = location.pathname === '/supplier'
   const isAdminListRoute = location.pathname === '/admin'
-  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute && !isAdminListRoute
+  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute && !isAdminListRoute && !isAccountsListRoute
   const toolbarPagination =
     isUsersListRoute || isAccountsListRoute ? usersPagination :
     isAssetsListRoute ? assetsPagination :
@@ -232,6 +258,7 @@ function MainShell() {
     toolbarTarget === 'suppliers' ? 'suppliers-tool-bar' :
     toolbarTarget === 'admin' ? 'admin-tool-bar' :
     'tickets-tool-bar'
+  const activePresence = presenceStatuses.find((item) => item.value === presenceStatus) || presenceStatuses[0]
 
   return (
     <div className="app-root">
@@ -318,7 +345,10 @@ function MainShell() {
             <button
               className="profile-avatar-btn"
               aria-label="Profile menu"
-              onClick={() => setShowProfileMenu((v) => !v)}
+              onClick={() => {
+                setShowProfileMenu((v) => !v)
+                setShowPresenceMenu(false)
+              }}
             >
               {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
             </button>
@@ -330,7 +360,7 @@ function MainShell() {
           <div className="profile-panel" ref={profilePanelRef}>
             <div className="profile-panel-header">
               <div className="profile-panel-title">My account</div>
-              <button className="profile-panel-close" onClick={() => setShowProfileMenu(false)} aria-label="Close">
+              <button className="profile-panel-close" onClick={() => { setShowProfileMenu(false); setShowPresenceMenu(false) }} aria-label="Close">
                 ×
               </button>
             </div>
@@ -338,17 +368,45 @@ function MainShell() {
               <div className="profile-panel-user">
                 <div className="profile-panel-avatar">
                   {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
-                  <span className="profile-panel-status-dot" />
+                  <span className="profile-panel-status-dot" style={{ background: activePresence.color }} />
                 </div>
                 <div>
                   <div className="profile-panel-name">{user?.name || 'User'}</div>
                   <div className="profile-panel-email">{user?.email || 'user@example.com'}</div>
-                  <div className="profile-panel-status">Available</div>
+                  <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
+                    <span className="profile-panel-status-indicator" style={{ background: activePresence.color }} />
+                    {presenceStatus}
+                  </button>
+                  {showPresenceMenu && (
+                    <div className="profile-panel-status-menu">
+                      {presenceStatuses.map((item) => (
+                        <button
+                          key={item.value}
+                          className={`profile-panel-status-option${item.value === presenceStatus ? ' active' : ''}`}
+                          onClick={() => {
+                            setPresenceStatus(item.value)
+                            setShowPresenceMenu(false)
+                          }}
+                        >
+                          <span className="profile-panel-status-indicator" style={{ background: item.color }} />
+                          {item.value}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="profile-panel-links">
-                <button onClick={() => setShowProfileMenu(false)}>My account</button>
-                <button onClick={() => setShowProfileMenu(false)}>Password &amp; Security</button>
+                <button onClick={() => { setShowPresenceMenu(false) }}>My account</button>
+                <button
+                  onClick={() => {
+                    setShowProfileMenu(false)
+                    setShowPresenceMenu(false)
+                    navigate('/security')
+                  }}
+                >
+                  Password &amp; Security
+                </button>
                 <button
                   onClick={() => {
                     setShowProfileMenu(false)
@@ -598,12 +656,7 @@ function MainShell() {
             path="/accounts"
             element={
               <div className="work-main">
-                <UsersView
-                  toolbarSearch={tabToolbarSearch}
-                  controlledPage={usersPage}
-                  onPageChange={setUsersPage}
-                  onPaginationMetaChange={setUsersPagination}
-                />
+                <AccountsView />
               </div>
             }
           />
@@ -619,6 +672,7 @@ function MainShell() {
               />
             }
           />
+          <Route path="/security" element={<AccountSecurityView />} />
           <Route path="*" element={<div className="work-main"><Dashboard /></div>} />
         </Routes>
       </main>
@@ -630,6 +684,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/reset-password" element={<Login />} />
       <Route path="/portal/login" element={<Login />} />
       <Route path="/portal/dashboard" element={<PortalHome />} />
       <Route path="/portal/tickets" element={<TicketsView />} />

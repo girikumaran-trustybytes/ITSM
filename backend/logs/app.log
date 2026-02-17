@@ -224,3 +224,297 @@
 {"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:46:44.307Z"}
 {"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:47:25.179Z"}
 {"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:47:25.256Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T09:47:52.027Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T09:47:52.052Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"Test - To, CC, BCC"},"ticketId":"TB#00006","timestamp":"2026-02-16T09:50:08.412Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T09:50:08.426Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"Test - To, CC, BCC"},"ticketId":"TB#00006","timestamp":"2026-02-16T09:50:11.995Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T09:50:12.005Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T10:55:35.607Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T10:55:35.618Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"Templete test"},"ticketId":"TB#00006","timestamp":"2026-02-16T11:07:41.568Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:07:41.572Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"Thanks"},"ticketId":"TB#00006","timestamp":"2026-02-16T11:09:24.827Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:09:24.835Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-16T11:10:51.327Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAMJh7FWn3CEtO86897agW4-dt0b1wGBPa1E6Qin6zerqrH6=uA@mail.gmail.com>\nFrom: girims9901@gmail.com\nDate: Mon, 16 Feb 2026 16:59:24 +0530","status":"New","subcategory":"Email","subject":"Profile test","type":"Incident"}},"ticketId":"TB#00007","timestamp":"2026-02-16T11:30:08.655Z","user":"mail_ingest"}
+{"from":"girims9901@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Profile test","ticketId":"TB#00007","timestamp":"2026-02-16T11:30:09.273Z","uid":"414"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"thank you"},"ticketId":"TB#00007","timestamp":"2026-02-16T11:30:53.979Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:30:53.981Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"thank you"},"ticketId":"TB#00007","timestamp":"2026-02-16T11:30:56.047Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:30:56.050Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"thank you"},"ticketId":"TB#00007","timestamp":"2026-02-16T11:30:56.726Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:30:56.737Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"thank you"},"ticketId":"TB#00007","timestamp":"2026-02-16T11:30:57.080Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:30:57.082Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"thank you"},"ticketId":"TB#00007","timestamp":"2026-02-16T11:30:57.308Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:30:57.313Z"}
+{"action":"transition","level":"info","message":"audit","meta":{"from":"New","to":"In Progress"},"ticketId":"TB#00007","timestamp":"2026-02-16T11:30:57.315Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T11:30:57.318Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAMJh7FWNkxm_bPQzN6tTyo81XuK4OWyrLzn2fHSFqA=JUzz2fQ@mail.gmail.com>\nFrom: girims9901@gmail.com\nDate: Mon, 16 Feb 2026 17:11:29 +0530","status":"New","subcategory":"Email","subject":"Re: Acknowledged - [TB#00007] Profile test","type":"Incident"}},"ticketId":"TB#00008","timestamp":"2026-02-16T11:42:08.588Z","user":"mail_ingest"}
+{"from":"girims9901@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Re: Acknowledged - [TB#00007] Profile test","ticketId":"TB#00008","timestamp":"2026-02-16T11:42:09.108Z","uid":"415"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAMJh7FU-13nTUABF5JikEghktNuXEwzjxS5TOQMft2KX8n6Fbw@mail.gmail.com>\nFrom: girims9901@gmail.com\nDate: Mon, 16 Feb 2026 17:11:39 +0530","status":"New","subcategory":"Email","subject":"Re: Acknowledged - [TB#00007] Profile test","type":"Incident"}},"ticketId":"TB#00009","timestamp":"2026-02-16T11:42:09.512Z","user":"mail_ingest"}
+{"from":"girims9901@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Re: Acknowledged - [TB#00007] Profile test","ticketId":"TB#00009","timestamp":"2026-02-16T11:42:09.945Z","uid":"416"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAMJh7FXuDd3V-tKVHHAWcCDonCbaYHdrFgsBijVu8yUU5trTtw@mail.gmail.com>\nFrom: girims9901@gmail.com\nDate: Mon, 16 Feb 2026 17:11:51 +0530","status":"New","subcategory":"Email","subject":"Re: Acknowledged - [TB#00007] Profile test","type":"Incident"}},"ticketId":"TB#00010","timestamp":"2026-02-16T11:42:10.293Z","user":"mail_ingest"}
+{"from":"girims9901@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Re: Acknowledged - [TB#00007] Profile test","ticketId":"TB#00010","timestamp":"2026-02-16T11:42:10.718Z","uid":"417"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAMJh7FX4W7_T4jpu4E879f9cu7BGqwEPUe0qoySnW=obLMQyxQ@mail.gmail.com>\nFrom: girims9901@gmail.com\nDate: Mon, 16 Feb 2026 17:11:54 +0530","status":"New","subcategory":"Email","subject":"Re: Acknowledged - [TB#00007] Profile test","type":"Incident"}},"ticketId":"TB#00011","timestamp":"2026-02-16T11:42:38.601Z","user":"mail_ingest"}
+{"from":"girims9901@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Re: Acknowledged - [TB#00007] Profile test","ticketId":"TB#00011","timestamp":"2026-02-16T11:42:39.002Z","uid":"418"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:06:59.192Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:06:59.205Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"message":"hi"},"ticketId":"TB#00007","timestamp":"2026-02-16T16:15:22.913Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T16:15:22.916Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:25:31.398Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:25:31.416Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:37:05.347Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:37:05.388Z"}
+{"action":"add_history","level":"info","message":"audit","meta":{"note":"connectivity test note"},"ticketId":"TB#00011","timestamp":"2026-02-16T16:48:16.075Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-16T16:48:16.078Z"}
+{"code":"22P02","file":"numutils.c","length":146,"level":"info","line":"618","message":"Unhandled rejection: invalid input syntax for type integer: \"NaN\"","name":"error","routine":"pg_strtoint32_safe","severity":"ERROR","stack":"error: invalid input syntax for type integer: \"NaN\"\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at listByTicket (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\approvals\\approvals.controller.ts:13:16)","timestamp":"2026-02-16T16:48:16.570Z","where":"unnamed portal parameter $1 = '...'"}
+{"code":"22P02","file":"numutils.c","length":146,"level":"info","line":"618","message":"Unhandled rejection: invalid input syntax for type integer: \"NaN\"","name":"error","routine":"pg_strtoint32_safe","severity":"ERROR","stack":"error: invalid input syntax for type integer: \"NaN\"\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at listByTicket (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tasks\\tasks.controller.ts:13:16)","timestamp":"2026-02-16T16:48:31.586Z","where":"unnamed portal parameter $1 = '...'"}
+{"code":"22P02","file":"numutils.c","length":146,"level":"info","line":"618","message":"Unhandled rejection: invalid input syntax for type integer: \"NaN\"","name":"error","routine":"pg_strtoint32_safe","severity":"ERROR","stack":"error: invalid input syntax for type integer: \"NaN\"\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at listByTicket (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\approvals\\approvals.controller.ts:13:16)","timestamp":"2026-02-16T16:49:04.160Z","where":"unnamed portal parameter $1 = '...'"}
+{"code":"22P02","file":"numutils.c","length":146,"level":"info","line":"618","message":"Unhandled rejection: invalid input syntax for type integer: \"NaN\"","name":"error","routine":"pg_strtoint32_safe","severity":"ERROR","stack":"error: invalid input syntax for type integer: \"NaN\"\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at listByTicket (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tasks\\tasks.controller.ts:13:16)","timestamp":"2026-02-16T16:49:14.240Z","where":"unnamed portal parameter $1 = '...'"}
+{"code":"22P02","file":"numutils.c","length":146,"level":"info","line":"618","message":"Unhandled rejection: invalid input syntax for type integer: \"NaN\"","name":"error","routine":"pg_strtoint32_safe","severity":"ERROR","stack":"error: invalid input syntax for type integer: \"NaN\"\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at listByTicket (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\approvals\\approvals.controller.ts:13:16)","timestamp":"2026-02-16T16:50:22.133Z","where":"unnamed portal parameter $1 = '...'"}
+{"code":"22P02","file":"numutils.c","length":146,"level":"info","line":"618","message":"Unhandled rejection: invalid input syntax for type integer: \"NaN\"","name":"error","routine":"pg_strtoint32_safe","severity":"ERROR","stack":"error: invalid input syntax for type integer: \"NaN\"\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at listByTicket (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tasks\\tasks.controller.ts:13:16)","timestamp":"2026-02-16T16:50:42.180Z","where":"unnamed portal parameter $1 = '...'"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:51:59.571Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:51:59.584Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:52:13.359Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:52:13.373Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:52:30.599Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:52:30.614Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:52:53.130Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:52:53.153Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:53:16.366Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:53:16.384Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T16:54:19.527Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T16:54:19.557Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:02:39.472Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:02:39.494Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:02:58.019Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:02:58.042Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:03:08.682Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:03:08.703Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:05:32.808Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:05:32.846Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:08:26.528Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:08:26.544Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:08:41.905Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:08:41.931Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:08:51.877Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:08:51.939Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:09:03.049Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:09:03.067Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:09:31.821Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:09:31.841Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:09:49.401Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:09:49.423Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:10:13.687Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:10:13.702Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:10:38.778Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:10:38.803Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-16T17:11:10.343Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-16T17:11:10.359Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-17T01:24:15.027Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-17T01:27:31.288Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:05:01.000Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:05:01.024Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:05:14.490Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:05:14.513Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:05:25.898Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:05:25.920Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:12:33.120Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:12:33.153Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:12:45.608Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:12:45.672Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:13:00.524Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:13:00.634Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:13:29.409Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:13:29.458Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:13:47.084Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:13:47.101Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:18:43.212Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:18:43.300Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <1908186707.222987675.1771294790740@abmktmail-batch1l.marketo.org>\nFrom: apac-events@newrelic.com\nDate: Mon, 16 Feb 2026 20:19:50 -0600 (CST)","status":"New","subcategory":"Email","subject":"The 2026 AI Impact Report is here","type":"Incident"}},"ticketId":"TB#00012","timestamp":"2026-02-17T02:20:15.267Z","user":"mail_ingest"}
+{"from":"apac-events@newrelic.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"The 2026 AI Impact Report is here","ticketId":"TB#00012","timestamp":"2026-02-17T02:20:15.709Z","uid":"419"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:20:19.878Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:20:19.884Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:21:03.074Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:21:03.083Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:27:06.189Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:27:06.208Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:27:23.746Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:27:23.775Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:27:48.558Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:27:48.581Z"}
+{"action":"create_sla","entity":"sla","entityId":1,"level":"info","message":"audit","meta":{"name":"Default SLA"},"timestamp":"2026-02-17T02:31:20.921Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T02:31:20.925Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00011","timestamp":"2026-02-17T02:41:39.501Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T02:41:39.505Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:48:24.751Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:48:24.760Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:57:27.989Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:57:28.020Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:57:49.654Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:57:49.663Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T02:57:58.736Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T02:57:58.759Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00012","timestamp":"2026-02-17T03:10:05.554Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T03:10:05.573Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00012","timestamp":"2026-02-17T03:10:07.853Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T03:10:07.856Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00012","timestamp":"2026-02-17T03:10:09.892Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T03:10:09.895Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00012","timestamp":"2026-02-17T03:10:16.506Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T03:10:16.508Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T03:13:25.538Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T03:13:25.542Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:06:56.425Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:06:56.429Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:07:07.937Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:07:07.945Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:30.162Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:30.181Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:31.316Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:31.318Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:34.496Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:34.498Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:36.651Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:36.653Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:37.800Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:37.802Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:39.652Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:39.654Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:41.438Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:41.440Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:42.831Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:42.833Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:46.073Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:46.075Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:47.861Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:47.863Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:09:57.939Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:09:57.941Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00010","timestamp":"2026-02-17T04:10:00.331Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:10:00.333Z"}
+{"action":"update_sla","entity":"sla","entityId":1,"level":"info","message":"audit","timestamp":"2026-02-17T04:11:36.785Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:11:36.788Z"}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Hi"},"ticketId":"TB#00006","timestamp":"2026-02-17T04:12:30.161Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:12:30.168Z"}
+{"action":"create_user","entity":"user","entityId":5,"level":"info","message":"audit","meta":{"email":"girikumaran@trustybytes.in","role":"USER"},"timestamp":"2026-02-17T04:15:27.561Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:15:27.570Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-17T04:16:45.366Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:16:45.368Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:18:13.735Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:18:13.746Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:23:51.963Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:23:51.970Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:24:04.650Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:24:04.669Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:28:39.067Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:28:39.080Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:28:54.149Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:28:54.227Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:29:05.186Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:29:05.199Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:29:29.741Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:29:29.753Z"}
+{"code":"42703","file":"parse_relation.c","hint":"Perhaps you meant to reference the column \"t.requester_id\".","length":173,"level":"info","line":"3838","message":"Unhandled rejection: column t.requesterId does not exist","name":"error","position":"132","routine":"errorMissingColumn","severity":"ERROR","stack":"error: column t.requesterId does not exist\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at async Promise.all (index 0)\n    at Object.getTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.service.ts:268:29)\n    at listTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.controller.ts:9:19)","timestamp":"2026-02-17T04:30:28.092Z"}
+{"code":"42703","file":"parse_relation.c","hint":"Perhaps you meant to reference the column \"t.requester_id\".","length":173,"level":"info","line":"3838","message":"Unhandled rejection: column t.requesterId does not exist","name":"error","position":"132","routine":"errorMissingColumn","severity":"ERROR","stack":"error: column t.requesterId does not exist\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at async Promise.all (index 0)\n    at Object.getTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.service.ts:268:29)\n    at listTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.controller.ts:9:19)","timestamp":"2026-02-17T04:30:48.057Z"}
+{"code":"42703","file":"parse_relation.c","hint":"Perhaps you meant to reference the column \"t.requester_id\".","length":173,"level":"info","line":"3838","message":"Unhandled rejection: column t.requesterId does not exist","name":"error","position":"132","routine":"errorMissingColumn","severity":"ERROR","stack":"error: column t.requesterId does not exist\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at async Promise.all (index 0)\n    at Object.getTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.service.ts:268:29)\n    at listTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.controller.ts:9:19)","timestamp":"2026-02-17T04:30:51.790Z"}
+{"code":"42703","file":"parse_relation.c","hint":"Perhaps you meant to reference the column \"t.requester_id\".","length":173,"level":"info","line":"3838","message":"Unhandled rejection: column t.requesterId does not exist","name":"error","position":"132","routine":"errorMissingColumn","severity":"ERROR","stack":"error: column t.requesterId does not exist\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at async Promise.all (index 0)\n    at Object.getTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.service.ts:268:29)\n    at listTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.controller.ts:9:19)","timestamp":"2026-02-17T04:31:11.773Z"}
+{"code":"42703","file":"parse_relation.c","hint":"Perhaps you meant to reference the column \"t.requester_id\".","length":173,"level":"info","line":"3838","message":"Unhandled rejection: column t.requesterId does not exist","name":"error","position":"132","routine":"errorMissingColumn","severity":"ERROR","stack":"error: column t.requesterId does not exist\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at async Promise.all (index 0)\n    at Object.getTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.service.ts:268:29)\n    at listTickets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\tickets\\ticket.controller.ts:9:19)","timestamp":"2026-02-17T04:31:26.792Z"}
+{"code":"42P01","file":"parse_relation.c","length":105,"level":"info","line":"1469","message":"Unhandled rejection: relation \"assets\" does not exist","name":"error","position":"87","routine":"parserOpenTable","severity":"ERROR","stack":"error: relation \"assets\" does not exist\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at async Promise.all (index 0)\n    at Object.listAssets (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\assets\\assets.service.ts:81:29)\n    at list (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\assets\\assets.controller.ts:100:17)","timestamp":"2026-02-17T04:31:32.497Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:32:07.428Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:32:07.435Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:39:17.063Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:39:17.072Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:45:21.541Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:45:21.556Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:45:55.672Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:45:55.683Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:46:18.964Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:46:18.973Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T04:46:45.905Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T04:46:45.928Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-17T04:51:54.135Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T04:51:54.151Z"}
+{"code":"23503","constraint":"Asset_createdById_fkey","detail":"Key (createdById)=(1) is not present in table \"User\".","file":"ri_triggers.c","length":253,"level":"info","line":"2783","message":"Unhandled rejection: insert or update on table \"Asset\" violates foreign key constraint \"Asset_createdById_fkey\"","name":"error","routine":"ri_ReportViolation","schema":"public","severity":"ERROR","stack":"error: insert or update on table \"Asset\" violates foreign key constraint \"Asset_createdById_fkey\"\n    at C:\\Users\\girim\\Desktop\\ITSM\\backend\\node_modules\\pg-pool\\index.js:45:11\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at query (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\db.ts:22:31)\n    at Object.createAsset (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\assets\\assets.service.ts:134:16)\n    at create (C:\\Users\\girim\\Desktop\\ITSM\\backend\\src\\modules\\assets\\assets.controller.ts:124:19)","table":"Asset","timestamp":"2026-02-17T04:54:49.750Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T05:02:59.676Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T05:02:59.680Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-17T05:08:59.156Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T05:08:59.159Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T05:15:21.321Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T05:15:21.391Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T05:15:35.148Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T05:15:35.160Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00012","timestamp":"2026-02-17T05:25:14.897Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T05:25:14.901Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00012","timestamp":"2026-02-17T05:25:16.615Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T05:25:16.627Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00012","timestamp":"2026-02-17T05:25:19.319Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T05:25:19.324Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00012","timestamp":"2026-02-17T05:25:23.275Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T05:25:23.278Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:14:11.280Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:14:11.312Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:17:19.107Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:17:19.158Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-17T06:31:19.783Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T06:31:19.791Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-17T06:31:40.037Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T06:31:40.039Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:38:32.399Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:38:32.406Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:41:21.742Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:41:21.752Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-17T06:42:08.827Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T06:42:08.836Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:42:31.724Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:42:31.780Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:47:42.861Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:47:42.867Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:48:46.689Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:48:46.694Z"}
+{"action":"create_user","entity":"user","entityId":9,"level":"info","message":"audit","meta":{"email":"girims9901@gmail.com","role":"USER"},"timestamp":"2026-02-17T06:50:11.980Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T06:50:11.983Z"}
+{"action":"update_user","entity":"user","entityId":9,"level":"info","message":"audit","timestamp":"2026-02-17T06:50:18.450Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T06:50:18.453Z"}
+{"action":"update_user","entity":"user","entityId":9,"level":"info","message":"audit","timestamp":"2026-02-17T06:53:02.609Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T06:53:02.612Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:55:10.607Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:55:10.614Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T06:55:33.228Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T06:55:33.243Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:01:46.593Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:01:46.600Z"}
+{"action":"create_sla","entity":"sla","entityId":2,"level":"info","message":"audit","meta":{"name":"Default SLA"},"timestamp":"2026-02-17T07:16:29.131Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T07:16:29.137Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00011","timestamp":"2026-02-17T07:16:37.136Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T07:16:37.139Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00011","timestamp":"2026-02-17T07:16:38.063Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T07:16:38.067Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00011","timestamp":"2026-02-17T07:16:40.672Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T07:16:40.677Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00011","timestamp":"2026-02-17T07:16:42.684Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T07:16:42.688Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:25:07.809Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:25:07.815Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:25:26.573Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:25:26.578Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <YfgEJZMERMiy-7cytDMRlQ@geopod-ismtpd-67>\nFrom: noreply@email.openai.com\nDate: Tue, 17 Feb 2026 07:27:06 +0000 (UTC)","status":"New","subcategory":"Email","subject":"Updates to =?UTF-8?B?T3BlbkFJ4oCZcw==?= Privacy Policy","type":"Incident"}},"ticketId":"TB#00013","timestamp":"2026-02-17T07:27:28.735Z","user":"mail_ingest"}
+{"from":"noreply@email.openai.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Updates to =?UTF-8?B?T3BlbkFJ4oCZcw==?= Privacy Policy","ticketId":"TB#00013","timestamp":"2026-02-17T07:27:29.163Z","uid":"420"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:33:18.933Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:33:18.938Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:33:43.617Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:33:43.623Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:50:06.385Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:50:06.389Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:50:27.524Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:50:27.551Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:54:27.709Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:54:27.715Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T07:54:50.473Z"}
+{"intervalMs":30000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T07:54:50.477Z"}
+{"action":"update_user","entity":"user","entityId":9,"level":"info","message":"audit","timestamp":"2026-02-17T08:07:49.309Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T08:07:49.327Z"}
+{"action":"update_user","entity":"user","entityId":9,"level":"info","message":"audit","timestamp":"2026-02-17T08:07:58.980Z","user":"1"}
+{"error":"insert or update on table \"AuditLog\" violates foreign key constraint \"AuditLog_userId_fkey\"","level":"warn","message":"audit_store_failed","timestamp":"2026-02-17T08:07:58.983Z"}

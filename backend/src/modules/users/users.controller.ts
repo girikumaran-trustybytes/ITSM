@@ -138,6 +138,38 @@ export async function sendInvite(req: Request, res: Response) {
   }
 }
 
+export async function sendServiceAccountInvite(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id)
+    if (!id) return res.status(400).json({ error: 'Invalid id' })
+    const toEmail = String((req.body as any)?.toEmail || '').trim() || undefined
+    const result = await rbacSvc.sendServiceAccountInvite(
+      id,
+      Number((req as any).user?.id || 0),
+      { mode: 'invite', toEmail }
+    )
+    res.json(result)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to send service account invite' })
+  }
+}
+
+export async function reinviteServiceAccount(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id)
+    if (!id) return res.status(400).json({ error: 'Invalid id' })
+    const toEmail = String((req.body as any)?.toEmail || '').trim() || undefined
+    const result = await rbacSvc.sendServiceAccountInvite(
+      id,
+      Number((req as any).user?.id || 0),
+      { mode: 'reinvite', toEmail }
+    )
+    res.json(result)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to re-invite service account' })
+  }
+}
+
 export async function markInvitePending(req: Request, res: Response) {
   try {
     const id = Number(req.params.id)

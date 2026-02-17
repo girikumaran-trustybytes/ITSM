@@ -57,11 +57,10 @@ const navItems: NavItem[] = [
     label: 'Suppliers',
     icon: (
       <svg className="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7" />
-        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-        <path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4" />
-        <path d="M2 7h20" />
-        <path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7" />
+        <rect x="1" y="6" width="13" height="10" rx="1" />
+        <path d="M14 9h4l3 3v4h-7z" />
+        <circle cx="6" cy="18" r="2" />
+        <circle cx="18" cy="18" r="2" />
       </svg>
     )
   },
@@ -70,8 +69,19 @@ const navItems: NavItem[] = [
     label: 'Accounts',
     icon: (
       <svg className="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
+        <path d="M8 2h8l4 4v16H8z" />
+        <path d="M16 2v4h4" />
+        <rect x="2" y="3" width="8" height="10" rx="1.5" />
+        <path d="M4 6h4" />
+        <path d="M4 9h1" />
+        <path d="M6 9h1" />
+        <path d="M4 11h1" />
+        <path d="M6 11h1" />
+        <circle cx="12" cy="17" r="2.5" />
+        <path d="M11 17h2" />
+        <path d="M12 15.5v3" />
+        <path d="M15.5 20.5 20 16" />
+        <path d="M19 17l1 1" />
       </svg>
     )
   },

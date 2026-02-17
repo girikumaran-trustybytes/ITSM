@@ -8,18 +8,21 @@ const api = axios.create({
   withCredentials: true,
 })
 
-// simple token helper using localStorage
+// token helper (persistent + session)
 function getAccessToken() {
-  return localStorage.getItem('accessToken')
+  return localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
 }
 
 async function refreshToken() {
-  const refresh = localStorage.getItem('refreshToken')
+  const localRefresh = localStorage.getItem('refreshToken')
+  const sessionRefresh = sessionStorage.getItem('refreshToken')
+  const refresh = localRefresh || sessionRefresh
   if (!refresh) throw new Error('No refresh token')
   const res = await api.post('/auth/refresh', { refreshToken: refresh })
   const data = res.data
   if (data.accessToken) {
-    localStorage.setItem('accessToken', data.accessToken)
+    if (localRefresh) localStorage.setItem('accessToken', data.accessToken)
+    else sessionStorage.setItem('accessToken', data.accessToken)
     return data.accessToken
   }
   throw new Error('Failed refresh')
@@ -55,6 +58,8 @@ api.interceptors.response.use(
         // fallback
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
+        sessionStorage.removeItem('accessToken');
+        sessionStorage.removeItem('refreshToken');
         window.location.href = '/login';
         return Promise.reject(e);
       }

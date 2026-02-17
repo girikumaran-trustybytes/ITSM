@@ -51,7 +51,8 @@ export default {
     message: string,
     subjectOverride?: string,
     cc?: string,
-    bcc?: string
+    bcc?: string,
+    attachments?: Array<{ filename: string; path?: string; contentType?: string }>
   ) {
     const subject = String(subjectOverride || `[ITSM] New response: ${ticket?.ticketId || ticket?.id || ''}`).trim()
     const text = [
@@ -59,7 +60,7 @@ export default {
       `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
       `Message: ${message || '-'}`,
     ].join('\n')
-    await sendSmtpMail({ to: email, cc, bcc, subject, text })
+    await sendSmtpMail({ to: email, cc, bcc, subject, text, attachments })
   },
 
   async sendTicketResolved(email: string, ticket: any) {

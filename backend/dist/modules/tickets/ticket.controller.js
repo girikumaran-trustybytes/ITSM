@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteTicket = exports.updateTicket = exports.unassignAsset = exports.assignAsset = exports.resolveTicket = exports.privateNote = exports.respond = exports.addHistory = exports.transitionTicket = exports.createTicket = exports.getTicket = exports.listTickets = void 0;
+exports.deleteTicket = exports.updateTicket = exports.unassignAsset = exports.assignAsset = exports.resolveTicket = exports.uploadAttachments = exports.privateNote = exports.respond = exports.addHistory = exports.transitionTicket = exports.createTicket = exports.getTicket = exports.listTickets = void 0;
 const ticketService = __importStar(require("./ticket.service"));
 const listTickets = async (req, res) => {
     const page = Number(req.query.page || 1);
@@ -94,12 +94,12 @@ const addHistory = async (req, res) => {
 exports.addHistory = addHistory;
 const respond = async (req, res) => {
     const id = req.params.id;
-    const { message, sendEmail, to, cc, bcc, subject } = req.validated?.body || req.body || {};
+    const { message, sendEmail, to, cc, bcc, subject, attachmentIds } = req.validated?.body || req.body || {};
     if (!message || !message.trim())
         return res.status(400).json({ error: 'Message is required' });
     const user = req.user?.id || 'system';
     try {
-        const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject });
+        const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject, attachmentIds });
         res.status(201).json(entry);
     }
     catch (err) {
@@ -109,12 +109,12 @@ const respond = async (req, res) => {
 exports.respond = respond;
 const privateNote = async (req, res) => {
     const id = req.params.id;
-    const { note } = req.validated?.body || req.body || {};
+    const { note, attachmentIds } = req.validated?.body || req.body || {};
     if (!note || !note.trim())
         return res.status(400).json({ error: 'Note is required' });
     const user = req.user?.id || 'system';
     try {
-        const entry = await ticketService.addPrivateNote(id, { note, user });
+        const entry = await ticketService.addPrivateNote(id, { note, user, attachmentIds });
         res.status(201).json(entry);
     }
     catch (err) {
@@ -122,6 +122,19 @@ const privateNote = async (req, res) => {
     }
 };
 exports.privateNote = privateNote;
+const uploadAttachments = async (req, res) => {
+    const id = req.params.id;
+    const { files, note, internal } = req.validated?.body || req.body || {};
+    const user = req.user?.id || 'system';
+    try {
+        const result = await ticketService.uploadTicketAttachments(id, { files, user, note, internal });
+        res.status(201).json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to upload attachments' });
+    }
+};
+exports.uploadAttachments = uploadAttachments;
 const resolveTicket = async (req, res) => {
     const id = req.params.id;
     const { resolution, resolutionCategory, sendEmail } = req.validated?.body || req.body || {};

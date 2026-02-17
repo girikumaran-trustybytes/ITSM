@@ -1,6 +1,6 @@
 import net from 'net'
 import tls from 'tls'
-import { createTicket } from '../modules/tickets/ticket.service'
+import { addResponse, createTicket } from '../modules/tickets/ticket.service'
 import { loadMailConfigFromEnv } from '../services/mail.integration'
 import { query, queryOne } from '../db'
 import logger from '../common/logger/logger'
@@ -15,6 +15,8 @@ type ImapCommandResult = {
 type ParsedMailHeader = {
   uid: string
   messageId: string
+  inReplyTo: string
+  references: string
   fromRaw: string
   fromEmail: string
   toRaw: string
@@ -217,6 +219,8 @@ function parseFetchedHeaders(lines: string[]): ParsedMailHeader {
   const uidMatch = /\bUID\s+(\d+)\b/i.exec(uidLine)
   const uid = uidMatch?.[1] || ''
   const messageId = extractHeaderValue(lines, 'message-id')
+  const inReplyTo = extractHeaderValue(lines, 'in-reply-to')
+  const references = extractHeaderValue(lines, 'references')
   const fromRaw = extractHeaderValue(lines, 'from')
   const toRaw = extractHeaderValue(lines, 'to')
   const subject = extractHeaderValue(lines, 'subject')
@@ -225,12 +229,79 @@ function parseFetchedHeaders(lines: string[]): ParsedMailHeader {
   return {
     uid,
     messageId,
+    inReplyTo,
+    references,
     fromRaw,
     fromEmail,
     toRaw,
     subject,
     dateRaw,
   }
+}
+
+function extractTicketRefFromSubject(subject: string): string | null {
+  const s = String(subject || '')
+  const tb = s.match(/\bTB#\d{1,10}\b/i)
+  if (tb?.[0]) return tb[0].toUpperCase()
+  const adx = s.match(/\bADX#\d{1,10}\b/i)
+  if (adx?.[0]) return adx[0].toUpperCase()
+  return null
+}
+
+function extractMessageIds(raw: string): string[] {
+  const matches = String(raw || '').match(/<[^>]+>/g) || []
+  return matches.map((m) => m.trim()).filter(Boolean)
+}
+
+async function findTicketDbIdByTicketRef(ticketRef: string): Promise<number | null> {
+  if (!ticketRef) return null
+  const row = await queryOne<{ id: number }>(
+    'SELECT "id" FROM "Ticket" WHERE UPPER("ticketId") = UPPER($1)',
+    [ticketRef]
+  )
+  return Number(row?.id || 0) || null
+}
+
+async function findTicketDbIdByMessageThread(mail: ParsedMailHeader): Promise<number | null> {
+  const ids = [
+    ...extractMessageIds(mail.inReplyTo),
+    ...extractMessageIds(mail.references),
+  ]
+  if (ids.length === 0) return null
+  const row = await queryOne<{ ticket_id: number }>(
+    `SELECT ticket_id
+     FROM mail_ticket_ingest_log
+     WHERE message_id = ANY($1::text[])
+       AND ticket_id IS NOT NULL
+     ORDER BY id DESC
+     LIMIT 1`,
+    [ids]
+  )
+  return Number(row?.ticket_id || 0) || null
+}
+
+async function appendInboundReplyToTicket(ticketDbId: number, mailbox: string, mail: ParsedMailHeader) {
+  const ticket = await queryOne<{ id: number; ticketId: string }>(
+    'SELECT "id", "ticketId" FROM "Ticket" WHERE "id" = $1',
+    [ticketDbId]
+  )
+  if (!ticket?.id) return null
+
+  const message = [
+    `Inbound email reply received.`,
+    `Mailbox: ${mailbox}`,
+    mail.fromEmail ? `From: ${mail.fromEmail}` : '',
+    mail.subject ? `Subject: ${mail.subject}` : '',
+    mail.messageId ? `Message-Id: ${mail.messageId}` : '',
+    mail.dateRaw ? `Date: ${mail.dateRaw}` : '',
+  ].filter(Boolean).join('\n')
+
+  await addResponse(String(ticket.id), {
+    message,
+    user: 'mail_ingest',
+    sendEmail: false,
+  })
+  return ticket
 }
 
 async function alreadyProcessed(mailbox: string, uid: string): Promise<boolean> {
@@ -335,7 +406,7 @@ async function processMailboxOnce() {
 
     for (const seq of messageSeqs) {
       const fetchResult = await session.run(
-        `FETCH ${seq} (UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM TO SUBJECT DATE)])`
+        `FETCH ${seq} (UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID IN-REPLY-TO REFERENCES FROM TO SUBJECT DATE)])`
       )
       if (fetchResult.status !== 'OK') continue
 
@@ -360,7 +431,18 @@ async function processMailboxOnce() {
         continue
       }
 
-      const ticket = await createTicketFromMail(mailbox, mail)
+      const ticketRef = extractTicketRefFromSubject(mail.subject)
+      let existingTicketDbId = ticketRef ? await findTicketDbIdByTicketRef(ticketRef) : null
+      if (!existingTicketDbId) {
+        existingTicketDbId = await findTicketDbIdByMessageThread(mail)
+      }
+
+      let ticket: any = null
+      if (existingTicketDbId) {
+        ticket = await appendInboundReplyToTicket(existingTicketDbId, mailbox, mail)
+      } else {
+        ticket = await createTicketFromMail(mailbox, mail)
+      }
       await markProcessed({
         mailbox: cfg.imap.mailbox,
         uid: mail.uid,
@@ -371,7 +453,7 @@ async function processMailboxOnce() {
       })
 
       await session.run(`STORE ${seq} +FLAGS (\\Seen)`)
-      logger.info('mail_ticket_created', {
+      logger.info(existingTicketDbId ? 'mail_ticket_updated' : 'mail_ticket_created', {
         mailbox: cfg.imap.mailbox,
         uid: mail.uid,
         from: mail.fromEmail,

@@ -51,6 +51,8 @@ async function update(req, res) {
     const id = Number(req.params.id);
     const data = req.body;
     const s = await svc.updateSupplier(id, data);
+    if (!s)
+        return res.status(404).json({ error: 'Not found' });
     await (0, logger_1.auditLog)({ action: 'update_supplier', entity: 'supplier', entityId: s.id, user: req.user?.id });
     res.json(s);
 }
@@ -58,6 +60,8 @@ exports.update = update;
 async function remove(req, res) {
     const id = Number(req.params.id);
     const deleted = await svc.deleteSupplier(id);
+    if (!deleted)
+        return res.status(404).json({ error: 'Not found' });
     await (0, logger_1.auditLog)({ action: 'delete_supplier', entity: 'supplier', entityId: deleted.id, user: req.user?.id, meta: { companyName: deleted.companyName } });
     res.json({ ok: true });
 }

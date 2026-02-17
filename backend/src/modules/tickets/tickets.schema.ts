@@ -62,10 +62,12 @@ export const ticketsRespondBodySchema = z.object({
   cc: z.string().optional(),
   bcc: z.string().optional(),
   subject: z.string().min(1).optional(),
+  attachmentIds: z.array(z.number().int().positive()).optional(),
 })
 
 export const ticketsPrivateNoteBodySchema = z.object({
   note: z.string().min(1),
+  attachmentIds: z.array(z.number().int().positive()).optional(),
 })
 
 export const ticketsResolveBodySchema = z.object({
@@ -81,3 +83,16 @@ export const ticketsAssignAssetBodySchema = z.object({
 export const ticketsUnassignAssetBodySchema = z.object({})
 
 export const ticketsAuditQuerySchema = z.object({})
+
+export const ticketUploadFileSchema = z.object({
+  name: z.string().min(1),
+  type: z.string().optional(),
+  size: z.number().int().nonnegative(),
+  contentBase64: z.string().min(1),
+})
+
+export const ticketsUploadAttachmentsBodySchema = z.object({
+  files: z.array(ticketUploadFileSchema).min(1),
+  note: z.string().optional(),
+  internal: z.boolean().optional(),
+})

@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markInvitePending = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
+exports.markInvitePending = exports.reinviteServiceAccount = exports.sendServiceAccountInvite = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
 const svc = __importStar(require("./users.service"));
 const logger_1 = require("../../common/logger/logger");
 const rbacSvc = __importStar(require("./rbac.service"));
@@ -166,6 +166,34 @@ async function sendInvite(req, res) {
     }
 }
 exports.sendInvite = sendInvite;
+async function sendServiceAccountInvite(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        const toEmail = String(req.body?.toEmail || '').trim() || undefined;
+        const result = await rbacSvc.sendServiceAccountInvite(id, Number(req.user?.id || 0), { mode: 'invite', toEmail });
+        res.json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to send service account invite' });
+    }
+}
+exports.sendServiceAccountInvite = sendServiceAccountInvite;
+async function reinviteServiceAccount(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        const toEmail = String(req.body?.toEmail || '').trim() || undefined;
+        const result = await rbacSvc.sendServiceAccountInvite(id, Number(req.user?.id || 0), { mode: 'reinvite', toEmail });
+        res.json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to re-invite service account' });
+    }
+}
+exports.reinviteServiceAccount = reinviteServiceAccount;
 async function markInvitePending(req, res) {
     try {
         const id = Number(req.params.id);

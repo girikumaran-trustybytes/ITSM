@@ -14,3 +14,21 @@ export const authRefreshBodySchema = z.object({
 
 export const authRefreshParamsSchema = z.object({})
 export const authRefreshQuerySchema = z.object({})
+
+export const authGoogleBodySchema = z.object({
+  idToken: z.string().min(1),
+})
+
+export const authForgotPasswordBodySchema = z.object({
+  email: z.string().email(),
+})
+
+export const authResetPasswordBodySchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
+})
+
+export const authVerifyMfaBodySchema = z.object({
+  challengeToken: z.string().min(1),
+  code: z.string().min(4).max(8),
+})

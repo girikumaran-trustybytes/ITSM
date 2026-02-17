@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.refresh = exports.login = void 0;
+exports.googleConfig = exports.changePassword = exports.refresh = exports.verifyMfa = exports.resetPassword = exports.forgotPassword = exports.loginWithGoogle = exports.login = void 0;
 const authService = __importStar(require("./auth.service"));
 function isDbError(err) {
     const name = err?.constructor?.name ?? '';
@@ -56,6 +56,66 @@ async function login(req, res) {
     }
 }
 exports.login = login;
+async function loginWithGoogle(req, res) {
+    const { idToken } = req.body;
+    try {
+        const result = await authService.loginWithGoogle(idToken);
+        res.json(result);
+    }
+    catch (err) {
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
+        res.status(401).json({ error: err.message || 'Google login failed' });
+    }
+}
+exports.loginWithGoogle = loginWithGoogle;
+async function forgotPassword(req, res) {
+    const { email } = req.body;
+    try {
+        const result = await authService.forgotPassword(email);
+        res.json(result);
+    }
+    catch (err) {
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
+        res.status(err.status || 400).json({ error: err.message || 'Unable to process request' });
+    }
+}
+exports.forgotPassword = forgotPassword;
+async function resetPassword(req, res) {
+    const { token, password } = req.body;
+    try {
+        const result = await authService.resetPassword(token, password);
+        res.json(result);
+    }
+    catch (err) {
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
+        res.status(400).json({ error: err.message || 'Unable to reset password' });
+    }
+}
+exports.resetPassword = resetPassword;
+async function verifyMfa(req, res) {
+    const { challengeToken, code } = req.body;
+    try {
+        const result = await authService.verifyMfa(challengeToken, code);
+        res.json(result);
+    }
+    catch (err) {
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
+        res.status(401).json({ error: err.message || 'Invalid MFA code' });
+    }
+}
+exports.verifyMfa = verifyMfa;
 async function refresh(req, res) {
     const { refreshToken } = req.body;
     try {
@@ -71,3 +131,27 @@ async function refresh(req, res) {
     }
 }
 exports.refresh = refresh;
+async function changePassword(req, res) {
+    const { currentPassword, newPassword } = req.body || {};
+    const userId = Number(req?.user?.id || 0);
+    try {
+        const result = await authService.changePassword(userId, String(currentPassword || ''), String(newPassword || ''));
+        res.json(result);
+    }
+    catch (err) {
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
+        res.status(400).json({ error: err.message || 'Unable to change password' });
+    }
+}
+exports.changePassword = changePassword;
+async function googleConfig(_req, res) {
+    const clientId = String(process.env.GOOGLE_CLIENT_ID || '').trim();
+    res.json({
+        enabled: Boolean(clientId),
+        clientId: clientId || null,
+    });
+}
+exports.googleConfig = googleConfig;

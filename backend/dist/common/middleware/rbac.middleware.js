@@ -4,7 +4,9 @@ exports.permit = void 0;
 function permit(roles) {
     return (req, res, next) => {
         const user = req.user || { role: 'guest' };
-        if (roles.includes(user.role))
+        const actualRole = String(user.role || '').toUpperCase();
+        const allowedRoles = roles.map((r) => String(r || '').toUpperCase());
+        if (allowedRoles.includes(actualRole))
             return next();
         return res.status(403).json({ error: 'Forbidden' });
     };

@@ -154,6 +154,7 @@ export async function sendSmtpMail(
     text?: string
     html?: string
     from?: string
+    attachments?: Array<{ filename: string; path?: string; contentType?: string }>
   },
   override?: Partial<MailConfig>
 ) {
@@ -187,6 +188,7 @@ export async function sendSmtpMail(
     subject,
     text: payload.text,
     html: payload.html,
+    attachments: payload.attachments,
   })
 
   return {

@@ -5,13 +5,21 @@ import * as ticketService from '../services/ticket.service'
 import * as ticketSvc from '../services/ticket.service'
 import * as assetService from '../services/asset.service'
 import * as userService from '../services/user.service'
+import { listSlaConfigs } from '../services/sla.service'
 import { useAuth } from '../contexts/AuthContext'
 import { getRowsPerPage } from '../utils/pagination'
 import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
+const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+
+type LocalAttachment = {
+  key: string
+  file: File
+}
 
 export type Incident = {
   id: string
   slaTimeLeft: string
+  sla?: any
   subject: string
   category: string
   priority: 'Low' | 'Medium' | 'High'
@@ -55,6 +63,17 @@ export default function TicketsView() {
   const [activeDetailTab, setActiveDetailTab] = useState('Progress')
   const [showActionComposer, setShowActionComposer] = useState(false)
   const [showInternalNoteEditor, setShowInternalNoteEditor] = useState(false)
+  const [slaPolicies, setSlaPolicies] = useState<any[]>([])
+  const [slaApplying, setSlaApplying] = useState(false)
+  const [slaPolicyMenuOpen, setSlaPolicyMenuOpen] = useState(false)
+  const [slaPriorityMenuOpen, setSlaPriorityMenuOpen] = useState(false)
+  const [composerAttachments, setComposerAttachments] = useState<LocalAttachment[]>([])
+  const [internalNoteAttachments, setInternalNoteAttachments] = useState<LocalAttachment[]>([])
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
+  const composerFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const internalNoteFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const slaPolicyMenuRef = React.useRef<HTMLDivElement | null>(null)
+  const slaPriorityMenuRef = React.useRef<HTMLDivElement | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [showCcField, setShowCcField] = useState(false)
   const [showBccField, setShowBccField] = useState(false)
@@ -70,10 +89,11 @@ export default function TicketsView() {
     body: '',
     nextUpdateDate: '',
     nextUpdateTime: '',
-    issue: 'Offline',
-    issueDetail: 'Services>Network',
+    issue: 'Category1',
+    issueDetail: 'Category2',
     currentAction: '',
     nextAction: '',
+    asset: '',
     supplier: 'Supplier and Contract',
     supplierRef: '',
     approvalTeam: 'Management Team',
@@ -101,13 +121,169 @@ export default function TicketsView() {
     description: ''
   })
 
+  const inferInboundEndUser = (ticketData: any) => {
+    const requester = ticketData?.requester
+    if (requester && (requester.name || requester.email || requester.username)) return requester
+
+    const body = String(ticketData?.description || '')
+    const fromLine = body.match(/^\s*From:\s*(.+)\s*$/im)?.[1]?.trim() || ''
+    if (!fromLine) return null
+
+    const emailMatch = fromLine.match(/([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)
+    const email = emailMatch?.[1] || ''
+    const namePart = fromLine.replace(/<[^>]+>/g, '').replace(email, '').replace(/["']/g, '').trim()
+    const username = email ? email.split('@')[0] : ''
+    return {
+      name: namePart || username || email || 'End User',
+      username: username || undefined,
+      email: email || undefined,
+    }
+  }
+
+  const formatTimelineTime = (raw: any) => {
+    if (!raw) return new Date().toLocaleString()
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? String(raw) : d.toLocaleString()
+  }
+
+  const toLocalDateTime = (raw: any) => {
+    if (!raw) return '-'
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
+  }
+
+  const applySlaPriority = async (priority: 'High' | 'Medium' | 'Low') => {
+    if (!selectedTicket) return
+    try {
+      setSlaApplying(true)
+      await ticketService.updateTicket(selectedTicket.id, { priority })
+      const latest: any = await ticketService.getTicket(selectedTicket.id)
+      setSelectedTicket((prev) =>
+        prev
+          ? {
+              ...prev,
+              priority: (latest?.priority || priority) as Incident['priority'],
+              sla: latest?.sla || prev.sla,
+              slaTimeLeft: latest?.slaTimeLeft || latest?.sla?.resolution?.remainingLabel || prev.slaTimeLeft,
+            }
+          : prev
+      )
+      setIncidents((prev) =>
+        prev.map((i) =>
+          i.id === selectedTicket.id
+            ? {
+                ...i,
+                priority: (latest?.priority || priority) as Incident['priority'],
+                sla: latest?.sla || i.sla,
+                slaTimeLeft: latest?.slaTimeLeft || latest?.sla?.resolution?.remainingLabel || i.slaTimeLeft,
+              }
+            : i
+        )
+      )
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to update SLA')
+    } finally {
+      setSlaApplying(false)
+    }
+  }
+
+  const handlePolicyChange = async (policyIdRaw: string) => {
+    const policyId = Number(policyIdRaw)
+    if (!Number.isFinite(policyId) || !selectedTicket) return
+    const chosen = slaPolicies.find((p) => Number(p.id) === policyId)
+    if (!chosen) return
+    const targetPriority = String(chosen.priority || 'Medium') as 'High' | 'Medium' | 'Low'
+    await applySlaPriority(targetPriority)
+  }
+
+  const handlePolicySelectFromPill = async (policyIdRaw: string) => {
+    setSlaPolicyMenuOpen(false)
+    await handlePolicyChange(policyIdRaw)
+    setSlaPriorityMenuOpen(true)
+  }
+
+  React.useEffect(() => {
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (slaPolicyMenuRef.current && !slaPolicyMenuRef.current.contains(target)) {
+        setSlaPolicyMenuOpen(false)
+      }
+      if (slaPriorityMenuRef.current && !slaPriorityMenuRef.current.contains(target)) {
+        setSlaPriorityMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  const resolveHistoryAuthor = (historyEntry: any, ticketData: any) => {
+    const changedById = Number(historyEntry?.changedById || 0)
+    if (changedById > 0) {
+      const match = agents.find((a: any) => Number(a?.id) === changedById)
+      if (match) return getAgentDisplayName(match)
+      return `User #${changedById}`
+    }
+    const note = String(historyEntry?.note || '').toLowerCase()
+    const isInboundReply = note.includes('inbound email reply received') || note.includes('\nfrom:')
+    if (!isInboundReply) return 'System'
+    const requester = inferInboundEndUser(ticketData)
+    if (requester?.name || requester?.email || requester?.username) {
+      return String(requester.name || requester.email || requester.username)
+    }
+    return 'System'
+  }
+
+  const hydrateTimelineFromTicket = (ticketData: any) => {
+    const ticketKey = String(ticketData?.ticketId || ticketData?.id || '')
+    if (!ticketKey) return
+
+    const requester = inferInboundEndUser(ticketData)
+    const initialAuthor = String(requester?.name || requester?.email || requester?.username || 'System')
+    const initialText = String(ticketData?.subject || ticketData?.description || 'Ticket created').trim()
+    const initialTime = formatTimelineTime(ticketData?.createdAt)
+
+    const historyItems = Array.isArray(ticketData?.history) ? ticketData.history : []
+    const historyComments = historyItems
+      .map((h: any) => {
+        const note = String(h?.note || '').trim()
+        const fromStatus = String(h?.fromStatus || '').trim()
+        const toStatus = String(h?.toStatus || '').trim()
+        const fallback = fromStatus || toStatus ? `Status changed: ${fromStatus || '-'} -> ${toStatus || '-'}` : 'Ticket updated'
+        return {
+          author: resolveHistoryAuthor(h, ticketData),
+          text: note || fallback,
+          time: formatTimelineTime(h?.createdAt),
+        }
+      })
+      .filter((e: any) => String(e.text || '').trim().length > 0)
+
+    const merged = [
+      { author: initialAuthor, text: `Ticket created: ${initialText}`, time: initialTime },
+      ...historyComments,
+    ]
+
+    const seen = new Set<string>()
+    const deduped = merged.filter((e) => {
+      const key = `${e.author}|${e.text}|${e.time}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+    setTicketComments((prev) => ({
+      ...prev,
+      [ticketKey]: deduped,
+    }))
+  }
+
   const loadTickets = async () => {
     try {
       const data: any = await ticketService.listTickets({ page: 1, pageSize: 200 })
       const items = Array.isArray(data) ? data : (data?.items || [])
       const mapped = items.map((t: any) => ({
         id: t.ticketId || String(t.id),
-        slaTimeLeft: '00:00',
+        slaTimeLeft: t.slaTimeLeft || t?.sla?.resolution?.remainingLabel || '--:--',
+        sla: t.sla || null,
         subject: t.subject || t.description || '',
         category: t.category || '',
         priority: t.priority || 'Low',
@@ -154,13 +330,21 @@ export default function TicketsView() {
     const existing = incidents.find((i) => String(i.id) === String(id))
     if (existing) {
       setSelectedTicket(existing)
+      if (existing.endUser) {
+        const raw = String(existing.endUser).trim()
+        setEndUser({
+          name: raw.includes('@') ? raw.split('@')[0] : raw,
+          username: raw.includes('@') ? raw.split('@')[0] : raw,
+          email: raw.includes('@') ? raw : undefined,
+        })
+      }
       setShowDetailView(true)
-      return
     }
     ticketService.getTicket(id).then((d: any) => {
       const mapped: Incident = {
         id: d.ticketId || String(d.id || id),
-        slaTimeLeft: '00:00',
+        slaTimeLeft: d.slaTimeLeft || d?.sla?.resolution?.remainingLabel || '--:--',
+        sla: d.sla || null,
         subject: d.subject || d.description || 'Ticket',
         category: d.category || '',
         priority: d.priority || 'Low',
@@ -174,11 +358,15 @@ export default function TicketsView() {
         assignedAgentName: d.assignedTo?.name || d.assignee?.name,
       }
       setSelectedTicket(mapped)
+      setEndUser(inferInboundEndUser(d))
+      hydrateTimelineFromTicket(d)
       setShowDetailView(true)
     }).catch(() => {
+      if (existing) return
       setSelectedTicket({
         id: id,
-        slaTimeLeft: '00:00',
+        slaTimeLeft: '--:--',
+        sla: null,
         subject: 'Ticket',
         category: '',
         priority: 'Low',
@@ -193,19 +381,25 @@ export default function TicketsView() {
     })
   }, [ticketId, incidents])
   React.useEffect(() => {
-    if (!showDetailView) {
-      Promise.all([
-        userService.listUsers({ role: 'ADMIN', limit: 200 }),
-        userService.listUsers({ role: 'AGENT', limit: 200 }),
-      ]).then(([admins, agents]) => {
-        const a = Array.isArray(admins) ? admins : []
-        const b = Array.isArray(agents) ? agents : []
-        setAgents([...a, ...b])
-      }).catch(() => {
-        setAgents([])
-      })
-    }
-  }, [showDetailView])
+    userService.listUsers({ limit: 500 }).then((users) => {
+      setAgents(Array.isArray(users) ? users : [])
+    }).catch(() => {
+      setAgents([])
+    })
+  }, [])
+
+  React.useEffect(() => {
+    listSlaConfigs()
+      .then((rows: any) => setSlaPolicies(Array.isArray(rows) ? rows : []))
+      .catch(() => setSlaPolicies([]))
+  }, [])
+
+  React.useEffect(() => {
+    if (!showDetailView || !selectedTicket?.id || agents.length === 0) return
+    ticketService.getTicket(selectedTicket.id).then((d: any) => {
+      hydrateTimelineFromTicket(d)
+    }).catch(() => undefined)
+  }, [agents.length, showDetailView, selectedTicket?.id])
 
   React.useEffect(() => {
     const expandedCls = 'tickets-queue-expanded'
@@ -501,9 +695,10 @@ export default function TicketsView() {
     import('../services/ticket.service').then(svc => {
       svc.getTicket(ticket.id).then((d: any) => {
         // backend returns ticket with requester included as `requester`
-        setEndUser(d.requester || null)
+        setEndUser(inferInboundEndUser(d))
         setTicketAsset(d.asset || null)
         setAssetAssignId(d.asset?.id || '')
+        hydrateTimelineFromTicket(d)
         // merge any additional ticket fields (e.g., updated status)
         setSelectedTicket(prev => prev ? { ...prev, status: d.status || prev.status, dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : prev.dateReported } : prev)
       }).catch(() => {
@@ -514,8 +709,6 @@ export default function TicketsView() {
 
   // Comments keyed by ticket id (simple in-memory store for timeline)
   const [ticketComments, setTicketComments] = useState<Record<string, {author: string; text: string; time: string}[]>>({})
-
-  const [noteDraft, setNoteDraft] = useState('')
 
   const getCurrentAgentName = () => {
     if (!user) return 'You'
@@ -616,13 +809,21 @@ export default function TicketsView() {
     return 'Note + Email'
   }
 
+  const getEndUserAutoRecipient = () => {
+    const email = String(endUser?.email || '').trim()
+    if (email) return email
+    const fallback = String(selectedTicket?.endUser || '').trim()
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fallback)) return fallback
+    return ''
+  }
+
   const openComposer = (
     mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
   ) => {
     if (!selectedTicket) return
     setComposerMode(mode)
     const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'resolve' || mode === 'close' || mode === 'noteEmail'
-      ? (endUser?.email || '')
+      ? getEndUserAutoRecipient()
       : ''
     const subjectPrefix = `[${selectedTicket.id}] ${selectedTicket.subject}`
     const subjectDefault =
@@ -640,8 +841,11 @@ export default function TicketsView() {
       bcc: '',
       subject: subjectDefault,
       body: '',
-      currentAction: getComposerHeading(mode),
+      currentAction: '',
+      nextAction: '',
+      asset: '',
     }))
+    setComposerAttachments([])
     setShowCcField(false)
     setShowBccField(false)
     setComposerMenuOpen(false)
@@ -845,15 +1049,6 @@ export default function TicketsView() {
 
   const queueSidebar = (!queueCollapsed && queueRoot) ? createPortal(
     <aside className="ticket-queue-sidebar">
-      <div className="queue-search">
-        <input placeholder="Search Tickets..." value={globalSearch} onChange={(e) => setGlobalSearch(e.target.value)} />
-        <span className="queue-search-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="7" />
-            <line x1="16.5" y1="16.5" x2="21" y2="21" />
-          </svg>
-        </span>
-      </div>
       <div className="queue-header">
         <div className="queue-title-icon" aria-hidden="true">{renderQueueHeaderIcon()}</div>
         <div className="queue-title">
@@ -904,7 +1099,9 @@ export default function TicketsView() {
                       setQueueFilter((prev) => prev.type === 'team' && prev.value === team ? { type: 'all' } : { type: 'team', value: team })
                     }}
                   >
-                    <div className="queue-avatar">{isExpanded ? '▼' : '▶'}</div>
+                    <div className="queue-avatar">
+                      <span className={`queue-caret${isExpanded ? ' queue-caret-down' : ''}`}>{'>'}</span>
+                    </div>
                     <div className="queue-name">{team}</div>
                     <div className="queue-count">{group.total}</div>
                   </div>
@@ -1053,6 +1250,34 @@ export default function TicketsView() {
     return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase()
   }
 
+  const getInboundDisplayUser = () => {
+    const name = String(endUser?.name || endUser?.username || endUser?.email || selectedTicket?.endUser || 'End User').trim()
+    const email = String(endUser?.email || '').trim().toLowerCase()
+    const username = String(endUser?.username || '').trim().toLowerCase()
+    const avatarUrl = String(
+      endUser?.avatarUrl ||
+      endUser?.profilePic ||
+      endUser?.avatar ||
+      endUser?.photoUrl ||
+      endUser?.imageUrl ||
+      ''
+    ).trim()
+    return { name, email, username, avatarUrl }
+  }
+
+  const resolveCommentIdentity = (authorRaw: string) => {
+    const inbound = getInboundDisplayUser()
+    const author = String(authorRaw || '').trim()
+    const lower = author.toLowerCase()
+    if (!author) {
+      return { name: inbound.name || 'End User', avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name || 'End User') }
+    }
+    if (lower && (lower === inbound.email || lower === inbound.username || lower === inbound.name.toLowerCase())) {
+      return { name: inbound.name, avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name) }
+    }
+    return { name: author || 'Unknown', avatarUrl: '', initials: getInitials(author || 'Unknown') }
+  }
+
   const handleAccept = () => {
     if (!selectedTicket) return
     const assigneeName = getCurrentAgentName()
@@ -1073,6 +1298,73 @@ export default function TicketsView() {
     if (!icon) return null
     const src = `https://unpkg.com/lucide-static@latest/icons/${icon}.svg`
     return <img className="action-icon" src={src} alt="" aria-hidden="true" />
+  }
+
+  const formatAttachmentSize = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  const pushAttachments = (files: FileList | null, target: 'composer' | 'note') => {
+    if (!files || files.length === 0) return
+    const incoming = Array.from(files)
+    const tooLarge = incoming.find((f) => f.size > MAX_ATTACHMENT_BYTES)
+    if (tooLarge) {
+      alert(`"${tooLarge.name}" exceeds 32MB. Maximum allowed is 32MB per file.`)
+      return
+    }
+    const mapped = incoming.map((file) => ({ key: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`, file }))
+    if (target === 'composer') {
+      setComposerAttachments((prev) => [...prev, ...mapped])
+    } else {
+      setInternalNoteAttachments((prev) => [...prev, ...mapped])
+    }
+  }
+
+  const removeAttachment = (key: string, target: 'composer' | 'note') => {
+    if (target === 'composer') {
+      setComposerAttachments((prev) => prev.filter((a) => a.key !== key))
+    } else {
+      setInternalNoteAttachments((prev) => prev.filter((a) => a.key !== key))
+    }
+  }
+
+  const readFileAsBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result || '')
+        const base64 = result.includes(',') ? result.split(',')[1] : result
+        if (!base64) reject(new Error(`Failed to read file "${file.name}"`))
+        else resolve(base64)
+      }
+      reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`))
+      reader.readAsDataURL(file)
+    })
+
+  const uploadSelectedAttachments = async (ticketId: string, localFiles: LocalAttachment[]) => {
+    if (!localFiles.length) return []
+    const total = localFiles.reduce((sum, a) => sum + a.file.size, 0)
+    if (total > MAX_ATTACHMENT_BYTES) {
+      throw new Error('Total selected attachment size exceeds 32MB.')
+    }
+    setIsUploadingAttachments(true)
+    try {
+      const filesPayload = await Promise.all(
+        localFiles.map(async (a) => ({
+          name: a.file.name,
+          type: a.file.type || 'application/octet-stream',
+          size: a.file.size,
+          contentBase64: await readFileAsBase64(a.file),
+        }))
+      )
+      const uploaded = await ticketService.uploadAttachments(ticketId, { files: filesPayload })
+      return Array.isArray(uploaded?.items) ? uploaded.items : []
+    } finally {
+      setIsUploadingAttachments(false)
+    }
   }
 
   const applyStatus = async (toStatus: string, note?: string) => {
@@ -1116,12 +1408,24 @@ export default function TicketsView() {
     }
 
     try {
+      const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, composerAttachments)
+      const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
+      const attachmentLabel = uploadedItems.length
+        ? `\nAttachments: ${uploadedItems.map((a: any) => a.filename).join(', ')}`
+        : ''
+
       if (composerMode === 'resolve') {
         await ticketService.resolveTicketWithDetails(selectedTicket.id, {
           resolution: body,
           resolutionCategory: composerForm.issueDetail || undefined,
           sendEmail: Boolean(composerForm.to.trim()),
         })
+        if (attachmentIds.length) {
+          await ticketService.privateNote(selectedTicket.id, {
+            note: `Resolution attachments uploaded${attachmentLabel}`,
+            attachmentIds,
+          })
+        }
         updateTicketStatusLocal(selectedTicket.id, 'Resolved')
         addTicketComment(selectedTicket.id, `Resolved: ${body}`)
       } else if (composerMode === 'close') {
@@ -1133,13 +1437,19 @@ export default function TicketsView() {
             cc: composerForm.cc.trim() || undefined,
             bcc: composerForm.bcc.trim() || undefined,
             subject: composerForm.subject.trim() || `Ticket closed - ${selectedTicket.id}`,
+            attachmentIds,
+          })
+        } else if (attachmentIds.length) {
+          await ticketService.privateNote(selectedTicket.id, {
+            note: `Closure attachments uploaded${attachmentLabel}`,
+            attachmentIds,
           })
         }
         await ticketService.transitionTicket(selectedTicket.id, 'Closed')
         updateTicketStatusLocal(selectedTicket.id, 'Closed')
         addTicketComment(selectedTicket.id, `Closed: ${body}`)
       } else if (composerMode === 'noteEmail') {
-        await ticketService.privateNote(selectedTicket.id, { note: body })
+        await ticketService.privateNote(selectedTicket.id, { note: body, attachmentIds })
         if (composerForm.to.trim()) {
           await ticketService.respond(selectedTicket.id, {
             message: body,
@@ -1148,6 +1458,7 @@ export default function TicketsView() {
             cc: composerForm.cc.trim() || undefined,
             bcc: composerForm.bcc.trim() || undefined,
             subject: composerForm.subject.trim() || `Update - ${selectedTicket.id}`,
+            attachmentIds,
           })
         }
         addTicketComment(selectedTicket.id, `Note + Email: ${body}`)
@@ -1159,6 +1470,7 @@ export default function TicketsView() {
           cc: composerForm.cc.trim() || undefined,
           bcc: composerForm.bcc.trim() || undefined,
           subject: composerForm.subject.trim() || undefined,
+          attachmentIds,
         })
         addTicketComment(selectedTicket.id, `${getComposerHeading()}: ${body}`)
 
@@ -1176,6 +1488,7 @@ export default function TicketsView() {
           markTicketActionState(selectedTicket.id, { supplierLogged: true })
         }
       }
+      setComposerAttachments([])
       setShowActionComposer(false)
     } catch (e: any) {
       alert(e?.response?.data?.error || e?.message || 'Failed to send action')
@@ -1191,11 +1504,14 @@ export default function TicketsView() {
     }
     addTicketComment(selectedTicket.id, `Internal: ${note}`)
     try {
-      await ticketService.privateNote(selectedTicket.id, { note })
+      const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, internalNoteAttachments)
+      const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
+      await ticketService.privateNote(selectedTicket.id, { note, attachmentIds })
       if (internalNoteForm.status && internalNoteForm.status !== selectedTicket.status) {
         await ticketSvc.transitionTicket(selectedTicket.id, internalNoteForm.status).catch(() => undefined)
         updateTicketStatusLocal(selectedTicket.id, internalNoteForm.status)
       }
+      setInternalNoteAttachments([])
     } catch (e: any) {
       alert(e?.response?.data?.error || e?.message || 'Failed to save internal note')
     }
@@ -1558,9 +1874,27 @@ export default function TicketsView() {
 
   const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px 1fr`
   const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
+  const activeSlaPolicy = selectedTicket
+    ? slaPolicies.find(
+        (p) =>
+          String(p?.name || '') === String(selectedTicket.sla?.policyName || '') &&
+          String(p?.priority || '').toLowerCase() === String(selectedTicket.priority || '').toLowerCase()
+      )
+    : null
+  const activeSlaPolicyId = activeSlaPolicy ? Number(activeSlaPolicy.id) : 0
+  const activeSlaPolicyName = String(activeSlaPolicy?.name || selectedTicket?.sla?.policyName || 'Select Policy')
+  const activeSlaPriority = String(selectedTicket?.sla?.priority || selectedTicket?.priority || 'Medium')
+  const activePolicies = slaPolicies.filter((p) => p?.active !== false)
+
+  React.useEffect(() => {
+    setSlaPolicyMenuOpen(false)
+    setSlaPriorityMenuOpen(false)
+  }, [selectedTicket?.id])
 
   const mainContent = showDetailView && selectedTicket ? (
-    <div className="detail-view-container">
+    <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
+      <div className="work-main">
+        <div className="detail-view-container">
       <div className="detail-action-bar">
         <div className="action-toolbar">
           {getActionButtons().map((btn, idx) => (
@@ -1581,19 +1915,269 @@ export default function TicketsView() {
         <div className="progress-card">
           <div className="progress-card-header">
             <span className="progress-title">Progress</span>
-            <div className="progress-actions">
-              <button className="progress-icon-btn" title="View">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6Z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
-              <button className="progress-icon-btn" title="Note" onClick={() => setShowInternalNoteEditor(true)}>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h12l4 4v12H4z"/><path d="M14 4v4h4"/></svg>
-              </button>
-              <button className="progress-icon-btn" title="Scroll">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14"/><path d="M7 14l5 5 5-5"/></svg>
-              </button>
-            </div>
           </div>
-          <div className="progress-list">
+          <div className={`progress-list${showActionComposer || showInternalNoteEditor ? ' progress-list-editor-open' : ''}`}>
+            {showActionComposer && (
+              <div className="action-compose-modal inline-compose-card">
+                <div className="compose-header">
+                  <div className="compose-identity">
+                    <div className="compose-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
+                    <div>
+                      <div className="compose-user">{getCurrentAgentName()}</div>
+                      <div className="compose-mode">| {getComposerHeading()}</div>
+                    </div>
+                  </div>
+                  <div className="compose-header-actions">
+                    <button className="compose-icon-btn" onClick={() => setComposerMenuOpen((v) => !v)} aria-label="More actions">...</button>
+                    <button className="compose-icon-btn" aria-label="High priority">!</button>
+                    <button className="compose-icon-btn compose-icon-btn-active" aria-label="Mail mode">@</button>
+                    <button
+                      className="compose-icon-btn"
+                      aria-label="Attach file"
+                      onClick={() => composerFileInputRef.current?.click()}
+                      type="button"
+                    >
+                      +
+                    </button>
+                    {composerMenuOpen && (
+                      <div className="compose-menu">
+                        <button onClick={() => setShowCcField((v) => !v)}>Show Cc</button>
+                        <button onClick={() => setShowBccField((v) => !v)}>Show Bcc</button>
+                        <button onClick={() => setComposerForm((prev) => ({ ...prev, to: endUser?.email || '' }))}>Reply directly to me</button>
+                      </div>
+                    )}
+                    <button
+                      className="compose-icon-btn"
+                      onClick={() => {
+                        setComposerAttachments([])
+                        setShowActionComposer(false)
+                      }}
+                      aria-label="Close"
+                    >
+                      x
+                    </button>
+                  </div>
+                </div>
+
+                <div className="compose-row compose-row-line">
+                  <label>To</label>
+                  <input
+                    value={composerForm.to}
+                    onChange={(e) => setComposerForm((prev) => ({ ...prev, to: e.target.value }))}
+                    placeholder="Enter recipient"
+                  />
+                  <div className="compose-row-tools">
+                    <button type="button" onClick={() => setComposerMenuOpen((v) => !v)} aria-label="Recipient options">v</button>
+                    <button type="button" onClick={() => setShowCcField((v) => !v)} aria-label="Toggle Cc">cc</button>
+                  </div>
+                </div>
+                {showCcField && (
+                  <div className="compose-row compose-row-line">
+                    <label>Cc</label>
+                    <input value={composerForm.cc} onChange={(e) => setComposerForm((prev) => ({ ...prev, cc: e.target.value }))} placeholder="Enter cc recipient" />
+                  </div>
+                )}
+                {showBccField && (
+                  <div className="compose-row compose-row-line">
+                    <label>Bcc</label>
+                    <input value={composerForm.bcc} onChange={(e) => setComposerForm((prev) => ({ ...prev, bcc: e.target.value }))} placeholder="Enter bcc recipient" />
+                  </div>
+                )}
+                <div className="compose-row compose-row-line compose-row-subject">
+                  <label />
+                  <input
+                    value={composerForm.subject}
+                    onChange={(e) => setComposerForm((prev) => ({ ...prev, subject: e.target.value }))}
+                    placeholder="Enter a subject here"
+                  />
+                </div>
+
+                <div className="compose-editor-shell">
+                  <div className="compose-editor-toolbar">
+                    <button type="button">[]</button>
+                    <button type="button">A:</button>
+                    <button type="button">-</button>
+                    <button type="button">=</button>
+                    <button type="button">::</button>
+                    <button type="button">""</button>
+                    <button type="button">()</button>
+                    <button type="button">[]</button>
+                    <button type="button">#</button>
+                    <button type="button">+/-</button>
+                    <button type="button">+</button>
+                    <button type="button">-</button>
+                    <button type="button">A</button>
+                    <button type="button">&lt;&gt;</button>
+                  </div>
+                  <textarea
+                    className="compose-editor-body"
+                    placeholder="Type your update/note here"
+                    value={composerForm.body}
+                    onChange={(e) => setComposerForm((prev) => ({ ...prev, body: e.target.value }))}
+                  />
+                  <div className="compose-editor-assist">
+                    <button type="button" aria-label="AI assist">Q</button>
+                    <button type="button" aria-label="Assistant">G</button>
+                  </div>
+                </div>
+                <input
+                  ref={composerFileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    pushAttachments(e.target.files, 'composer')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                {composerAttachments.length > 0 && (
+                  <div className="compose-attachments">
+                    {composerAttachments.map((attachment) => (
+                      <div className="compose-attachment-chip" key={attachment.key}>
+                        <span>{attachment.file.name} ({formatAttachmentSize(attachment.file.size)})</span>
+                        <button type="button" onClick={() => removeAttachment(attachment.key, 'composer')}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') && (
+                  <div className="compose-grid three">
+                    <label>
+                      Supplier
+                      <input value={composerForm.supplier} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplier: e.target.value }))} />
+                    </label>
+                    <label>
+                      Supplier Ref
+                      <input value={composerForm.supplierRef} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplierRef: e.target.value }))} />
+                    </label>
+                    <label>
+                      Priority
+                      <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
+                    </label>
+                  </div>
+                )}
+
+                {composerMode === 'approval' && (
+                  <div className="compose-grid three">
+                    <label>
+                      Approval Team
+                      <select value={composerForm.approvalTeam} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalTeam: e.target.value }))}>
+                        <option>Management Team</option>
+                        <option>HR Team</option>
+                        <option>Account Team</option>
+                      </select>
+                    </label>
+                    <label>
+                      Priority
+                      <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
+                    </label>
+                    <label>
+                      Current Action
+                      <input value={composerForm.currentAction} onChange={(e) => setComposerForm((prev) => ({ ...prev, currentAction: e.target.value }))} />
+                    </label>
+                  </div>
+                )}
+
+                <div className="compose-footer-actions">
+                  <button className="btn-submit" onClick={handleSendActionComposer} disabled={isUploadingAttachments}>
+                    {isUploadingAttachments ? 'Uploading...' : 'Send'}
+                  </button>
+                  <button className="btn-cancel" onClick={() => { setComposerAttachments([]); setShowActionComposer(false) }}>Discard</button>
+                  <button type="button" className="compose-footer-icon" aria-label="Schedule">[]</button>
+                </div>
+              </div>
+            )}
+            {showInternalNoteEditor && (
+              <div className="action-compose-modal inline-compose-card">
+                <div className="compose-header">
+                  <div className="compose-identity">
+                    <div className="compose-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
+                    <div>
+                    <div className="compose-user">{getCurrentAgentName()}</div>
+                    <div className="compose-mode">Internal Note</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className="compose-icon-btn"
+                      onClick={() => internalNoteFileInputRef.current?.click()}
+                      type="button"
+                      aria-label="Attach file"
+                    >
+                      +
+                    </button>
+                    <button className="compose-icon-btn" onClick={() => { setInternalNoteAttachments([]); setShowInternalNoteEditor(false) }}>x</button>
+                  </div>
+                </div>
+                <div className="compose-editor-shell">
+                  <div className="compose-editor-toolbar">
+                    <button type="button">A:</button>
+                    <button type="button">-</button>
+                    <button type="button">1.</button>
+                    <button type="button">"</button>
+                    <button type="button">link</button>
+                    <button type="button">img</button>
+                    <button type="button">table</button>
+                  </div>
+                  <textarea
+                    className="compose-editor-body"
+                    placeholder="Enter your note here"
+                    value={internalNoteForm.body}
+                    onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, body: e.target.value }))}
+                  />
+                </div>
+                <input
+                  ref={internalNoteFileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    pushAttachments(e.target.files, 'note')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                {internalNoteAttachments.length > 0 && (
+                  <div className="compose-attachments">
+                    {internalNoteAttachments.map((attachment) => (
+                      <div className="compose-attachment-chip" key={attachment.key}>
+                        <span>{attachment.file.name} ({formatAttachmentSize(attachment.file.size)})</span>
+                        <button type="button" onClick={() => removeAttachment(attachment.key, 'note')}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="compose-grid four">
+                  <label>Status
+                    <select value={internalNoteForm.status} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, status: e.target.value }))}>
+                      <option>In Progress</option>
+                      <option>Awaiting Approval</option>
+                      <option>With Supplier</option>
+                      <option>Resolved</option>
+                      <option>Closed</option>
+                    </select>
+                  </label>
+                  <label>Team
+                    <input value={internalNoteForm.team} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, team: e.target.value }))} />
+                  </label>
+                  <label>Staff
+                    <input value={internalNoteForm.staff} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, staff: e.target.value }))} />
+                  </label>
+                  <label>Time Taken
+                    <div className="inline-row">
+                      <input value={internalNoteForm.timeHours} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeHours: e.target.value }))} />
+                      <input value={internalNoteForm.timeMinutes} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeMinutes: e.target.value }))} />
+                    </div>
+                  </label>
+                </div>
+                <div className="compose-footer-actions">
+                  <button className="btn-submit" onClick={handleSaveInternalNote} disabled={isUploadingAttachments}>
+                    {isUploadingAttachments ? 'Uploading...' : 'Save'}
+                  </button>
+                  <button className="btn-cancel" onClick={() => { setInternalNoteAttachments([]); setShowInternalNoteEditor(false) }}>Discard</button>
+                </div>
+              </div>
+            )}
             {(ticketComments[selectedTicket.id] || [])
               .slice()
               .sort((a, b) => {
@@ -1604,12 +2188,15 @@ export default function TicketsView() {
               })
               .map((c, idx) => {
                 const authorName = String((c as any)?.author ?? '')
+                const identity = resolveCommentIdentity(authorName)
                 return (
               <div key={`${c.time}-${idx}`} className="progress-item">
-                <div className="progress-avatar">{getInitials(authorName)}</div>
+                <div className="progress-avatar">
+                  {identity.avatarUrl ? <img src={identity.avatarUrl} alt={identity.name} /> : identity.initials}
+                </div>
                 <div className="progress-body">
                   <div className="progress-meta">
-                    <div className="progress-author">{authorName || 'Unknown'}</div>
+                    <div className="progress-author">{identity.name}</div>
                     <div className="progress-time">{c.time}</div>
                   </div>
                   <div className="progress-text">{c.text}</div>
@@ -1618,10 +2205,12 @@ export default function TicketsView() {
             )})}
             {(!ticketComments[selectedTicket.id] || ticketComments[selectedTicket.id].length === 0) && (
               <div className="progress-item">
-                <div className="progress-avatar">EU</div>
+                <div className="progress-avatar">
+                  {getInboundDisplayUser().avatarUrl ? <img src={getInboundDisplayUser().avatarUrl} alt={getInboundDisplayUser().name} /> : getInitials(getInboundDisplayUser().name)}
+                </div>
                 <div className="progress-body">
                   <div className="progress-meta">
-                    <div className="progress-author">End User</div>
+                    <div className="progress-author">{getInboundDisplayUser().name}</div>
                     <div className="progress-time">{selectedTicket.dateReported}</div>
                   </div>
                   <div className="progress-text">{selectedTicket.subject}</div>
@@ -1684,21 +2273,78 @@ export default function TicketsView() {
               <div className="sla-card">
                 <h3 className="sidebar-title">Service Level Agreement</h3>
                 <div className="sla-pill">
-                  <span>Incident SLA</span>
-                  <span>Medium</span>
+                  <div
+                    className="sla-pill-select-wrap"
+                    ref={slaPolicyMenuRef}
+                  >
+                    <button
+                      type="button"
+                      className="sla-pill-select"
+                      onClick={() => setSlaPolicyMenuOpen((v) => !v)}
+                      disabled={slaApplying}
+                    >
+                      <span>{activeSlaPolicyName}</span>
+                      <span className="sla-pill-chevron">v</span>
+                    </button>
+                    {slaPolicyMenuOpen && (
+                      <div className="sla-pill-dropdown">
+                        {activePolicies.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className={`sla-pill-option${Number(p.id) === activeSlaPolicyId ? ' active' : ''}`}
+                            onClick={() => handlePolicySelectFromPill(String(p.id))}
+                          >
+                            {p.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className="sla-pill-select-wrap"
+                    ref={slaPriorityMenuRef}
+                  >
+                    <button
+                      type="button"
+                      className="sla-pill-select"
+                      onClick={() => setSlaPriorityMenuOpen((v) => !v)}
+                      disabled={slaApplying}
+                    >
+                      <span>{activeSlaPriority}</span>
+                      <span className="sla-pill-chevron">v</span>
+                    </button>
+                    {slaPriorityMenuOpen && (
+                      <div className="sla-pill-dropdown">
+                        {(['High', 'Medium', 'Low'] as const).map((priority) => (
+                          <button
+                            key={priority}
+                            type="button"
+                            className={`sla-pill-option${String(activeSlaPriority).toLowerCase() === priority.toLowerCase() ? ' active' : ''}`}
+                            onClick={() => {
+                              setSlaPriorityMenuOpen(false)
+                              applySlaPriority(priority)
+                            }}
+                          >
+                            {priority}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="sla-bar">
-                  <span>-119:45</span>
+                  <span>{selectedTicket.sla?.resolution?.remainingLabel || selectedTicket.slaTimeLeft || '--:--'}</span>
                 </div>
                 <div className="sla-row">
                   <span>Response Target</span>
-                  <span>1/16/2026 15:14</span>
-                  <span className="sla-x">âœ–</span>
+                  <span>{toLocalDateTime(selectedTicket.sla?.response?.targetAt)}</span>
+                  <span className="sla-x">{selectedTicket.sla?.response?.breached ? 'x' : 'ok'}</span>
                 </div>
                 <div className="sla-row">
                   <span>Resolution Target</span>
-                  <span>1/19/2026 09:14</span>
-                  <span className="sla-x">âœ–</span>
+                  <span>{toLocalDateTime(selectedTicket.sla?.resolution?.targetAt)}</span>
+                  <span className="sla-x">{selectedTicket.sla?.resolution?.breached ? 'x' : 'ok'}</span>
                 </div>
               </div>
               <div className="enduser-card">
@@ -1737,207 +2383,9 @@ export default function TicketsView() {
             </div>
           </div>
         </div>
-      </div>{showActionComposer && (
-        <div className="modal-overlay" onClick={() => setShowActionComposer(false)}>
-          <div className="modal-content action-compose-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="compose-header">
-              <div>
-                <div className="compose-user">Girikumaran</div>
-                <div className="compose-mode">{getComposerHeading()}</div>
-              </div>
-              <div className="compose-header-actions">
-                <button className="compose-icon-btn" onClick={() => setComposerMenuOpen((v) => !v)}>...</button>
-                {composerMenuOpen && (
-                  <div className="compose-menu">
-                    <button onClick={() => setShowCcField((v) => !v)}>Show Cc</button>
-                    <button onClick={() => setShowBccField((v) => !v)}>Show Bcc</button>
-                    <button onClick={() => setComposerForm((prev) => ({ ...prev, to: endUser?.email || '' }))}>Reply directly to me</button>
-                  </div>
-                )}
-                <button className="compose-icon-btn" onClick={() => setShowActionComposer(false)}>x</button>
-              </div>
-            </div>
-
-            <div className="compose-row">
-              <label>To</label>
-              <input
-                value={composerForm.to}
-                onChange={(e) => setComposerForm((prev) => ({ ...prev, to: e.target.value }))}
-                placeholder="Enter recipient"
-              />
-            </div>
-            {showCcField && (
-              <div className="compose-row">
-                <label>Cc</label>
-                <input value={composerForm.cc} onChange={(e) => setComposerForm((prev) => ({ ...prev, cc: e.target.value }))} placeholder="Enter cc recipient" />
-              </div>
-            )}
-            {showBccField && (
-              <div className="compose-row">
-                <label>Bcc</label>
-                <input value={composerForm.bcc} onChange={(e) => setComposerForm((prev) => ({ ...prev, bcc: e.target.value }))} placeholder="Enter bcc recipient" />
-              </div>
-            )}
-            <div className="compose-row">
-              <label>Subject</label>
-              <input
-                value={composerForm.subject}
-                onChange={(e) => setComposerForm((prev) => ({ ...prev, subject: e.target.value }))}
-                placeholder="Enter a Subject here"
-              />
-            </div>
-
-            {(composerMode === 'acknowledge' || composerMode === 'emailUser' || composerMode === 'resolve' || composerMode === 'close' || composerMode === 'noteEmail') && (
-              <div className="compose-grid four">
-                <label>
-                  Next Update
-                  <div className="inline-row">
-                    <input type="date" value={composerForm.nextUpdateDate} onChange={(e) => setComposerForm((prev) => ({ ...prev, nextUpdateDate: e.target.value }))} />
-                    <input type="time" value={composerForm.nextUpdateTime} onChange={(e) => setComposerForm((prev) => ({ ...prev, nextUpdateTime: e.target.value }))} />
-                  </div>
-                </label>
-                <label>
-                  Issue
-                  <input value={composerForm.issue} onChange={(e) => setComposerForm((prev) => ({ ...prev, issue: e.target.value }))} />
-                </label>
-                <label>
-                  Issue - Detail
-                  <input value={composerForm.issueDetail} onChange={(e) => setComposerForm((prev) => ({ ...prev, issueDetail: e.target.value }))} />
-                </label>
-                <label>
-                  Current Action
-                  <input value={composerForm.currentAction} onChange={(e) => setComposerForm((prev) => ({ ...prev, currentAction: e.target.value }))} />
-                </label>
-              </div>
-            )}
-
-            {(composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') && (
-              <div className="compose-grid three">
-                <label>
-                  Supplier
-                  <input value={composerForm.supplier} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplier: e.target.value }))} />
-                </label>
-                <label>
-                  Supplier Ref
-                  <input value={composerForm.supplierRef} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplierRef: e.target.value }))} />
-                </label>
-                <label>
-                  Priority
-                  <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
-                </label>
-              </div>
-            )}
-
-            {composerMode === 'approval' && (
-              <div className="compose-grid three">
-                <label>
-                  Approval Team
-                  <select value={composerForm.approvalTeam} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalTeam: e.target.value }))}>
-                    <option>Management Team</option>
-                    <option>HR Team</option>
-                    <option>Account Team</option>
-                  </select>
-                </label>
-                <label>
-                  Priority
-                  <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
-                </label>
-                <label>
-                  Current Action
-                  <input value={composerForm.currentAction} onChange={(e) => setComposerForm((prev) => ({ ...prev, currentAction: e.target.value }))} />
-                </label>
-              </div>
-            )}
-
-            <div className="compose-editor-shell">
-              <div className="compose-editor-toolbar">
-                <button type="button">A:</button>
-                <button type="button">-</button>
-                <button type="button">1.</button>
-                <button type="button">"</button>
-                <button type="button">link</button>
-                <button type="button">img</button>
-                <button type="button">table</button>
-                <button type="button">:)</button>
-                <button type="button">+</button>
-              </div>
-              <textarea
-                className="compose-editor-body"
-                placeholder="Type your update/note here"
-                value={composerForm.body}
-                onChange={(e) => setComposerForm((prev) => ({ ...prev, body: e.target.value }))}
-              />
-            </div>
-
-            <div className="compose-row">
-              <label>Public Note</label>
-              <input value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} placeholder="Public note" />
-            </div>
-
-            <div className="compose-footer-actions">
-              <button className="btn-submit" onClick={handleSendActionComposer}>Send</button>
-              <button className="btn-cancel" onClick={() => setShowActionComposer(false)}>Discard</button>
-            </div>
-          </div>
         </div>
-      )}
-      {showInternalNoteEditor && (
-        <div className="modal-overlay" onClick={() => setShowInternalNoteEditor(false)}>
-          <div className="modal-content action-compose-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="compose-header">
-              <div>
-                <div className="compose-user">Girikumaran</div>
-                <div className="compose-mode">Internal Note</div>
-              </div>
-              <button className="compose-icon-btn" onClick={() => setShowInternalNoteEditor(false)}>x</button>
-            </div>
-            <div className="compose-editor-shell">
-              <div className="compose-editor-toolbar">
-                <button type="button">A:</button>
-                <button type="button">-</button>
-                <button type="button">1.</button>
-                <button type="button">"</button>
-                <button type="button">link</button>
-                <button type="button">img</button>
-                <button type="button">table</button>
-              </div>
-              <textarea
-                className="compose-editor-body"
-                placeholder="Enter your note here"
-                value={internalNoteForm.body}
-                onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, body: e.target.value }))}
-              />
-            </div>
-            <div className="compose-grid four">
-              <label>Status
-                <select value={internalNoteForm.status} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, status: e.target.value }))}>
-                  <option>In Progress</option>
-                  <option>Awaiting Approval</option>
-                  <option>With Supplier</option>
-                  <option>Resolved</option>
-                  <option>Closed</option>
-                </select>
-              </label>
-              <label>Team
-                <input value={internalNoteForm.team} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, team: e.target.value }))} />
-              </label>
-              <label>Staff
-                <input value={internalNoteForm.staff} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, staff: e.target.value }))} />
-              </label>
-              <label>Time Taken
-                <div className="inline-row">
-                  <input value={internalNoteForm.timeHours} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeHours: e.target.value }))} />
-                  <input value={internalNoteForm.timeMinutes} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeMinutes: e.target.value }))} />
-                </div>
-              </label>
-            </div>
-            <div className="compose-footer-actions">
-              <button className="btn-submit" onClick={handleSaveInternalNote}>Save</button>
-              <button className="btn-cancel" onClick={() => setShowInternalNoteEditor(false)}>Discard</button>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
+      </div>
     </div>
   ) : (
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
