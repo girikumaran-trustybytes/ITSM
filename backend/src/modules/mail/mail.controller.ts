@@ -1,5 +1,12 @@
 import { Request, Response } from 'express'
-import { getPublicMailConfig, sendSmtpMail, verifyImap, verifySmtp, type MailConfig } from '../../services/mail.integration'
+import {
+  getPublicMailConfig,
+  sendSmtpMail,
+  verifyImap,
+  verifySmtp,
+  setInboundRoutingConfig,
+  type MailConfig,
+} from '../../services/mail.integration'
 
 function pickOverride(body: any): Partial<MailConfig> | undefined {
   if (!body || typeof body !== 'object') return undefined
@@ -64,3 +71,13 @@ export async function sendTestMail(req: Request, res: Response) {
   }
 }
 
+export async function updateInboundRouting(req: Request, res: Response) {
+  try {
+    const defaultQueue = String(req.body?.defaultQueue || '').trim()
+    if (!defaultQueue) return res.status(400).json({ error: 'defaultQueue is required' })
+    const next = setInboundRoutingConfig({ defaultQueue })
+    return res.json(next)
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ error: err.message || 'Failed to update inbound routing' })
+  }
+}

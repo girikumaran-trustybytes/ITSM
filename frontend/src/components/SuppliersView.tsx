@@ -99,6 +99,7 @@ export default function SuppliersView({
     sla: '',
   })
   const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [refreshTick, setRefreshTick] = useState(0)
   const { widths: columnWidths, startResize } = useColumnResize({
     initialWidths: [30, 220, 220, 180, 220, 160, 180, 170],
     minWidth: 0,
@@ -125,7 +126,7 @@ export default function SuppliersView({
 
   useEffect(() => {
     loadSuppliers()
-  }, [search])
+  }, [search, refreshTick])
 
   useEffect(() => {
     const loadPermissions = async () => {
@@ -206,6 +207,9 @@ export default function SuppliersView({
       }
       if (detail.action === 'filter') {
         setShowFilters((v) => !v)
+      }
+      if (detail.action === 'refresh') {
+        setRefreshTick((v) => v + 1)
       }
     }
     window.addEventListener('shared-toolbar-action', handler as EventListener)

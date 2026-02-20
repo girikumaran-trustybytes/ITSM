@@ -14,6 +14,10 @@ function storeAuth(data: any, rememberMe = true) {
   if (data?.refreshToken) target.setItem('refreshToken', data.refreshToken)
 }
 
+export function storeAuthTokens(accessToken: string, refreshToken: string, rememberMe = true) {
+  storeAuth({ accessToken, refreshToken }, rememberMe)
+}
+
 export async function login(email: string, password: string, rememberMe = true) {
   const res = await api.post('/auth/login', { email, password })
   const data = res.data
@@ -30,6 +34,11 @@ export async function loginWithGoogle(idToken: string, rememberMe = true) {
 
 export async function getGoogleConfig() {
   const res = await api.get('/auth/google/config')
+  return res.data
+}
+
+export async function getSsoConfig() {
+  const res = await api.get('/auth/sso/config')
   return res.data
 }
 

@@ -17,6 +17,7 @@ async function main() {
       'INSERT INTO "User" ("email", "password", "role", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT ("email") DO NOTHING',
       [email, hashed, 'ADMIN', 'ACTIVE']
     )
+
     console.log('Seed complete')
   } finally {
     await pool.end()

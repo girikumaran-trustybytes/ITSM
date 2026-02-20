@@ -1,7 +1,7 @@
 import net from 'net'
 import tls from 'tls'
 import { addResponse, createTicket } from '../modules/tickets/ticket.service'
-import { loadMailConfigFromEnv } from '../services/mail.integration'
+import { getInboundRoutingConfig, loadMailConfigFromEnv } from '../services/mail.integration'
 import { query, queryOne } from '../db'
 import logger from '../common/logger/logger'
 
@@ -347,6 +347,8 @@ async function findRequesterIdByEmail(email: string): Promise<number | undefined
 async function createTicketFromMail(mailbox: string, mail: ParsedMailHeader) {
   const requesterId = await findRequesterIdByEmail(mail.fromEmail)
   const safeSubject = (mail.subject || '').trim() || `Email to ${mailbox}`
+  const inboundRouting = getInboundRoutingConfig()
+  const inboundQueue = String(inboundRouting.defaultQueue || '').trim() || 'Helpdesk'
   const description = [
     'Auto-created from inbound email.',
     `Mailbox: ${mailbox}`,
@@ -360,7 +362,7 @@ async function createTicketFromMail(mailbox: string, mail: ParsedMailHeader) {
       subject: safeSubject,
       type: 'Incident',
       status: 'New',
-      category: 'Helpdesk',
+      category: inboundQueue,
       subcategory: 'Email',
       description,
       requesterId,

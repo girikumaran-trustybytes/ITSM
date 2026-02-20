@@ -10,7 +10,7 @@ type AuthState = {
 const AuthContext = createContext<AuthState | undefined>(undefined)
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<any | null>(null)
+  const [user, setUser] = useState<any | null>(() => getCurrentUser())
 
   const refreshUser = () => {
     setUser(getCurrentUser())

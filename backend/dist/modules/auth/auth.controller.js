@@ -149,9 +149,11 @@ async function changePassword(req, res) {
 exports.changePassword = changePassword;
 async function googleConfig(_req, res) {
     const clientId = String(process.env.GOOGLE_CLIENT_ID || '').trim();
+    const hostedDomain = String(process.env.GOOGLE_HOSTED_DOMAIN || '').trim();
     res.json({
         enabled: Boolean(clientId),
         clientId: clientId || null,
+        hostedDomain: hostedDomain || null,
     });
 }
 exports.googleConfig = googleConfig;

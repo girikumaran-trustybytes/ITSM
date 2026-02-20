@@ -44,3 +44,508 @@
 {"action":"create_sla","entity":"sla","entityId":10,"level":"info","message":"audit","meta":{"name":"TrustyBytes"},"timestamp":"2026-02-17T14:39:56.723Z","user":5}
 {"action":"create_sla","entity":"sla","entityId":11,"level":"info","message":"audit","meta":{"name":"TrustyBytes"},"timestamp":"2026-02-17T14:39:56.804Z","user":5}
 {"action":"create_sla","entity":"sla","entityId":12,"level":"info","message":"audit","meta":{"name":"TrustyBytes"},"timestamp":"2026-02-17T14:39:57.068Z","user":5}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-18T02:52:34.326Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-18T02:52:34.331Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T05:07:13.647Z"}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T07:06:52.648Z"}
+{"error":"IMAP greeting timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T07:08:51.476Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T07:09:37.399Z"}
+{"error":"IMAP greeting timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T07:11:51.621Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-18T13:27:39.289Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-18T13:27:39.296Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-18T16:40:48.301Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-18T16:40:48.306Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <20260218154543.c44e45ac2472b0a0@n.dribbble.com>\nFrom: no-reply@n.dribbble.com\nDate: Wed, 18 Feb 2026 15:45:43 +0000","status":"New","subcategory":"Email","subject":"=?UTF-8?b?4pu377iPwqBUaGUgV2ludGVyIChkZXNpZ24pIE9seW1waWNz?=","type":"Incident"}},"ticketId":"TB#00015","timestamp":"2026-02-18T16:40:51.240Z","user":"mail_ingest"}
+{"from":"no-reply@n.dribbble.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"=?UTF-8?b?4pu377iPwqBUaGUgV2ludGVyIChkZXNpZ24pIE9seW1waWNz?=","ticketId":"TB#00015","timestamp":"2026-02-18T16:40:51.723Z","uid":"427"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Critical"}},"ticketId":"TB#00014","timestamp":"2026-02-18T16:42:43.512Z","user":5}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Critical"}},"ticketId":"TB#00015","timestamp":"2026-02-18T16:42:59.678Z","user":5}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T16:44:44.075Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T16:46:34.142Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T16:48:24.232Z"}
+{"action":"rbac_permissions_updated","entity":"user","entityId":10,"level":"info","message":"audit","meta":{"overrideCount":30,"role":"ADMIN","templateKey":"management"},"timestamp":"2026-02-18T17:08:51.620Z","user":5}
+{"action":"rbac_permissions_updated","entity":"user","entityId":10,"level":"info","message":"audit","meta":{"overrideCount":30,"role":"ADMIN","templateKey":"management"},"timestamp":"2026-02-18T17:09:00.871Z","user":5}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T17:29:26.336Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T17:30:16.421Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAA58y4G1YmSSexETRF15OsAPkAdjwjmWVDpuzPTOmcVx-nqNVg@mail.gmail.com>\nFrom: kvishva324@gmail.com\nDate: Wed, 18 Feb 2026 23:00:57 +0530","status":"New","subcategory":"Email","subject":"Summa","type":"Incident"}},"ticketId":"TB#00016","timestamp":"2026-02-18T17:31:13.335Z","user":"mail_ingest"}
+{"from":"kvishva324@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Summa","ticketId":"TB#00016","timestamp":"2026-02-18T17:31:13.785Z","uid":"428"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"assigneeId":5}},"ticketId":"TB#00016","timestamp":"2026-02-18T17:31:30.842Z","user":5}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Hi Kasi"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:31:43.354Z","user":5}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Hi Kasi"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:31:46.680Z","user":5}
+{"action":"transition","level":"info","message":"audit","meta":{"from":"New","to":"In Progress"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:31:47.404Z","user":5}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Inbound email reply received.\nMailbox: girikumaran@trustybytes.in\nFrom: girikumaran@trustybytes.in\nSubject: [ITSM] Ticket status updated: TB#00016\nMessage-Id: <55ef5b29-2a1e-83cf-b9fd-eb241a88b670@trustybytes.in>\nDate: Wed, 18 Feb 2026 17:31:47 +0000"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:31:52.928Z","user":"mail_ingest"}
+{"from":"girikumaran@trustybytes.in","level":"info","mailbox":"INBOX","message":"mail_ticket_updated","subject":"[ITSM] Ticket status updated: TB#00016","ticketId":"TB#00016","timestamp":"2026-02-18T17:31:53.460Z","uid":"429"}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Summa"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:32:06.187Z","user":5}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Summa"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:32:08.652Z","user":5}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"done"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:32:26.382Z","user":5}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"done"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:32:27.996Z","user":5}
+{"action":"transition","level":"info","message":"audit","meta":{"from":"In Progress","to":"Closed"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:32:29.996Z","user":5}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Inbound email reply received.\nMailbox: girikumaran@trustybytes.in\nFrom: girikumaran@trustybytes.in\nSubject: [ITSM] Ticket status updated: TB#00016\nMessage-Id: <67e82104-b673-45b3-06e0-4e5fc25e0fc0@trustybytes.in>\nDate: Wed, 18 Feb 2026 17:32:30 +0000"},"ticketId":"TB#00016","timestamp":"2026-02-18T17:32:44.682Z","user":"mail_ingest"}
+{"from":"girikumaran@trustybytes.in","level":"info","mailbox":"INBOX","message":"mail_ticket_updated","subject":"[ITSM] Ticket status updated: TB#00016","ticketId":"TB#00016","timestamp":"2026-02-18T17:32:45.152Z","uid":"430"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T17:50:57.431Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-18T17:56:37.744Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T06:08:57.260Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T06:08:57.265Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <autogen-java-fa8704e5-c5e5-472c-82cc-32b5fc006b92@google.com>\nDate: Thu, 19 Feb 2026 06:15:09 +0000","status":"New","subcategory":"Email","subject":"Document shared with you: \"Employee Asset Receipt and Responsibility","type":"Incident"}},"ticketId":"TB#00017","timestamp":"2026-02-19T06:15:10.844Z","user":"mail_ingest"}
+{"from":"","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Document shared with you: \"Employee Asset Receipt and Responsibility","ticketId":"TB#00017","timestamp":"2026-02-19T06:15:11.364Z","uid":"431"}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T07:46:54.152Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-19T07:48:17.821Z","user":5}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-19T07:52:19.162Z","user":5}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-19T07:53:07.690Z","user":5}
+{"action":"update_user","entity":"user","entityId":9,"level":"info","message":"audit","timestamp":"2026-02-19T08:12:44.682Z","user":5}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T08:16:25.953Z"}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T08:19:36.114Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T10:27:18.587Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T10:27:18.591Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T10:54:54.054Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T10:54:54.082Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T11:17:02.807Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T11:17:02.811Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T15:41:54.945Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T15:41:54.948Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T15:47:36.391Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T15:47:36.398Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T15:49:12.718Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T15:49:12.730Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T15:49:34.719Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T15:49:34.724Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T15:49:43.360Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T15:49:43.370Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T16:13:40.228Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-19T17:00:50.570Z","user":5}
+{"error":"IMAP greeting timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:01:57.869Z"}
+{"error":"read ECONNRESET","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:15:46.083Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:15:47.693Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:15:57.704Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:16:07.714Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:16:17.731Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:16:27.733Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:16:37.735Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:16:47.747Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:16:57.758Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:17:07.771Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:17:17.778Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:17:27.788Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:17:37.798Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:17:47.800Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:17:57.808Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:18:07.809Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:18:17.823Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:18:27.834Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:18:37.843Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:18:47.852Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:18:57.864Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:19:07.862Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:19:17.878Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:19:27.884Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:19:37.897Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:19:47.901Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:19:57.908Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:20:07.923Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:20:17.926Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:20:27.943Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:20:37.941Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:20:47.946Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:20:57.960Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:21:07.968Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:21:17.972Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:21:27.981Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:21:37.992Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:21:47.996Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:21:58.008Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:22:08.013Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:22:18.020Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:22:28.030Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:22:38.034Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:22:48.036Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:22:58.052Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:23:08.062Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:23:18.066Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:23:28.079Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:23:38.084Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:23:48.084Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:23:58.096Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:24:08.106Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:24:18.107Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:24:28.120Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:24:38.122Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:24:48.138Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:24:58.146Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:25:08.152Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:25:18.163Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:25:28.164Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:25:38.168Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:25:48.176Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:25:58.188Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:26:08.201Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:26:18.217Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:26:28.218Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T17:33:54.173Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T17:33:54.229Z"}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:35:26.257Z"}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:41:16.463Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T17:42:25.028Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T17:42:25.065Z"}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:43:46.972Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-19T17:55:46.237Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-19T17:55:46.244Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-19T17:58:30.067Z"}
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-19T18:10:51.105Z","user":5}
+{"action":"update_user","entity":"user","entityId":9,"level":"info","message":"audit","timestamp":"2026-02-19T18:15:31.048Z","user":5}
+{"action":"rbac_permissions_updated","entity":"user","entityId":9,"level":"info","message":"audit","meta":{"overrideCount":30,"role":"CUSTOM","templateKey":"custom"},"timestamp":"2026-02-19T18:15:43.714Z","user":5}
+{"error":"read ECONNRESET","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:33:39.354Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:33:40.290Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:33:49.611Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:33:59.623Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:34:09.624Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:34:19.632Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:34:29.779Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:34:39.772Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:34:49.775Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T01:34:59.779Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:25:43.316Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:26:03.315Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:26:23.186Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:26:43.038Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:27:03.150Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:27:23.315Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:27:43.339Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:28:03.296Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:28:23.313Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:28:43.420Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:29:03.453Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:29:23.396Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:29:43.505Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:30:03.497Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:30:55.108Z"}
+{"error":"read ECONNRESET","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:31:38.299Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T02:41:39.044Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:20:26.398Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:20:46.695Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:21:06.412Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:21:26.475Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:21:46.766Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:22:06.561Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:22:26.646Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:22:46.669Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:23:06.601Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:23:26.653Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:23:46.632Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:24:06.649Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:24:26.615Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:24:46.705Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:25:06.648Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:25:27.125Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:25:46.811Z"}
+{"error":"Client network socket disconnected before secure TLS connection was established","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T03:26:06.731Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-20T10:37:43.760Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-20T10:37:43.776Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAD5-zL2XkVx2iAWDvFavJfO3fcxpkKKq-_p3_zek8dr2i1TrJA@mail.gmail.com>\nFrom: vijayan@trustybytes.in\nDate: Fri, 20 Feb 2026 10:44:39 +0000","status":"New","subcategory":"Email","subject":"Laptop - Battery issue","type":"Incident"}},"ticketId":"TB#00018","timestamp":"2026-02-20T10:44:57.482Z","user":"mail_ingest"}
+{"from":"vijayan@trustybytes.in","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Laptop - Battery issue","ticketId":"TB#00018","timestamp":"2026-02-20T10:44:58.032Z","uid":"432"}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Hi Vijay,\n\nThank you"},"ticketId":"TB#00018","timestamp":"2026-02-20T10:45:37.811Z","user":5}
+{"action":"transition","level":"info","message":"audit","meta":{"from":"New","to":"In Progress"},"ticketId":"TB#00018","timestamp":"2026-02-20T10:45:40.718Z","user":5}
+{"error":"read ECONNRESET","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T10:51:55.455Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T11:58:48.519Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-20T14:58:52.316Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-20T14:58:52.321Z"}
+{"error":"read ECONNRESET","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T14:59:53.869Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-20T15:00:45.813Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-20T15:00:45.827Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T15:01:11.242Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T15:12:32.004Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:18:29.532Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:18:39.535Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:18:49.539Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:18:59.548Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:19:09.559Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:19:19.560Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:19:29.565Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:19:39.570Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:19:49.587Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:19:59.585Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:20:09.594Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:20:19.593Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:20:29.603Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:20:39.613Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:20:49.618Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:20:59.620Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:21:09.632Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:21:19.630Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:21:29.645Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:21:39.649Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:21:49.665Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:21:59.674Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:22:09.677Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:22:19.686Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:22:29.697Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:22:39.716Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:22:49.725Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:22:59.728Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:23:09.742Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:23:19.744Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:23:29.749Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:23:39.760Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:23:49.762Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:23:59.768Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:24:09.784Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:24:19.793Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:24:29.802Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:24:39.814Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:24:49.821Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:24:59.826Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:25:09.836Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:25:19.844Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:25:29.845Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:25:39.850Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:25:49.865Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:25:59.879Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:26:09.881Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:26:19.892Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:26:29.903Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:26:39.908Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:26:49.912Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:26:59.915Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:27:09.924Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:27:19.934Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:27:29.939Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:27:39.943Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:27:49.945Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:27:59.960Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:28:09.962Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:28:19.974Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:28:29.978Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:28:39.983Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:28:49.992Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:28:59.996Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:29:09.996Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:29:20.010Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:29:30.017Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:29:40.024Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:29:50.031Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:30:00.043Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:30:10.057Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:30:20.057Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:30:30.067Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:30:40.079Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:30:50.077Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:31:00.085Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:31:10.099Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:31:20.103Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:31:30.110Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:31:40.116Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:31:50.126Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:32:00.158Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:32:10.147Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:32:20.159Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:32:30.173Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:32:40.174Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:32:50.184Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:33:00.190Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:33:10.199Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:33:20.205Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:33:30.212Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:33:40.221Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:33:50.230Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:34:00.243Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:34:10.247Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:34:20.249Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:34:30.252Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:34:40.260Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:34:50.274Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:35:00.281Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:35:10.294Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:35:20.305Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:35:30.305Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:35:40.310Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:35:50.317Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:36:00.326Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:36:10.339Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:36:20.346Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:36:30.352Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:36:40.355Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:36:50.370Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:37:00.373Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:37:10.375Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:37:20.381Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:37:30.397Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:37:40.403Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:37:50.414Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:38:00.415Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:38:10.422Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:38:20.425Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:38:30.432Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:38:40.445Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:38:50.452Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:39:00.467Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:39:10.476Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:39:20.487Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:39:30.493Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:39:40.492Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:39:50.506Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:40:00.523Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:40:10.526Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:40:20.536Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:40:30.546Z"}
+{"error":"read ECONNRESET","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:44:15.816Z"}
+{"error":"IMAP connection failed","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:57:53.145Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:58:01.338Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:58:11.348Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:58:21.350Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:58:31.365Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:58:41.368Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:58:51.379Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:59:01.396Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:59:11.405Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:59:21.415Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:59:31.419Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:59:41.429Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T16:59:51.444Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:00:01.454Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:00:11.459Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:00:21.472Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:00:31.476Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:00:41.477Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:00:51.513Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:01:01.519Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:01:11.522Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:01:21.529Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:01:31.542Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:01:41.555Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:01:51.555Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:02:01.569Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:02:11.570Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:02:21.585Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:02:31.598Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:02:41.604Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:02:51.603Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:03:01.617Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:03:11.635Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:03:21.639Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:03:31.647Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:03:41.662Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:03:51.668Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:04:01.681Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:04:11.686Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:04:21.685Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:04:31.698Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:04:41.724Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:04:51.709Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:05:01.721Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:05:11.751Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:05:21.738Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:05:31.751Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:05:41.762Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:05:51.769Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:06:01.782Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:06:11.814Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:06:21.807Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:06:31.816Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:06:41.827Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:06:51.831Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:07:01.840Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:07:11.872Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:07:21.863Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:07:31.873Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:07:41.888Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:07:51.886Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:08:01.899Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:08:11.908Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:08:21.915Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:08:31.927Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:08:41.937Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:08:51.940Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:09:01.950Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:09:11.961Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:09:21.968Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:09:31.969Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:09:41.970Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:09:51.982Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:10:01.995Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:10:12.001Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:10:22.014Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:10:32.021Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:10:42.018Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:10:52.035Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:11:02.038Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:11:12.051Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:11:22.067Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:11:32.068Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:11:42.071Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:11:52.072Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:12:02.076Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:12:12.078Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:12:22.092Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:12:32.093Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:12:42.095Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:12:52.105Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:13:02.107Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:13:12.109Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:13:22.121Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:13:32.122Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:13:42.129Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:13:52.130Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:14:02.141Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:14:12.154Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:14:22.156Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:14:32.172Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:14:42.171Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:14:52.184Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:15:02.184Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:15:12.203Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:15:22.201Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:15:32.211Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:15:42.216Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:15:52.227Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:16:02.232Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:16:12.251Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:16:22.262Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:16:32.270Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:16:42.281Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:16:52.282Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:17:02.284Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:17:12.300Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:17:22.301Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:17:32.307Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:17:42.308Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:17:52.312Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:18:02.315Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:18:12.324Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:18:22.339Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:18:32.344Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:18:42.347Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:18:52.357Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:19:02.356Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:19:12.373Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:19:22.381Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:19:32.381Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:19:42.389Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:19:52.401Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:20:02.411Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:20:12.412Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:20:22.416Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:20:32.425Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:20:42.429Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:20:52.429Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:21:02.436Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:21:12.443Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:21:22.458Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:21:32.473Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:21:42.485Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:21:52.490Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:22:02.501Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:22:12.512Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:22:22.522Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:22:32.527Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:22:42.537Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:22:52.543Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:23:02.550Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:23:12.565Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:23:22.567Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:23:32.575Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-20T17:23:42.588Z"}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"assigneeId":5}},"ticketId":"TB#00017","timestamp":"2026-02-20T18:34:49.138Z","user":5}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-20T18:35:13.712Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-20T18:35:13.720Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-20T18:35:23.977Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-20T18:35:23.987Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-20T18:35:30.236Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-20T18:35:30.241Z"}

@@ -8,7 +8,9 @@ import * as userService from '../services/user.service'
 import { listSlaConfigs } from '../services/sla.service'
 import { useAuth } from '../contexts/AuthContext'
 import { getRowsPerPage } from '../utils/pagination'
-import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
+import { loadLeftPanelConfig, type QueueRule, type TicketQueueConfig } from '../utils/leftPanelConfig'
+import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, toPresenceClass, type PresenceStatus } from '../utils/presence'
+import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../utils/avatar'
 const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
 
 type LocalAttachment = {
@@ -109,11 +111,14 @@ export default function TicketsView() {
     timeMinutes: '01',
   })
   const [agents, setAgents] = useState<any[]>([])
+  const [myPresenceStatus, setMyPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
+  const [, setAvatarRefreshTick] = useState(0)
   const [queueCollapsed, setQueueCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1100
   })
   const [ticketMyListRules, setTicketMyListRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().ticketsMyLists)
+  const [ticketQueues, setTicketQueues] = useState<TicketQueueConfig[]>(() => loadLeftPanelConfig().ticketQueues)
   const [newIncidentForm, setNewIncidentForm] = useState({
     ticketType: 'Fault',
     subject: '',
@@ -222,6 +227,19 @@ export default function TicketsView() {
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  React.useEffect(() => {
+    const syncAvatar = () => setAvatarRefreshTick((v) => v + 1)
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'itsm.user.avatar.map.v1') syncAvatar()
+    }
+    window.addEventListener(AVATAR_CHANGED_EVENT, syncAvatar as EventListener)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(AVATAR_CHANGED_EVENT, syncAvatar as EventListener)
+      window.removeEventListener('storage', onStorage)
+    }
   }, [])
 
   const resolveHistoryAuthor = (historyEntry: any, ticketData: any) => {
@@ -389,6 +407,24 @@ export default function TicketsView() {
     })
   }, [ticketId, incidents])
   React.useEffect(() => {
+    const syncPresence = () => setMyPresenceStatus(getStoredPresenceStatus())
+    const syncPresenceFromEvent = (event: Event) => {
+      const detailValue = (event as CustomEvent<{ value?: string }>)?.detail?.value
+      if (detailValue) {
+        setMyPresenceStatus(normalizePresenceStatus(detailValue))
+        return
+      }
+      syncPresence()
+    }
+    window.addEventListener('storage', syncPresence)
+    window.addEventListener(PRESENCE_CHANGED_EVENT, syncPresenceFromEvent as EventListener)
+    return () => {
+      window.removeEventListener('storage', syncPresence)
+      window.removeEventListener(PRESENCE_CHANGED_EVENT, syncPresenceFromEvent as EventListener)
+    }
+  }, [])
+
+  React.useEffect(() => {
     userService.listUsers({ limit: 500 }).then((users) => {
       setAgents(Array.isArray(users) ? users : [])
     }).catch(() => {
@@ -432,7 +468,11 @@ export default function TicketsView() {
     }
   }, [])
   React.useEffect(() => {
-    const handler = () => setTicketMyListRules(loadLeftPanelConfig().ticketsMyLists)
+    const handler = () => {
+      const cfg = loadLeftPanelConfig()
+      setTicketMyListRules(cfg.ticketsMyLists)
+      setTicketQueues(cfg.ticketQueues)
+    }
     window.addEventListener('left-panel-config-updated', handler as EventListener)
     return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
   }, [])
@@ -737,6 +777,71 @@ export default function TicketsView() {
     return 'User'
   }
 
+  const getAgentPresenceClass = (agent: any): 'available' | 'away' | 'dnd' | 'offline' => {
+    const agentId = String(agent?.id || '').trim()
+    const agentEmail = String(agent?.email || '').trim().toLowerCase()
+    const agentName = String(getAgentDisplayName(agent) || '').trim().toLowerCase()
+    const meId = String(user?.id || '').trim()
+    const meEmail = String(user?.email || '').trim().toLowerCase()
+    const meName = String(user?.name || '').trim().toLowerCase()
+    const isMe =
+      (agentId && meId && agentId === meId) ||
+      (agentEmail && meEmail && agentEmail === meEmail) ||
+      (agentName && meName && agentName === meName)
+    if (isMe) return toPresenceClass(myPresenceStatus)
+
+    const raw = String(agent?.presenceStatus || agent?.status || '').trim().toLowerCase()
+    if (!raw) return 'available'
+    if (raw.includes('do not disturb') || raw.includes('dnd') || raw.includes('busy')) return 'dnd'
+    if (raw.includes('away')) return 'away'
+    if (raw.includes('inactive') || raw.includes('offline') || raw.includes('disabled')) return 'offline'
+    if (raw.includes('active') || raw.includes('available') || raw.includes('online')) return 'available'
+    return 'available'
+  }
+
+  const findAgentRecord = (agentKey: string, label?: string) => {
+    const key = String(agentKey || '').trim().toLowerCase()
+    const displayLabel = String(label || '').trim().toLowerCase()
+    return (
+      agents.find((a) => String(a?.id || '').trim().toLowerCase() === key) ||
+      agents.find((a) => String(getAgentDisplayName(a) || '').trim().toLowerCase() === key) ||
+      agents.find((a) => displayLabel && String(getAgentDisplayName(a) || '').trim().toLowerCase() === displayLabel) ||
+      null
+    )
+  }
+
+  const renderQueueAgentAvatar = (agent: any, fallbackLabel?: string) => {
+    const displayName = String(getAgentDisplayName(agent) || fallbackLabel || 'User').trim()
+    const merged = {
+      ...(agent || {}),
+      name: displayName,
+      email: String(agent?.email || '').trim(),
+    }
+    const meName = String(user?.name || '').trim().toLowerCase()
+    const meEmail = String(user?.email || '').trim().toLowerCase()
+    const mergedName = String(merged?.name || '').trim().toLowerCase()
+    const mergedEmail = String(merged?.email || '').trim().toLowerCase()
+    const isMe = Boolean(
+      (meName && mergedName && meName === mergedName) ||
+      (meEmail && mergedEmail && meEmail === mergedEmail)
+    )
+    const avatarUrl = isMe ? getUserAvatarUrl(user) : getUserAvatarUrl(merged)
+    const initials = getUserInitials(merged, getInitials(displayName))
+    if (avatarUrl) {
+      return (
+        <img
+          src={avatarUrl}
+          alt={displayName}
+          className="queue-avatar-image"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none'
+          }}
+        />
+      )
+    }
+    return initials
+  }
+
   const addTicketComment = (ticketId: string, text: string) => {
     const now = new Date().toLocaleString()
     const author = getCurrentAgentName()
@@ -928,13 +1033,17 @@ export default function TicketsView() {
 
   // Compute queue counts early before queueSidebar JSX uses them
   const openIncidents = incidents.filter((i) => isOpenStatus(i.status))
+  const visibleTicketQueues = ticketQueues.filter((q) => {
+    if (!Array.isArray(q.visibilityRoles) || q.visibilityRoles.length === 0) return true
+    return q.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+  })
   const mapTeam = (incident: Incident) => {
-    const c = String(incident.category || '').toLowerCase()
-    if (c.includes('helpdesk')) return 'Helpdesk (Line1)'
-    if (c.includes('hardware') || c.includes('network')) return 'Helpdesk (Line1)'
-    if (c.includes('email') || c.includes('monitor')) return 'Monitor queue'
-    if (c.includes('on-site') || c.includes('onsite')) return 'On-Site'
-    return 'Technical Team (Line2)'
+    const category = String(incident.category || '').trim()
+    const matchedQueue = visibleTicketQueues.find(
+      (queue) => queue.label.trim().toLowerCase() === category.toLowerCase()
+    )
+    if (matchedQueue) return matchedQueue.label
+    return category || 'General'
   }
   const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
   const countWithSupplier = openIncidents.filter((i) => {
@@ -946,20 +1055,32 @@ export default function TicketsView() {
     acc[t] = (acc[t] || 0) + 1
     return acc
   }, {})
-  const teamGroups = openIncidents.reduce<Record<string, { total: number; unassigned: number; agents: Record<string, { label: string; count: number }> }>>((acc, i) => {
-    const team = mapTeam(i)
-    if (!acc[team]) acc[team] = { total: 0, unassigned: 0, agents: {} }
-    acc[team].total += 1
-    const agentKey = String(i.assignedAgentId || i.assignedAgentName || '').trim()
-    if (!agentKey) {
-      acc[team].unassigned += 1
-      return acc
-    }
-    const label = i.assignedAgentName || String(i.assignedAgentId)
-    if (!acc[team].agents[agentKey]) acc[team].agents[agentKey] = { label, count: 0 }
-    acc[team].agents[agentKey].count += 1
-    return acc
-  }, {})
+  const teamGroups = (() => {
+    const groups: Record<string, { total: number; unassigned: number; agents: Record<string, { label: string; count: number }> }> = {}
+
+    // Always show configured ticket queues in the team panel, even when count is 0.
+    visibleTicketQueues.forEach((queue) => {
+      const key = String(queue.label || '').trim()
+      if (!key || groups[key]) return
+      groups[key] = { total: 0, unassigned: 0, agents: {} }
+    })
+
+    openIncidents.forEach((incident) => {
+      const team = mapTeam(incident)
+      if (!groups[team]) groups[team] = { total: 0, unassigned: 0, agents: {} }
+      groups[team].total += 1
+      const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
+      if (!agentKey) {
+        groups[team].unassigned += 1
+        return
+      }
+      const label = incident.assignedAgentName || String(incident.assignedAgentId)
+      if (!groups[team].agents[agentKey]) groups[team].agents[agentKey] = { label, count: 0 }
+      groups[team].agents[agentKey].count += 1
+    })
+
+    return groups
+  })()
   const typeBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
     const t = i.type || 'Unknown'
     acc[t] = (acc[t] || 0) + 1
@@ -1137,7 +1258,16 @@ export default function TicketsView() {
                             )
                           }}
                         >
-                          <div className="queue-avatar">{getInitials(agent.label || 'A')}</div>
+                          {(() => {
+                            const record = findAgentRecord(agentKey, agent.label)
+                            const presenceClass = getAgentPresenceClass(record || { id: agentKey, name: agent.label })
+                            return (
+                          <div className="queue-avatar queue-avatar-with-presence">
+                            {renderQueueAgentAvatar(record || { id: agentKey, name: agent.label }, agent.label)}
+                            <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                          </div>
+                            )
+                          })()}
                           <div className="queue-name">{agent.label}</div>
                           <div className="queue-count">{agent.count}</div>
                         </div>
@@ -1165,7 +1295,10 @@ export default function TicketsView() {
                   setQueueFilter((prev) => prev.type === 'agent' && String(prev.agentId || '') === String(a.id) ? { type: 'all' } : { type: 'agent', agentId: String(a.id), agentName: displayName })
                 }}
               >
-                <div className="queue-avatar">{getInitials(getAgentDisplayName(a) || 'U')}</div>
+                <div className="queue-avatar queue-avatar-with-presence">
+                  {renderQueueAgentAvatar(a, getAgentDisplayName(a))}
+                  <span className={`queue-avatar-presence queue-avatar-presence-${getAgentPresenceClass(a)}`} />
+                </div>
                 <div className="queue-name">{getAgentDisplayName(a)}</div>
                 <div className="queue-count">
                   {openIncidents.filter((i) => {
@@ -1258,18 +1391,34 @@ export default function TicketsView() {
     return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase()
   }
 
+  const sanitizeAvatarSrc = (value: unknown): string => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    const lower = raw.toLowerCase()
+    if (lower.startsWith('data:') && raw.length > 120000) return ''
+    if (
+      lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('blob:') ||
+      lower.startsWith('data:image/')
+    ) {
+      return raw
+    }
+    return ''
+  }
+
   const getInboundDisplayUser = () => {
     const name = String(endUser?.name || endUser?.username || endUser?.email || selectedTicket?.endUser || 'End User').trim()
     const email = String(endUser?.email || '').trim().toLowerCase()
     const username = String(endUser?.username || '').trim().toLowerCase()
-    const avatarUrl = String(
+    const avatarUrl = sanitizeAvatarSrc(String(
       endUser?.avatarUrl ||
       endUser?.profilePic ||
       endUser?.avatar ||
       endUser?.photoUrl ||
       endUser?.imageUrl ||
       ''
-    ).trim()
+    ).trim())
     return { name, email, username, avatarUrl }
   }
 
@@ -2216,7 +2365,15 @@ export default function TicketsView() {
                 return (
               <div key={`${c.time}-${idx}`} className="progress-item">
                 <div className="progress-avatar">
-                  {identity.avatarUrl ? <img src={identity.avatarUrl} alt={identity.name} /> : identity.initials}
+                  {identity.avatarUrl ? (
+                    <img
+                      src={identity.avatarUrl}
+                      alt={identity.name}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  ) : identity.initials}
                 </div>
                 <div className="progress-body">
                   <div className="progress-meta">
@@ -2230,7 +2387,15 @@ export default function TicketsView() {
             {(!ticketComments[selectedTicket.id] || ticketComments[selectedTicket.id].length === 0) && (
               <div className="progress-item">
                 <div className="progress-avatar">
-                  {getInboundDisplayUser().avatarUrl ? <img src={getInboundDisplayUser().avatarUrl} alt={getInboundDisplayUser().name} /> : getInitials(getInboundDisplayUser().name)}
+                  {getInboundDisplayUser().avatarUrl ? (
+                    <img
+                      src={getInboundDisplayUser().avatarUrl}
+                      alt={getInboundDisplayUser().name}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  ) : getInitials(getInboundDisplayUser().name)}
                 </div>
                 <div className="progress-body">
                   <div className="progress-meta">
@@ -2500,6 +2665,18 @@ export default function TicketsView() {
                 {'>'}
               </button>
             </div>
+            <button
+              className="table-icon-btn"
+              title="Refresh"
+              aria-label="Refresh"
+              onClick={loadTickets}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10" />
+                <polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            </button>
             <button className="table-primary-btn" onClick={() => setShowNewIncidentModal(true)}>+ New</button>
             <button
               className="table-icon-btn"

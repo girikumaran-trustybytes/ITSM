@@ -1,6 +1,7 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { getUserAvatarUrl, getUserInitials } from '../../utils/avatar'
 
 const activity = [
   {
@@ -18,7 +19,8 @@ const activity = [
 export default function PortalHome() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const initials = user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'
+  const initials = getUserInitials(user, 'G')
+  const avatarUrl = getUserAvatarUrl(user)
 
   return (
     <div className="portal-root">
@@ -27,7 +29,9 @@ export default function PortalHome() {
         <div className="portal-top-actions">
           <button className="portal-link" onClick={() => navigate('/tickets')}>My Tickets</button>
           <button className="portal-link portal-primary" onClick={() => navigate('/tickets')}>New Ticket</button>
-          <div className="portal-avatar">{initials}</div>
+          <div className="portal-avatar unified-user-avatar">
+            {avatarUrl ? <img src={avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
+          </div>
         </div>
       </header>
 
@@ -70,7 +74,9 @@ export default function PortalHome() {
         </div>
         <div className="portal-account-body">
           <div className="portal-account-row">
-            <div className="portal-account-avatar">{initials}</div>
+            <div className="portal-account-avatar unified-user-avatar">
+              {avatarUrl ? <img src={avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
+            </div>
             <div>
               <div className="portal-account-name">{user?.name || 'User'}</div>
               <div className="portal-account-email">{user?.email || 'user@example.com'}</div>

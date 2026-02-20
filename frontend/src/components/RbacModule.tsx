@@ -203,6 +203,19 @@ export default function RbacModule({ isAdmin }: Props) {
     return `${u.email} | ${u.name || 'No name'} | ${titleCase(u.role)} | ${titleCase(u.inviteStatus || u.status || 'none')}`
   }
 
+  const usersForSelection = useMemo(() => {
+    return users
+      .slice()
+      .sort((a, b) => {
+        const aSvc = a.isServiceAccount ? 1 : 0
+        const bSvc = b.isServiceAccount ? 1 : 0
+        if (aSvc !== bSvc) return bSvc - aSvc
+        return String(a.name || a.email || '').localeCompare(String(b.name || b.email || ''))
+      })
+  }, [users])
+  const serviceAccountsForSelection = useMemo(() => usersForSelection.filter((u) => u.isServiceAccount), [usersForSelection])
+  const nonServiceAccountsForSelection = useMemo(() => usersForSelection.filter((u) => !u.isServiceAccount), [usersForSelection])
+
   const loadUsers = async () => {
     try {
       const data = await listRbacUsers({ q: userSearch, limit: 500 })
@@ -743,68 +756,29 @@ export default function RbacModule({ isAdmin }: Props) {
 
   return (
     <>
-      <div className="admin-user-permission-tool-bar">
-        <div className="tool-bar-left">
-          <button
-            className="table-icon-btn toolbar-left-panel-toggle"
-            title="Toggle Left Panel"
-            aria-label="Toggle Left Panel"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'toggle-left-panel', target: 'admin' } }))
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="4" y1="7" x2="20" y2="7" />
-              <line x1="4" y1="12" x2="20" y2="12" />
-              <line x1="4" y1="17" x2="20" y2="17" />
-            </svg>
-          </button>
-          <div className="rbac-select-field">
-            <select
-              value={selectedUserId ?? ''}
-              onChange={(e) => setSelectedUserId(e.target.value ? Number(e.target.value) : null)}
-              disabled={loading}
-            >
-              <option value="">Select User</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {getUserOptionLabel(u)}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="tool-bar-right rbac-header-actions">
-          <button
-            className="rbac-add-btn"
-            onClick={() => {
-              resetServiceAccountFlow()
-              setShowAddModal(true)
-            }}
-            disabled={!isAdmin}
-          >
-            + Add User
-          </button>
-          <button
-            className="rbac-reinvite-btn"
-            onClick={() => {
-              setShowAddModal(false)
-              setModalError('')
-              setServiceAccountView('picker')
-              setConvertToServiceAccount(false)
-              setAutoUpgradeQueues(true)
-              setSelectedServiceQueueIds([])
-              setNewServiceUserId(null)
-            }}
-            disabled={!isAdmin}
-          >
-            Service Account
-          </button>
-          <button className="rbac-update-btn" onClick={handleSave} disabled={!isDirty || saving || !selectedUserId}>
-            {saving ? 'Updating...' : 'Update'}
-          </button>
-        </div>
+      <div className="rbac-top-action-row">
+        <button
+          className="rbac-add-btn"
+          onClick={() => {
+            resetAddModal()
+            resetServiceAccountFlow()
+            setServiceAccountView('picker')
+          }}
+          disabled={!isAdmin}
+        >
+          <span className="rbac-add-btn-plus" aria-hidden="true">+</span>
+          <span>Add Service Account</span>
+        </button>
+        {selectedUserId && (
+          <>
+            <button className="rbac-update-btn" onClick={handleSave} disabled={!isDirty || saving || !selectedUserId}>
+              {saving ? 'Updating...' : 'Update'}
+            </button>
+            <button className="admin-settings-ghost" onClick={() => setSelectedUserId(null)}>
+              Cancel
+            </button>
+          </>
+        )}
       </div>
 
       {serviceAccountView !== 'none' ? (
@@ -818,11 +792,11 @@ export default function RbacModule({ isAdmin }: Props) {
                 </div>
                 <div className="rbac-service-account-picker-grid">
                   <button className="rbac-service-account-picker-card" onClick={() => setServiceAccountView('existing-user')}>
-                    <h4>Add/Edit service account from existing user</h4>
+                    <h4>Add service account from existing user</h4>
                     <p>Select a current user to add or edit queue-scoped service account settings.</p>
                   </button>
                   <button className="rbac-service-account-picker-card" onClick={() => setServiceAccountView('new-user')}>
-                    <h4>Add user and service account</h4>
+                    <h4>Add new user for service account</h4>
                     <p>Create a new user first, then continue with service account conversion and queue scope.</p>
                   </button>
                 </div>
@@ -832,7 +806,7 @@ export default function RbacModule({ isAdmin }: Props) {
             {serviceAccountView === 'existing-user' && (
               <div className="rbac-service-account-form">
                 <div className="rbac-service-account-head">
-                  <h3>Add/Edit service account from existing user</h3>
+                  <h3>Add service account from existing user</h3>
                   <button className="admin-settings-ghost" onClick={() => setServiceAccountView('picker')}>Back</button>
                 </div>
                 {modalError && <div className="rbac-modal-error">{modalError}</div>}
@@ -840,9 +814,20 @@ export default function RbacModule({ isAdmin }: Props) {
                   Select User
                   <select value={serviceExistingUserId ?? ''} onChange={(e) => setServiceExistingUserId(e.target.value ? Number(e.target.value) : null)}>
                     <option value="">Select User</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>{getUserOptionLabel(u)}</option>
-                    ))}
+                    {serviceAccountsForSelection.length > 0 && (
+                      <optgroup label="Service Accounts">
+                        {serviceAccountsForSelection.map((u) => (
+                          <option key={u.id} value={u.id}>{getUserOptionLabel(u)}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {nonServiceAccountsForSelection.length > 0 && (
+                      <optgroup label="Other Users">
+                        {nonServiceAccountsForSelection.map((u) => (
+                          <option key={u.id} value={u.id}>{getUserOptionLabel(u)}</option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </label>
                 {serviceExistingUserId && (
@@ -918,7 +903,7 @@ export default function RbacModule({ isAdmin }: Props) {
             {serviceAccountView === 'new-user' && (
               <div className="rbac-service-account-form">
                 <div className="rbac-service-account-head">
-                  <h3>Add user and service account</h3>
+                  <h3>Add new user for service account</h3>
                   <button className="admin-settings-ghost" onClick={() => setServiceAccountView('picker')}>Back</button>
                 </div>
                 {modalError && <div className="rbac-modal-error">{modalError}</div>}
@@ -983,7 +968,7 @@ export default function RbacModule({ isAdmin }: Props) {
                       <p className="rbac-service-account-note">Enable "Make as Service Account" to continue.</p>
                     )}
                     <div className="rbac-service-account-actions">
-                      <button className="admin-settings-primary" onClick={handleCreateUserAndContinueServiceAccount} disabled={!convertToServiceAccount}>Add User</button>
+                      <button className="admin-settings-primary" onClick={handleCreateUserAndContinueServiceAccount} disabled={!convertToServiceAccount}>Add Service Account</button>
                     </div>
                   </>
                 ) : (
@@ -1138,7 +1123,44 @@ export default function RbacModule({ isAdmin }: Props) {
               </table>
             </div>
           ) : (
-            <div className="rbac-empty-state">Select a user to view permissions.</div>
+            <div className="rbac-permission-matrix-wrap">
+              <table className="rbac-permission-matrix">
+                <thead>
+                  <tr>
+                    <th scope="col">Service Account</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Role</th>
+                    <th scope="col">Invite Status</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {serviceAccountsForSelection.length > 0 ? (
+                    serviceAccountsForSelection.map((u) => (
+                      <tr key={u.id}>
+                        <td>{u.email}</td>
+                        <td>{u.name || 'No name'}</td>
+                        <td>{titleCase(u.role || 'user')}</td>
+                        <td>{titleCase(u.inviteStatus || 'none')}</td>
+                        <td>{titleCase(u.status || 'active')}</td>
+                        <td>
+                          <button className="admin-settings-ghost" onClick={() => setSelectedUserId(Number(u.id))}>
+                            Edit
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6}>
+                        <div className="rbac-empty-state">No service account users found.</div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}

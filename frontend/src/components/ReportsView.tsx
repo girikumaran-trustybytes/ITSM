@@ -35,6 +35,7 @@ export default function ReportsView() {
   const [users, setUsers] = useState<any[]>([])
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [exportBusy, setExportBusy] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -168,6 +169,19 @@ export default function ReportsView() {
   }, [users])
 
   const supplierStats = useMemo(() => ({ total: suppliers.length }), [suppliers])
+  const executiveSummary = useMemo(() => {
+    const slaRisk = tickets.filter((t) => {
+      const status = String(t.status || '').toLowerCase()
+      return status.includes('breach') || status.includes('overdue') || status.includes('hold')
+    }).length
+    const unassigned = tickets.filter((t) => !t.assigneeId).length
+    return {
+      totalTickets: ticketStats.total,
+      openTickets: ticketStats.open,
+      slaRisk,
+      unassigned,
+    }
+  }, [ticketStats.open, ticketStats.total, tickets])
 
   const availabilityStats = useMemo(() => ([
     { label: 'Total Assets', value: assetStats.total, icon: 'stack' },
@@ -279,9 +293,36 @@ export default function ReportsView() {
 
   const totalFor = (entries: Array<[string, number]>) => entries.reduce((s, [, v]) => s + v, 0) || 1
 
+  const exportSummaryCsv = async () => {
+    try {
+      setExportBusy(true)
+      const rows = [
+        ['metric', 'value'],
+        ['total_tickets', String(executiveSummary.totalTickets)],
+        ['open_tickets', String(executiveSummary.openTickets)],
+        ['sla_risk', String(executiveSummary.slaRisk)],
+        ['unassigned', String(executiveSummary.unassigned)],
+        ['total_assets', String(assetStats.total)],
+        ['total_users', String(userStats.total)],
+      ]
+      const csv = rows.map((r) => r.join(',')).join('\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `itsm-report-summary-${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
   return (
     <div className="reports-view">
-      <div className="reports-header">
+      <div className="reports-header reports-command-bar">
         <div>
           <h2>Reports</h2>
           <p>Grafana-style reporting workspace with flexible date ranges</p>
@@ -366,9 +407,31 @@ export default function ReportsView() {
               </div>
             )}
           </div>
+          <button className="reports-open-btn" onClick={exportSummaryCsv} disabled={exportBusy}>
+            {exportBusy ? 'Exporting...' : 'Export Summary CSV'}
+          </button>
         </div>
       </div>
       {loading && <div className="reports-loading">Loading data…</div>}
+
+      <section className="reports-executive-strip">
+        <article className="reports-exec-card">
+          <h4>Total Tickets</h4>
+          <strong>{executiveSummary.totalTickets}</strong>
+        </article>
+        <article className="reports-exec-card">
+          <h4>Open Tickets</h4>
+          <strong>{executiveSummary.openTickets}</strong>
+        </article>
+        <article className="reports-exec-card">
+          <h4>SLA At Risk</h4>
+          <strong>{executiveSummary.slaRisk}</strong>
+        </article>
+        <article className="reports-exec-card">
+          <h4>Unassigned</h4>
+          <strong>{executiveSummary.unassigned}</strong>
+        </article>
+      </section>
 
       <section className="reports-availability">
         <div className="reports-section-title">Availability</div>

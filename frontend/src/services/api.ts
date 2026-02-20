@@ -18,6 +18,7 @@ function isPublicEndpoint(url: string) {
     url.includes('/auth/login') ||
     url.includes('/auth/google') ||
     url.includes('/auth/google/config') ||
+    url.includes('/auth/sso/config') ||
     url.includes('/auth/forgot-password') ||
     url.includes('/auth/reset-password') ||
     url.includes('/auth/mfa/verify') ||
@@ -52,7 +53,9 @@ api.interceptors.request.use((config) => {
 
   // Prevent sending protected API calls without auth; keep public auth endpoints accessible.
   if (!isPublicEndpoint(url)) {
-    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+    const onLoginRoute = typeof window !== 'undefined'
+      && (window.location.pathname === '/login' || window.location.pathname === '/portal/login')
+    if (typeof window !== 'undefined' && !onLoginRoute) {
       window.location.href = '/login'
     }
     return Promise.reject(new Error('Missing access token'))
@@ -73,7 +76,8 @@ api.interceptors.response.use(
       !original._retry &&
       original.url &&
       !original.url.includes('/auth/login') &&
-      !original.url.includes('/auth/refresh')
+      !original.url.includes('/auth/refresh') &&
+      !isPublicEndpoint(String(original.url || ''))
     ) {
       original._retry = true;
       try {
@@ -86,7 +90,11 @@ api.interceptors.response.use(
         localStorage.removeItem('refreshToken');
         sessionStorage.removeItem('accessToken');
         sessionStorage.removeItem('refreshToken');
-        window.location.href = '/login';
+        const onLoginRoute = typeof window !== 'undefined'
+          && (window.location.pathname === '/login' || window.location.pathname === '/portal/login')
+        if (!onLoginRoute) {
+          window.location.href = '/login';
+        }
         return Promise.reject(e);
       }
     }

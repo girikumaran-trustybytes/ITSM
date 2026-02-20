@@ -9,7 +9,7 @@ import * as serviceService from '../services/service.service'
 import { useAuth } from '../contexts/AuthContext'
 import { useColumnResize } from '../hooks/useColumnResize'
 import { getRowsPerPage } from '../utils/pagination'
-import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
+import { loadLeftPanelConfig, type QueueRule, type AssetCategoryConfig } from '../utils/leftPanelConfig'
 
 type Asset = {
   id: number
@@ -143,10 +143,12 @@ export default function AssetsView({
     return window.innerWidth <= 1100
   })
   const [panelRules, setPanelRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().assets)
+  const [assetCategories, setAssetCategories] = useState<AssetCategoryConfig[]>(() => loadLeftPanelConfig().assetCategories)
   const [assetQueueView, setAssetQueueView] = useState<'assetType' | 'assetGroup' | 'ownership' | 'allAssets'>('assetGroup')
   const [showAssetViewSelector, setShowAssetViewSelector] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
   const [assetQueueFilter, setAssetQueueFilter] = useState<{ type: 'all' | 'rule' | 'assetType' | 'assetGroup'; value?: string }>({ type: 'all' })
-  const [expandedAssetGroups, setExpandedAssetGroups] = useState<string[]>(['Computing', 'Mobile', 'Configuration Items'])
+  const [expandedAssetGroups, setExpandedAssetGroups] = useState<string[]>([])
   const [filters, setFilters] = useState({
     name: '',
     serial: '',
@@ -190,7 +192,7 @@ export default function AssetsView({
 
   useEffect(() => {
     loadAssets()
-  }, [currentPage, search])
+  }, [currentPage, search, refreshTick])
 
   useEffect(() => {
     setSearch(toolbarSearch)
@@ -217,7 +219,11 @@ export default function AssetsView({
     return () => document.body.classList.remove('assets-view-active')
   }, [])
   useEffect(() => {
-    const handler = () => setPanelRules(loadLeftPanelConfig().assets)
+    const handler = () => {
+      const cfg = loadLeftPanelConfig()
+      setPanelRules(cfg.assets)
+      setAssetCategories(cfg.assetCategories)
+    }
     window.addEventListener('left-panel-config-updated', handler as EventListener)
     return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
   }, [])
@@ -233,6 +239,9 @@ export default function AssetsView({
       }
       if (detail.action === 'filter') {
         setShowFilters((v) => !v)
+      }
+      if (detail.action === 'refresh') {
+        setRefreshTick((v) => v + 1)
       }
     }
     window.addEventListener('shared-toolbar-action', handler as EventListener)
@@ -298,14 +307,44 @@ export default function AssetsView({
 
   const normalizeKey = (value: string) => String(value || '').trim().toLowerCase()
   const getAssetType = (asset: Asset) => String(asset.assetType || asset.category || 'Unknown').trim()
-  const assetGroupMap: Record<string, string[]> = {
-    Computing: ['Laptop', 'Workstation'],
-    Mobile: ['Mobile Phone', 'Tablet'],
-    Peripherals: ['Monitor', 'Printer'],
-    'Configuration Items': ['Application Server', 'Business Application', 'Database Server', 'Server', 'Virtual Server'],
-    'Other Devices': ['Other Devices'],
-    'Network Equipment': ['Router'],
-  }
+  const configuredCategoryMap = useMemo(() => {
+    const visible = assetCategories.filter((category) => {
+      if (!Array.isArray(category.visibilityRoles) || category.visibilityRoles.length === 0) return true
+      return category.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+    })
+    if (!visible.length) return {}
+    return Object.fromEntries(
+      visible.map((category) => [
+        category.label,
+        Array.from(new Set((category.subcategories || []).map((s) => String(s || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+      ])
+    ) as Record<string, string[]>
+  }, [assetCategories, user?.role])
+
+  const assetGroupMap = useMemo(() => {
+    if (Object.keys(configuredCategoryMap).length > 0) return configuredCategoryMap
+    const grouped = new Map<string, Set<string>>()
+    for (const asset of assets) {
+      const group = String(asset.category || '').trim() || 'Uncategorized'
+      const type = getAssetType(asset)
+      if (!grouped.has(group)) grouped.set(group, new Set())
+      grouped.get(group)!.add(type)
+    }
+    return Object.fromEntries(
+      Array.from(grouped.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([group, types]) => [group, Array.from(types).sort((a, b) => a.localeCompare(b))])
+    ) as Record<string, string[]>
+  }, [assets, configuredCategoryMap])
+
+  const assetTypes = useMemo(
+    () => Array.from(new Set(assets.map((a) => getAssetType(a)))).sort((a, b) => a.localeCompare(b)),
+    [assets]
+  )
+  useEffect(() => {
+    const groups = new Set(Object.keys(assetGroupMap))
+    setExpandedAssetGroups((prev) => prev.filter((g) => groups.has(g)))
+  }, [assetGroupMap])
 
   const filtered = useMemo(() => {
     const match = (value: string | undefined | null, q: string) =>
@@ -520,21 +559,6 @@ export default function AssetsView({
     if (rule.field === 'category') return assets.filter((a) => String(a.category || '').toLowerCase() === String(rule.value || '').toLowerCase()).length
     return 0
   }
-  const assetTypes = [
-    'Application Server',
-    'Business Application',
-    'Database Server',
-    'Laptop',
-    'Mobile Phone',
-    'Monitor',
-    'Other Devices',
-    'Printer',
-    'Router',
-    'Server',
-    'Tablet',
-    'Virtual Server',
-    'Workstation',
-  ]
   const countByType = (type: string) => assets.filter((a) => normalizeKey(getAssetType(a)) === normalizeKey(type)).length
   const countByGroup = (group: string) => {
     const types = assetGroupMap[group] || []
@@ -667,7 +691,12 @@ export default function AssetsView({
           </>
         ) : assetQueueView === 'assetType' ? (
           <>
-            {assetTypes.map((type) => (
+            {assetTypes.length === 0 ? (
+              <div className="queue-item">
+                <div className="queue-avatar">i</div>
+                <div className="queue-name">No asset types</div>
+              </div>
+            ) : assetTypes.map((type) => (
               <div
                 key={type}
                 className={`queue-item${assetQueueFilter.type === 'assetType' && assetQueueFilter.value === type ? ' queue-item-active' : ''}`}
@@ -681,7 +710,12 @@ export default function AssetsView({
           </>
         ) : assetQueueView === 'assetGroup' ? (
           <>
-            {Object.entries(assetGroupMap).map(([group, types]) => {
+            {Object.keys(assetGroupMap).length === 0 ? (
+              <div className="queue-item">
+                <div className="queue-avatar">i</div>
+                <div className="queue-name">No asset groups</div>
+              </div>
+            ) : Object.entries(assetGroupMap).map(([group, types]) => {
               const expanded = expandedAssetGroups.includes(group)
               return (
                 <React.Fragment key={group}>

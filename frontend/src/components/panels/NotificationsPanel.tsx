@@ -58,7 +58,8 @@ export default function NotificationsPanel() {
   const { user } = useAuth()
   const [items, setItems] = React.useState<NotificationRow[]>([])
   const [busy, setBusy] = React.useState(false)
-  const [state, setState] = React.useState<NotificationState>({ readIds: [], deletedIds: [] })
+  const [state, setState] = React.useState<NotificationState>({ readIds: [], deletedIds: [], clearedAt: undefined })
+  const skipNextPersistRef = React.useRef(true)
 
   const load = React.useCallback(async () => {
     try {
@@ -72,12 +73,17 @@ export default function NotificationsPanel() {
 
   React.useEffect(() => {
     setState(loadNotificationState(user))
+    skipNextPersistRef.current = true
   }, [user?.id])
 
   React.useEffect(() => {
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false
+      return
+    }
     saveNotificationState(user, state)
     window.dispatchEvent(new CustomEvent('notifications-state-changed'))
-  }, [state, user])
+  }, [state, user?.id])
 
   React.useEffect(() => {
     load()
@@ -94,9 +100,15 @@ export default function NotificationsPanel() {
       window.removeEventListener('notifications-mark-all-read', onMarkAll as EventListener)
       window.removeEventListener('notifications-delete-all', onDeleteAll as EventListener)
     }
-  })
+  }, [])
 
-  const visible = items.filter((n) => !state.deletedIds.includes(Number(n.id)))
+  const visible = items.filter((n) => {
+    const id = Number(n.id)
+    if (state.deletedIds.includes(id)) return false
+    if (!state.clearedAt) return true
+    const createdMs = n.createdAt ? new Date(n.createdAt).getTime() : 0
+    return !Number.isFinite(createdMs) || createdMs > state.clearedAt
+  })
 
   const markRead = (id: number) => {
     setState((prev) => ({
@@ -120,7 +132,12 @@ export default function NotificationsPanel() {
 
   const deleteAll = () => {
     const ids = visible.map((v) => Number(v.id))
-    setState((prev) => ({ ...prev, deletedIds: Array.from(new Set([...prev.deletedIds, ...ids])) }))
+    setState((prev) => ({
+      ...prev,
+      deletedIds: Array.from(new Set([...prev.deletedIds, ...ids])),
+      readIds: Array.from(new Set([...prev.readIds, ...ids])),
+      clearedAt: Date.now(),
+    }))
   }
 
   return (
@@ -139,9 +156,17 @@ export default function NotificationsPanel() {
               <div className="panel-card-sub">{message.sub}</div>
               <div className="panel-card-actions">
                 <button className="panel-card-btn" onClick={() => markRead(id)} disabled={isRead}>
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5 }}>
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
                   {isRead ? 'Read' : 'Mark read'}
                 </button>
                 <button className="panel-card-btn panel-card-btn-danger" onClick={() => deleteOne(id)}>
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 5 }}>
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                  </svg>
                   Delete
                 </button>
               </div>

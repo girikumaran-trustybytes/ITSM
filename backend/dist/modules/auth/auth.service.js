@@ -9,16 +9,19 @@ const db_1 = require("../../db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const mail_integration_1 = require("../../services/mail.integration");
+const google_auth_library_1 = require("google-auth-library");
 const ACCESS_EXPIRES = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
 const REFRESH_EXPIRES_DAYS = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS || 7);
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access_secret';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh_secret';
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || '').trim();
+const GOOGLE_HOSTED_DOMAIN = String(process.env.GOOGLE_HOSTED_DOMAIN || '').trim().toLowerCase();
 const RESET_TOKEN_TTL_MIN = Number(process.env.PASSWORD_RESET_TOKEN_TTL_MIN || 30);
 const MFA_CODE_TTL_MIN = Number(process.env.MFA_CODE_TTL_MIN || 10);
 const MFA_REQUIRED_FOR_GOOGLE = String(process.env.MFA_REQUIRED_FOR_GOOGLE || 'false').toLowerCase() === 'true';
 const TOKEN_PEPPER = process.env.AUTH_TOKEN_PEPPER || ACCESS_SECRET;
 const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+const googleClient = new google_auth_library_1.OAuth2Client(GOOGLE_CLIENT_ID || undefined);
 let authSchemaInit = null;
 function nowPlusMinutes(minutes) {
     return new Date(Date.now() + Math.max(1, minutes) * 60 * 1000);
@@ -154,17 +157,30 @@ async function findActiveUserByEmail(email) {
 async function verifyGoogleIdToken(idToken) {
     if (!idToken)
         throw new Error('Google ID token is required');
-    const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
-    const res = await fetch(url);
-    if (!res.ok)
+    if (!GOOGLE_CLIENT_ID)
+        throw new Error('Google SSO is not configured');
+    let payload;
+    try {
+        const ticket = await googleClient.verifyIdToken({
+            idToken,
+            audience: GOOGLE_CLIENT_ID,
+        });
+        payload = ticket.getPayload();
+    }
+    catch {
         throw new Error('Invalid Google token');
-    const payload = await res.json();
-    const audience = String(payload.aud || '');
+    }
+    if (!payload)
+        throw new Error('Invalid Google token');
     const email = normalizeEmail(payload.email || '');
-    if (!email || String(payload.email_verified || '').toLowerCase() !== 'true')
+    if (!email || payload.email_verified !== true)
         throw new Error('Google account email is not verified');
-    if (GOOGLE_CLIENT_ID && audience !== GOOGLE_CLIENT_ID)
-        throw new Error('Google client mismatch');
+    if (GOOGLE_HOSTED_DOMAIN) {
+        const hd = String(payload.hd || '').trim().toLowerCase();
+        if (!hd || hd !== GOOGLE_HOSTED_DOMAIN) {
+            throw new Error(`Google account must belong to ${GOOGLE_HOSTED_DOMAIN}`);
+        }
+    }
     return {
         sub: String(payload.sub || ''),
         email,

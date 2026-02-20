@@ -21,9 +21,55 @@ export type ImapConfig = {
 }
 
 export type MailConfig = {
-  provider: 'gmail' | 'google-workspace' | 'custom'
+  provider: 'gmail' | 'google-workspace' | 'zoho' | 'microsoft-workspace' | 'outlook' | 'custom'
   smtp: SmtpConfig
   imap: ImapConfig
+}
+
+type MailInboundRoutingConfig = {
+  defaultQueue: string
+}
+
+const MAIL_PROVIDER_PRESETS: Record<MailConfig['provider'], { smtp: { host: string; port: number; secure: boolean }; imap: { host: string; port: number; secure: boolean } }> = {
+  gmail: {
+    smtp: { host: 'smtp.gmail.com', port: 465, secure: true },
+    imap: { host: 'imap.gmail.com', port: 993, secure: true },
+  },
+  'google-workspace': {
+    smtp: { host: 'smtp.gmail.com', port: 465, secure: true },
+    imap: { host: 'imap.gmail.com', port: 993, secure: true },
+  },
+  zoho: {
+    smtp: { host: 'smtp.zoho.com', port: 465, secure: true },
+    imap: { host: 'imap.zoho.com', port: 993, secure: true },
+  },
+  'microsoft-workspace': {
+    smtp: { host: 'smtp.office365.com', port: 587, secure: false },
+    imap: { host: 'outlook.office365.com', port: 993, secure: true },
+  },
+  outlook: {
+    smtp: { host: 'smtp-mail.outlook.com', port: 587, secure: false },
+    imap: { host: 'outlook.office365.com', port: 993, secure: true },
+  },
+  custom: {
+    smtp: { host: '', port: 465, secure: true },
+    imap: { host: '', port: 993, secure: true },
+  },
+}
+
+const DEFAULT_INBOUND_QUEUE = String(process.env.MAIL_TICKET_DEFAULT_QUEUE || 'Helpdesk').trim() || 'Helpdesk'
+let runtimeInboundRoutingConfig: MailInboundRoutingConfig = {
+  defaultQueue: DEFAULT_INBOUND_QUEUE,
+}
+
+function normalizeMailProvider(value: unknown): MailConfig['provider'] {
+  const providerRaw = String(value || '').trim().toLowerCase()
+  if (providerRaw === 'google-workspace') return 'google-workspace'
+  if (providerRaw === 'zoho') return 'zoho'
+  if (providerRaw === 'microsoft-workspace' || providerRaw === 'ms-workspace' || providerRaw === 'office365' || providerRaw === 'microsoft-365') return 'microsoft-workspace'
+  if (providerRaw === 'outlook') return 'outlook'
+  if (providerRaw === 'custom') return 'custom'
+  return 'gmail'
 }
 
 function toBool(value: unknown, fallback: boolean): boolean {
@@ -41,26 +87,23 @@ function toInt(value: unknown, fallback: number): number {
 }
 
 export function loadMailConfigFromEnv(): MailConfig {
-  const providerRaw = String(process.env.MAIL_PROVIDER || 'gmail').trim().toLowerCase()
-  const provider: MailConfig['provider'] =
-    providerRaw === 'google-workspace' ? 'google-workspace' :
-      providerRaw === 'custom' ? 'custom' :
-        'gmail'
+  const provider = normalizeMailProvider(process.env.MAIL_PROVIDER || 'gmail')
+  const preset = MAIL_PROVIDER_PRESETS[provider]
 
   return {
     provider,
     smtp: {
-      host: String(process.env.SMTP_HOST || 'smtp.gmail.com').trim(),
-      port: toInt(process.env.SMTP_PORT, 465),
-      secure: toBool(process.env.SMTP_SECURE, true),
+      host: String(process.env.SMTP_HOST || preset.smtp.host).trim(),
+      port: toInt(process.env.SMTP_PORT, preset.smtp.port),
+      secure: toBool(process.env.SMTP_SECURE, preset.smtp.secure),
       user: String(process.env.SMTP_USER || '').trim(),
       pass: String(process.env.SMTP_PASS || '').trim(),
       from: String(process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@itsm.local').trim(),
     },
     imap: {
-      host: String(process.env.IMAP_HOST || 'imap.gmail.com').trim(),
-      port: toInt(process.env.IMAP_PORT, 993),
-      secure: toBool(process.env.IMAP_SECURE, true),
+      host: String(process.env.IMAP_HOST || preset.imap.host).trim(),
+      port: toInt(process.env.IMAP_PORT, preset.imap.port),
+      secure: toBool(process.env.IMAP_SECURE, preset.imap.secure),
       user: String(process.env.IMAP_USER || process.env.SMTP_USER || '').trim(),
       pass: String(process.env.IMAP_PASS || process.env.SMTP_PASS || '').trim(),
       mailbox: String(process.env.IMAP_MAILBOX || 'INBOX').trim() || 'INBOX',
@@ -88,24 +131,44 @@ export function getPublicMailConfig() {
       mailbox: cfg.imap.mailbox,
       hasPassword: Boolean(cfg.imap.pass),
     },
+    inbound: {
+      defaultQueue: runtimeInboundRoutingConfig.defaultQueue,
+    },
   }
+}
+
+export function getInboundRoutingConfig(): MailInboundRoutingConfig {
+  return { ...runtimeInboundRoutingConfig }
+}
+
+export function setInboundRoutingConfig(next: Partial<MailInboundRoutingConfig>) {
+  const normalizedQueue = String(next?.defaultQueue || '').trim()
+  runtimeInboundRoutingConfig = {
+    defaultQueue: normalizedQueue || runtimeInboundRoutingConfig.defaultQueue || DEFAULT_INBOUND_QUEUE,
+  }
+  return getInboundRoutingConfig()
 }
 
 function mergeConfig(override?: Partial<MailConfig>): MailConfig {
   const base = loadMailConfigFromEnv()
+  const provider = normalizeMailProvider(override?.provider || base.provider)
+  const preset = MAIL_PROVIDER_PRESETS[provider]
   return {
-    provider: override?.provider || base.provider,
+    provider,
     smtp: {
-      ...base.smtp,
-      ...(override?.smtp || {}),
-      port: toInt(override?.smtp?.port, base.smtp.port),
-      secure: toBool(override?.smtp?.secure, base.smtp.secure),
+      host: String(override?.smtp?.host || base.smtp.host || preset.smtp.host).trim(),
+      port: toInt(override?.smtp?.port, base.smtp.port || preset.smtp.port),
+      secure: toBool(override?.smtp?.secure, base.smtp.secure ?? preset.smtp.secure),
+      user: String(override?.smtp?.user || base.smtp.user || '').trim(),
+      pass: String(override?.smtp?.pass || base.smtp.pass || '').trim(),
+      from: String(override?.smtp?.from || base.smtp.from || base.smtp.user || 'no-reply@itsm.local').trim(),
     },
     imap: {
-      ...base.imap,
-      ...(override?.imap || {}),
-      port: toInt(override?.imap?.port, base.imap.port),
-      secure: toBool(override?.imap?.secure, base.imap.secure),
+      host: String(override?.imap?.host || base.imap.host || preset.imap.host).trim(),
+      port: toInt(override?.imap?.port, base.imap.port || preset.imap.port),
+      secure: toBool(override?.imap?.secure, base.imap.secure ?? preset.imap.secure),
+      user: String(override?.imap?.user || base.imap.user || base.smtp.user || '').trim(),
+      pass: String(override?.imap?.pass || base.imap.pass || base.smtp.pass || '').trim(),
       mailbox: String(override?.imap?.mailbox || base.imap.mailbox || 'INBOX').trim() || 'INBOX',
     },
   }

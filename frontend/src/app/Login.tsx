@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { getGoogleConfig, login, loginWithGoogle, requestPasswordReset, resetPassword, verifyMfa } from '../services/auth.service'
+import { getGoogleConfig, getSsoConfig, login, loginWithGoogle, requestPasswordReset, resetPassword, storeAuthTokens, verifyMfa } from '../services/auth.service'
 import { useAuth } from '../contexts/AuthContext'
 
 declare global {
@@ -10,6 +10,8 @@ declare global {
 }
 
 type Mode = 'login' | 'forgot' | 'reset' | 'mfa'
+type SsoProvider = 'google' | 'zoho' | 'outlook'
+type SsoProviderConfig = { provider: SsoProvider; enabled: boolean; label: string; loginUrl?: string }
 
 export default function Login() {
   const navigate = useNavigate()
@@ -19,6 +21,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [googleReady, setGoogleReady] = useState(false)
   const [googleClientId, setGoogleClientId] = useState<string>((import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '')
+  const [googleHostedDomain, setGoogleHostedDomain] = useState<string>((import.meta as any).env?.VITE_GOOGLE_HOSTED_DOMAIN || '')
+  const [ssoProviders, setSsoProviders] = useState<SsoProviderConfig[]>([])
   const [info, setInfo] = useState('')
   const [error, setError] = useState('')
 
@@ -46,12 +50,51 @@ export default function Login() {
         if (cancelled) return
         const cid = String(cfg?.clientId || '').trim()
         if (cid) setGoogleClientId(cid)
+        const hd = String(cfg?.hostedDomain || '').trim()
+        if (hd) setGoogleHostedDomain(hd)
       })
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
   }, [googleClientId])
+
+  useEffect(() => {
+    let cancelled = false
+    getSsoConfig()
+      .then((cfg) => {
+        if (cancelled) return
+        const providers = Array.isArray(cfg?.providers) ? cfg.providers : []
+        setSsoProviders(providers.filter((p: any) => p && typeof p.provider === 'string'))
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const ssoError = String(searchParams.get('ssoError') || '').trim()
+    if (ssoError) setError(ssoError)
+
+    const ssoSuccess = String(searchParams.get('ssoSuccess') || '').trim() === '1'
+    const accessToken = String(searchParams.get('accessToken') || '').trim()
+    const refreshToken = String(searchParams.get('refreshToken') || '').trim()
+    if (ssoSuccess && accessToken && refreshToken) {
+      const remember = String(searchParams.get('rememberMe') || '1').trim() !== '0'
+      storeAuthTokens(accessToken, refreshToken, remember)
+      refreshUser()
+      navigate('/dashboard', { replace: true })
+      return
+    }
+
+    const challengeToken = String(searchParams.get('challengeToken') || '').trim()
+    const mfaPreview = String(searchParams.get('mfaCodePreview') || '').trim()
+    if (challengeToken) {
+      setMfaChallengeToken(challengeToken)
+      if (mfaPreview) setInfo(`MFA code (dev preview): ${mfaPreview}`)
+    }
+  }, [navigate, refreshUser, searchParams])
 
   async function finishAuth(data: any) {
     if (data?.mfaRequired && data?.challengeToken) {
@@ -97,6 +140,12 @@ export default function Login() {
       setError(e?.message || 'Google login failed')
       setLoading(false)
     }
+  }
+
+  function onSsoLogin(provider: SsoProvider) {
+    if (loading) return
+    const remember = rememberMe ? '1' : '0'
+    window.location.href = `/api/auth/sso/${provider}/start?rememberMe=${remember}`
   }
 
   async function onForgotPassword(e: React.FormEvent) {
@@ -208,6 +257,7 @@ export default function Login() {
         if (cancelled || !window.google) return
         window.google.accounts.id.initialize({
           client_id: googleClientId,
+          hd: googleHostedDomain || undefined,
           callback: onCredential,
         })
         setGoogleReady(true)
@@ -219,7 +269,7 @@ export default function Login() {
     return () => {
       cancelled = true
     }
-  }, [googleClientId, mode, rememberMe])
+  }, [googleClientId, googleHostedDomain, mode, rememberMe])
 
   const switchMode = (next: Mode) => {
     if (next === 'login') {
@@ -257,6 +307,18 @@ export default function Login() {
               <span className="login-google-icon">G</span>
               <span>Log in with Google</span>
             </button>
+            {ssoProviders.some((p) => p.provider === 'zoho' && p.enabled) ? (
+              <button type="button" className="login-google-primary" onClick={() => onSsoLogin('zoho')} disabled={loading}>
+                <span className="login-google-icon">Z</span>
+                <span>Log in with Zoho</span>
+              </button>
+            ) : null}
+            {ssoProviders.some((p) => p.provider === 'outlook' && p.enabled) ? (
+              <button type="button" className="login-google-primary" onClick={() => onSsoLogin('outlook')} disabled={loading}>
+                <span className="login-google-icon">O</span>
+                <span>Log in with Outlook</span>
+              </button>
+            ) : null}
             <div className="login-or">Or</div>
             <input className="login-input" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
             <input className="login-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" />

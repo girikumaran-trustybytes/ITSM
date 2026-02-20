@@ -26,6 +26,8 @@ import FeedPanel, { FEED_FILTERS, type FeedFilter } from './components/panels/Fe
 import SearchPanel from './components/panels/SearchPanel'
 import { listNotifications as fetchNotifications } from './services/notifications.service'
 import { loadNotificationState } from './utils/notificationsState'
+import { getUserAvatarUrl, getUserInitials } from './utils/avatar'
+import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from './utils/presence'
 
 const emptyPagination = {
   page: 1,
@@ -56,14 +58,6 @@ const navPaths: Record<string, string> = {
   admin: '/admin',
 }
 
-type PresenceStatus = 'Automatic' | 'Do not disturb' | 'Set as away'
-
-const presenceStatuses: Array<{ value: PresenceStatus; color: string; note: string; style: 'solid' | 'ring' }> = [
-  { value: 'Automatic', color: '#16a34a', note: 'Based on chat activity', style: 'solid' },
-  { value: 'Do not disturb', color: '#dc2626', note: 'Mute chat notifications', style: 'solid' },
-  { value: 'Set as away', color: '#4b5563', note: 'Show as away', style: 'ring' },
-]
-
 function getNavFromPath(pathname: string) {
   if (pathname.startsWith('/tickets')) return 'tickets'
   if (pathname.startsWith('/assets')) return 'assets'
@@ -82,17 +76,13 @@ function MainShell() {
   const navigate = useNavigate()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showPresenceMenu, setShowPresenceMenu] = useState(false)
-  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => {
-    const raw = window.localStorage.getItem('itsm.presenceStatus')
-    if (raw === 'Automatic' || raw === 'Do not disturb' || raw === 'Set as away') return raw
-    if (raw === 'Available') return 'Automatic'
-    if (raw === 'Away') return 'Set as away'
-    if (raw === 'Do Not Disturb' || raw === 'Busy') return 'Do not disturb'
-    return 'Automatic'
-  })
+  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
   const [activePanel, setActivePanel] = useState<null | 'search' | 'notifications' | 'todo' | 'feed'>(null)
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('All Activity')
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
+  const [notificationPopup, setNotificationPopup] = useState<{ title: string; sub: string } | null>(null)
+  const lastSeenNotificationIdRef = React.useRef<number>(0)
+  const notificationInitRef = React.useRef(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [tabToolbarSearch, setTabToolbarSearch] = useState('')
   const [usersPage, setUsersPage] = useState(1)
@@ -103,6 +93,7 @@ function MainShell() {
   const [suppliersPagination, setSuppliersPagination] = useState(emptyPagination)
   const [adminPage, setAdminPage] = useState(1)
   const [adminPagination, setAdminPagination] = useState(emptyPagination)
+  const [timeClock, setTimeClock] = useState('')
   const panelWidth = activePanel ? 360 : (showProfileMenu ? 300 : 0)
   const profileRef = React.useRef<HTMLDivElement | null>(null)
   const profilePanelRef = React.useRef<HTMLDivElement | null>(null)
@@ -136,8 +127,36 @@ function MainShell() {
   }, [showProfileMenu, activePanel])
 
   useEffect(() => {
-    window.localStorage.setItem('itsm.presenceStatus', presenceStatus)
+    setStoredPresenceStatus(presenceStatus)
   }, [presenceStatus])
+
+  useEffect(() => {
+    const syncPresence = () => setPresenceStatus(getStoredPresenceStatus())
+    window.addEventListener('storage', syncPresence)
+    window.addEventListener(PRESENCE_CHANGED_EVENT, syncPresence as EventListener)
+    return () => {
+      window.removeEventListener('storage', syncPresence)
+      window.removeEventListener(PRESENCE_CHANGED_EVENT, syncPresence as EventListener)
+    }
+  }, [])
+
+  useEffect(() => {
+    const formatTime = (tz: string) => new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+      timeZone: tz,
+    }).format(new Date())
+
+    const tick = () => {
+      setTimeClock(`( UTC - ${formatTime('UTC')}) (IST - ${formatTime('Asia/Kolkata')})`)
+    }
+
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (activePanel === 'search' && searchInputRef.current) {
@@ -147,6 +166,7 @@ function MainShell() {
 
   useEffect(() => {
     let mounted = true
+    let popupTimer: number | null = null
     const refreshUnreadCount = async () => {
       if (!user) {
         if (mounted) setUnreadNotificationCount(0)
@@ -155,9 +175,42 @@ function MainShell() {
       try {
         const rows: any[] = await fetchNotifications({ limit: 120 })
         const state = loadNotificationState(user)
-        const visible = (Array.isArray(rows) ? rows : []).filter((n: any) => !state.deletedIds.includes(Number(n?.id)))
+        const visible = (Array.isArray(rows) ? rows : []).filter((n: any) => {
+          const id = Number(n?.id)
+          if (state.deletedIds.includes(id)) return false
+          if (!state.clearedAt) return true
+          const createdMs = n?.createdAt ? new Date(String(n.createdAt)).getTime() : 0
+          return !Number.isFinite(createdMs) || createdMs > state.clearedAt
+        })
         const unread = visible.filter((n: any) => !state.readIds.includes(Number(n?.id))).length
         if (mounted) setUnreadNotificationCount(unread)
+
+        const sorted = visible
+          .slice()
+          .sort((a: any, b: any) => Number(a?.id || 0) - Number(b?.id || 0))
+        const maxId = sorted.length ? Number(sorted[sorted.length - 1]?.id || 0) : 0
+
+        if (!notificationInitRef.current) {
+          notificationInitRef.current = true
+          lastSeenNotificationIdRef.current = maxId
+          return
+        }
+
+        const fresh = sorted.filter((n: any) => Number(n?.id || 0) > lastSeenNotificationIdRef.current)
+        if (fresh.length > 0 && mounted) {
+          const latest = fresh[fresh.length - 1]
+          const ticketId = String(latest?.ticketId || latest?.meta?.ticketId || '')
+          const title = String(latest?.entity || '').toLowerCase() === 'ticket'
+            ? 'New request logged.'
+            : 'New notification.'
+          const sub = ticketId ? `ID:${ticketId}` : `Action: ${String(latest?.action || 'update')}`
+          setNotificationPopup({ title, sub })
+          if (popupTimer) window.clearTimeout(popupTimer)
+          popupTimer = window.setTimeout(() => {
+            setNotificationPopup(null)
+          }, 3000)
+        }
+        lastSeenNotificationIdRef.current = maxId
       } catch {
         if (mounted) setUnreadNotificationCount(0)
       }
@@ -168,6 +221,7 @@ function MainShell() {
     window.addEventListener('notifications-state-changed', onStateChange as EventListener)
     return () => {
       mounted = false
+      if (popupTimer) window.clearTimeout(popupTimer)
       window.clearInterval(timer)
       window.removeEventListener('notifications-state-changed', onStateChange as EventListener)
     }
@@ -255,7 +309,8 @@ function MainShell() {
   const isAssetsListRoute = location.pathname === '/assets'
   const isSuppliersListRoute = location.pathname === '/supplier'
   const isAdminListRoute = location.pathname === '/admin'
-  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute && !isAdminListRoute && !isAccountsListRoute
+  const isSecurityRoute = location.pathname.startsWith('/security')
+  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute && !isAdminListRoute && !isAccountsListRoute && !isSecurityRoute
   const toolbarPagination =
     isUsersListRoute || isAccountsListRoute ? usersPagination :
     isAssetsListRoute ? assetsPagination :
@@ -294,6 +349,8 @@ function MainShell() {
     'tickets-tool-bar'
   const activePresence = presenceStatuses.find((item) => item.value === presenceStatus) || presenceStatuses[0]
   const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
+  const userInitials = getUserInitials(user, 'G')
+  const userAvatarUrl = getUserAvatarUrl(user)
 
   return (
     <div className="app-root">
@@ -317,6 +374,9 @@ function MainShell() {
           </nav>
         </div>
         <div className="nav-top-bar-right">
+          <div className="app-pill-btn app-time-pill" role="status" aria-live="polite">
+            {timeClock}
+          </div>
           <button
             className="app-pill-btn"
             onClick={() => {
@@ -379,7 +439,7 @@ function MainShell() {
               <span className="app-icon-badge">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>
             ) : null}
           </button>
-          <div className="profile-menu" ref={profileRef}>
+          <div className="profile-menu-anchor" ref={profileRef}>
             <button
               className="profile-avatar-btn"
               aria-label="Profile menu"
@@ -389,25 +449,33 @@ function MainShell() {
               }}
               style={{ ['--presence-color' as any]: activePresence.color }}
             >
-              {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
+              {userAvatarUrl ? <img src={userAvatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : userInitials}
               <span className={`profile-avatar-presence-dot ${presenceDotClass}`} />
             </button>
           </div>
         </div>
       </div>
+      {notificationPopup ? (
+        <div className="app-notification-popup">
+          <button className="app-notification-popup-close" onClick={() => setNotificationPopup(null)} aria-label="Close">
+            ×
+          </button>
+          <div className="app-notification-popup-title">{notificationPopup.title}</div>
+          <div className="app-notification-popup-sub">{notificationPopup.sub}</div>
+        </div>
+      ) : null}
       <main className="main-area" style={panelWidth ? { marginRight: panelWidth } : undefined}>
         {showProfileMenu && (
           <div className="profile-panel" ref={profilePanelRef}>
             <div className="profile-panel-header">
-              <div className="profile-panel-title">My account</div>
               <button className="profile-panel-close" onClick={() => { setShowProfileMenu(false); setShowPresenceMenu(false) }} aria-label="Close">
                 ×
               </button>
             </div>
             <div className="profile-panel-body">
               <div className="profile-panel-user">
-                <div className="profile-panel-avatar">
-                  {user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'}
+                <div className="profile-panel-avatar unified-user-avatar">
+                  {userAvatarUrl ? <img src={userAvatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : userInitials}
                   <span
                     className={`profile-panel-status-dot ${presenceDotClass}`}
                     style={{ ['--presence-color' as any]: activePresence.color }}
@@ -416,42 +484,43 @@ function MainShell() {
                 <div className="profile-panel-user-main">
                   <div className="profile-panel-name">{user?.name || 'User'}</div>
                   <div className="profile-panel-email">{user?.email || 'user@example.com'}</div>
-                  <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
-                    <span
-                      className={`profile-panel-status-indicator ${presenceDotClass}`}
-                      style={{ ['--presence-color' as any]: activePresence.color }}
-                    />
-                    {presenceStatus}
-                  </button>
-                  {showPresenceMenu && (
-                    <div className="profile-panel-status-menu">
-                      {presenceStatuses.map((item) => (
-                        <button
-                          key={item.value}
-                          className={`profile-panel-status-option${item.value === presenceStatus ? ' active' : ''}`}
-                          onClick={() => {
-                            setPresenceStatus(item.value)
-                            setShowPresenceMenu(false)
-                          }}
-                        >
-                          <span
-                            className={`profile-panel-status-indicator ${item.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'}`}
-                            style={{ ['--presence-color' as any]: item.color }}
-                          />
-                          <span className="profile-panel-status-option-main">
-                            <span className="profile-panel-status-option-title">{item.value}</span>
-                          </span>
-                          <span className="profile-panel-status-option-check" aria-hidden="true">
-                            {item.value === presenceStatus ? '✓' : ''}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="profile-panel-status-wrap">
+                    <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
+                      <span
+                        className={`profile-panel-status-indicator ${presenceDotClass}`}
+                        style={{ ['--presence-color' as any]: activePresence.color }}
+                      />
+                      {presenceStatus}
+                    </button>
+                    {showPresenceMenu && (
+                      <div className="profile-panel-status-menu">
+                        {presenceStatuses.map((item) => (
+                          <button
+                            key={item.value}
+                            className={`profile-panel-status-option${item.value === presenceStatus ? ' active' : ''}`}
+                            onClick={() => {
+                              setPresenceStatus(item.value)
+                              setShowPresenceMenu(false)
+                            }}
+                          >
+                            <span
+                              className={`profile-panel-status-indicator ${item.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'}`}
+                              style={{ ['--presence-color' as any]: item.color }}
+                            />
+                            <span className="profile-panel-status-option-main">
+                              <span className="profile-panel-status-option-title">{item.value}</span>
+                            </span>
+                            <span className="profile-panel-status-option-check" aria-hidden="true">
+                              {item.value === presenceStatus ? '✓' : ''}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="profile-panel-links">
-                <button onClick={() => { setShowPresenceMenu(false) }}>My account</button>
                 <button
                   onClick={() => {
                     setShowProfileMenu(false)
@@ -459,7 +528,7 @@ function MainShell() {
                     navigate('/security')
                   }}
                 >
-                  Password &amp; Security
+                  Account &amp; Password
                 </button>
                 <button
                   onClick={() => {
@@ -491,6 +560,9 @@ function MainShell() {
                       aria-label="Mark all read"
                       onClick={() => window.dispatchEvent(new CustomEvent('notifications-mark-all-read'))}
                     >
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
                       Read all
                     </button>
                     <button
@@ -498,6 +570,11 @@ function MainShell() {
                       aria-label="Delete all"
                       onClick={() => window.dispatchEvent(new CustomEvent('notifications-delete-all'))}
                     >
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="M19 6l-1 14H6L5 6" />
+                      </svg>
                       Delete all
                     </button>
                   </>
@@ -639,6 +716,21 @@ function MainShell() {
                       </button>
                     </div>
                   )}
+                  <button
+                    className="table-icon-btn"
+                    title="Refresh"
+                    aria-label="Refresh"
+                    onClick={() => {
+                      if (!toolbarTarget) return
+                      window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'refresh', target: toolbarTarget } }))
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="23 4 23 10 17 10" />
+                      <polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                  </button>
                   <button
                     className="table-primary-btn"
                     onClick={() => {

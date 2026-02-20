@@ -58,6 +58,10 @@ export async function update(req: Request, res: Response) {
     const id = Number(req.params.id)
     if (!id) return res.status(400).json({ error: 'Invalid id' })
     const payload = req.body || {}
+    const actorRole = String((req as any)?.user?.role || '').toUpperCase()
+    if (payload?.name !== undefined && actorRole !== 'ADMIN') {
+      return res.status(403).json({ error: 'Only admin can change user name' })
+    }
     const updated = await svc.updateUser(id, payload)
     await auditLog({ action: 'update_user', entity: 'user', entityId: updated.id, user: (req as any).user?.id })
     res.json(updated)

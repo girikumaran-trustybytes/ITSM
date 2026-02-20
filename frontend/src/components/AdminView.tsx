@@ -1,9 +1,18 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { loadLeftPanelConfig, resetLeftPanelConfig, saveLeftPanelConfig, type LeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
+import {
+  loadLeftPanelConfig,
+  resetLeftPanelConfig,
+  saveLeftPanelConfig,
+  type LeftPanelConfig,
+  type QueueRule,
+  type TicketQueueConfig,
+  type AssetCategoryConfig,
+} from '../utils/leftPanelConfig'
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
+import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
 
 type PaginationMeta = {
   page: number
@@ -65,6 +74,14 @@ const settingsMenu: MenuSection[] = [
       { id: 'auto-assignment', label: 'Auto-assignment rules' },
     ],
   },
+  {
+    id: 'integrations',
+    label: 'Integrations & Platform',
+    items: [
+      { id: 'mail-configuration', label: 'Mail Configuration', requiresAdmin: true },
+      { id: 'database-configuration', label: 'Database Configuration', requiresAdmin: true },
+    ],
+  },
 ]
 
 type Values = Record<string, string | boolean>
@@ -82,6 +99,10 @@ type PanelDef = {
   description: string
   fields: FieldDef[]
 }
+
+type QueueSettingsView = 'ticket' | 'asset'
+type TicketQueueModalMode = 'add' | 'edit' | 'delete'
+type AssetCategoryModalMode = 'add' | 'edit' | 'delete'
 
 const SLA_PRIORITIES = ['Critical', 'High', 'Medium', 'Low'] as const
 type SlaPriority = typeof SLA_PRIORITIES[number]
@@ -124,6 +145,91 @@ type PrioritySlaForm = {
   businessSchedule: BusinessSchedule
   active: boolean
   existingId: number | null
+}
+
+type MailConfigForm = {
+  provider: MailProvider
+  workspaceProvider: 'google-workspace' | 'microsoft-workspace' | 'zoho' | 'outlook' | 'custom'
+  supportMail: string
+  aliasMail: string
+  inboundDefaultQueue: string
+  apiBaseUrl: string
+  apiKey: string
+  apiSecret: string
+  smtp: {
+    host: string
+    port: string
+    secure: boolean
+    user: string
+    pass: string
+    from: string
+  }
+  imap: {
+    host: string
+    port: string
+    secure: boolean
+    user: string
+    pass: string
+    mailbox: string
+  }
+}
+
+type DatabaseConfigForm = {
+  connectionString: string
+  host: string
+  port: string
+  database: string
+  user: string
+  password: string
+  ssl: boolean
+}
+
+const defaultMailConfigForm = (): MailConfigForm => ({
+  provider: 'gmail',
+  workspaceProvider: 'custom',
+  supportMail: '',
+  aliasMail: '',
+  inboundDefaultQueue: 'Helpdesk',
+  apiBaseUrl: '',
+  apiKey: '',
+  apiSecret: '',
+  smtp: {
+    host: '',
+    port: '465',
+    secure: true,
+    user: '',
+    pass: '',
+    from: '',
+  },
+  imap: {
+    host: '',
+    port: '993',
+    secure: true,
+    user: '',
+    pass: '',
+    mailbox: 'INBOX',
+  },
+})
+
+const defaultDatabaseConfigForm = (): DatabaseConfigForm => ({
+  connectionString: '',
+  host: '',
+  port: '5432',
+  database: '',
+  user: '',
+  password: '',
+  ssl: false,
+})
+
+const toWorkspaceProvider = (
+  value: unknown
+): MailConfigForm['workspaceProvider'] => {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (normalized === 'google-workspace') return 'google-workspace'
+  if (normalized === 'microsoft-workspace') return 'microsoft-workspace'
+  if (normalized === 'zoho') return 'zoho'
+  if (normalized === 'outlook') return 'outlook'
+  return 'custom'
 }
 
 const createDefaultBusinessSchedule = (): BusinessSchedule => ({
@@ -685,7 +791,6 @@ export default function AdminView(_props: AdminViewProps) {
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
   const role = String(user?.role || 'USER')
 
-  const [subSidebarQuery, setSubSidebarQuery] = useState('')
   const [settingsQuery, setSettingsQuery] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [recentOnly, setRecentOnly] = useState(false)
@@ -705,6 +810,21 @@ export default function AdminView(_props: AdminViewProps) {
   ])
   const [leftPanelConfig, setLeftPanelConfig] = useState<LeftPanelConfig>(() => loadLeftPanelConfig())
   const [queuePanelKey, setQueuePanelKey] = useState<'ticketsMyLists' | 'users' | 'assets' | 'suppliers'>('ticketsMyLists')
+  const [queueSettingsView, setQueueSettingsView] = useState<QueueSettingsView>('ticket')
+  const [ticketQueueModalMode, setTicketQueueModalMode] = useState<TicketQueueModalMode | null>(null)
+  const [ticketQueueModalOpen, setTicketQueueModalOpen] = useState(false)
+  const [ticketQueueTargetId, setTicketQueueTargetId] = useState('')
+  const [ticketQueueLabelInput, setTicketQueueLabelInput] = useState('')
+  const [ticketQueueServiceAccountInput, setTicketQueueServiceAccountInput] = useState('')
+  const [ticketQueueVisibilityInput, setTicketQueueVisibilityInput] = useState('ADMIN,AGENT')
+  const [ticketQueueModalError, setTicketQueueModalError] = useState('')
+  const [assetCategoryModalMode, setAssetCategoryModalMode] = useState<AssetCategoryModalMode | null>(null)
+  const [assetCategoryModalOpen, setAssetCategoryModalOpen] = useState(false)
+  const [assetCategoryTargetId, setAssetCategoryTargetId] = useState('')
+  const [assetCategoryLabelInput, setAssetCategoryLabelInput] = useState('')
+  const [assetCategorySubcategoriesInput, setAssetCategorySubcategoriesInput] = useState('')
+  const [assetCategoryVisibilityInput, setAssetCategoryVisibilityInput] = useState('ADMIN,AGENT')
+  const [assetCategoryModalError, setAssetCategoryModalError] = useState('')
   const [slaLoading, setSlaLoading] = useState(false)
   const [slaBusy, setSlaBusy] = useState(false)
   const [slaRows, setSlaRows] = useState<any[]>([])
@@ -717,6 +837,16 @@ export default function AdminView(_props: AdminViewProps) {
   const [customFormatText, setCustomFormatText] = useState('')
   const [policyTimeZone, setPolicyTimeZone] = useState<string>(SYSTEM_TIME_ZONE)
   const [policySchedule, setPolicySchedule] = useState<BusinessSchedule>(createDefaultBusinessSchedule())
+  const [slaPage, setSlaPage] = useState(1)
+  const [mailForm, setMailForm] = useState<MailConfigForm>(defaultMailConfigForm())
+  const [mailLoading, setMailLoading] = useState(false)
+  const [mailBusy, setMailBusy] = useState(false)
+  const [mailResult, setMailResult] = useState('')
+  const [mailTestRecipient, setMailTestRecipient] = useState('')
+  const [dbForm, setDbForm] = useState<DatabaseConfigForm>(defaultDatabaseConfigForm())
+  const [dbLoading, setDbLoading] = useState(false)
+  const [dbBusy, setDbBusy] = useState(false)
+  const [dbResult, setDbResult] = useState('')
 
   const visibleSections = useMemo(() => {
     return settingsMenu
@@ -749,25 +879,30 @@ export default function AdminView(_props: AdminViewProps) {
       loadSlaRows()
     }
   }, [activeItem, role])
+  useEffect(() => {
+    if (activeItem === 'mail-configuration' && role === 'ADMIN') {
+      loadMailConfiguration()
+    }
+  }, [activeItem, role])
+  useEffect(() => {
+    if (activeItem === 'database-configuration' && role === 'ADMIN') {
+      loadDatabaseConfiguration()
+    }
+  }, [activeItem, role])
 
   const selectedSection = visibleSections.find((s) => s.id === activeSection) || visibleSections[0]
   const selectedItem = selectedSection?.items.find((i) => i.id === activeItem) || selectedSection?.items[0]
   const topicPanels = settingsTopicPanels[activeItem] || []
-  const subItems = (selectedSection?.items || []).filter((item) => item.label.toLowerCase().includes(subSidebarQuery.trim().toLowerCase()))
 
   const hasChanges = JSON.stringify(values) !== JSON.stringify(savedValues)
   const isRestrictedRole = role !== 'ADMIN'
-
-  const systemHealth = useMemo(() => {
-    if (!values.ssoEnforced && !values.mfaRequired) return { tone: 'red', label: 'Critical risk' }
-    if (!values.auditLogging || !values.backupEnabled) return { tone: 'yellow', label: 'Warning state' }
-    return { tone: 'green', label: 'Healthy' }
-  }, [values])
 
   const title = selectedItem?.label || 'Settings'
   const isQueueManagement = activeItem === 'queue-management'
   const isRolesPermissionsView = activeItem === 'roles-permissions'
   const isSlaPoliciesView = activeItem === 'sla-policies'
+  const isMailConfigurationView = activeItem === 'mail-configuration'
+  const isDatabaseConfigurationView = activeItem === 'database-configuration'
   const policyPriorityLabels = useMemo(
     () => resolveFormatLabels(policyFormat, customFormatText),
     [policyFormat, customFormatText]
@@ -785,6 +920,20 @@ export default function AdminView(_props: AdminViewProps) {
     }
     return Array.from(map.entries()).map(([name, rows]) => ({ name, rows }))
   }, [slaRows])
+  const slaRowsPerPage = 10
+  const slaTotalRows = slaPoliciesGrouped.length
+  const slaTotalPages = Math.max(1, Math.ceil(slaTotalRows / slaRowsPerPage))
+  const slaSafePage = Math.min(slaPage, slaTotalPages)
+  const slaRangeStart = slaTotalRows === 0 ? 0 : (slaSafePage - 1) * slaRowsPerPage + 1
+  const slaRangeEnd = Math.min(slaSafePage * slaRowsPerPage, slaTotalRows)
+  const slaPoliciesPage = useMemo(
+    () => slaPoliciesGrouped.slice((slaSafePage - 1) * slaRowsPerPage, slaSafePage * slaRowsPerPage),
+    [slaPoliciesGrouped, slaSafePage]
+  )
+
+  useEffect(() => {
+    if (slaPage !== slaSafePage) setSlaPage(slaSafePage)
+  }, [slaPage, slaSafePage])
 
   const matches = (text: string) => {
     const q = settingsQuery.trim().toLowerCase()
@@ -893,6 +1042,185 @@ export default function AdminView(_props: AdminViewProps) {
       setSlaRows([])
     } finally {
       setSlaLoading(false)
+    }
+  }
+
+  const loadMailConfiguration = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      setMailLoading(true)
+      setMailResult('')
+      const data = await getMailConfig()
+      const provider = String(data?.provider || 'custom') as MailProvider
+      const smtp = data?.smtp || {}
+      const imap = data?.imap || {}
+      setMailForm({
+        provider,
+        workspaceProvider: toWorkspaceProvider(provider),
+        supportMail: String(smtp?.from || ''),
+        aliasMail: '',
+        inboundDefaultQueue: String(data?.inbound?.defaultQueue || 'Helpdesk'),
+        apiBaseUrl: '',
+        apiKey: '',
+        apiSecret: '',
+        smtp: {
+          host: String(smtp?.host || ''),
+          port: String(smtp?.port ?? ''),
+          secure: Boolean(smtp?.secure),
+          user: String(smtp?.user || ''),
+          pass: '',
+          from: String(smtp?.from || ''),
+        },
+        imap: {
+          host: String(imap?.host || ''),
+          port: String(imap?.port ?? ''),
+          secure: Boolean(imap?.secure),
+          user: String(imap?.user || ''),
+          pass: '',
+          mailbox: String(imap?.mailbox || 'INBOX'),
+        },
+      })
+    } catch (error: any) {
+      setMailResult(error?.response?.data?.error || 'Failed to load mail configuration')
+    } finally {
+      setMailLoading(false)
+    }
+  }
+
+  const loadDatabaseConfiguration = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      setDbLoading(true)
+      setDbResult('')
+      const data = await getDatabaseConfig()
+      setDbForm((prev) => ({
+        ...prev,
+        host: String(data?.host || ''),
+        port: String(data?.port ?? '5432'),
+        database: String(data?.database || ''),
+        user: String(data?.user || ''),
+        ssl: Boolean(data?.ssl),
+      }))
+    } catch (error: any) {
+      setDbResult(error?.response?.data?.error || 'Failed to load database configuration')
+    } finally {
+      setDbLoading(false)
+    }
+  }
+
+  const updateMailRoot = (key: keyof Omit<MailConfigForm, 'smtp' | 'imap'>, value: any) => {
+    setMailForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  const updateSmtpField = (key: keyof MailConfigForm['smtp'], value: any) => {
+    setMailForm((prev) => ({ ...prev, smtp: { ...prev.smtp, [key]: value } }))
+  }
+
+  const updateImapField = (key: keyof MailConfigForm['imap'], value: any) => {
+    setMailForm((prev) => ({ ...prev, imap: { ...prev.imap, [key]: value } }))
+  }
+
+  const handleMailProviderChange = (provider: MailProvider) => {
+    setMailForm((prev) => ({
+      ...prev,
+      provider,
+      workspaceProvider: toWorkspaceProvider(provider),
+    }))
+  }
+
+  const runMailAction = async (action: 'smtp' | 'imap' | 'send') => {
+    if (role !== 'ADMIN') return
+    try {
+      setMailBusy(true)
+      setMailResult('')
+      const payload: any = {
+        provider: mailForm.provider,
+        smtp: {
+          host: mailForm.smtp.host.trim(),
+          port: Number(mailForm.smtp.port || 0),
+          secure: mailForm.smtp.secure,
+          user: mailForm.smtp.user.trim(),
+          pass: mailForm.smtp.pass,
+          from: mailForm.smtp.from.trim() || mailForm.supportMail.trim(),
+        },
+        imap: {
+          host: mailForm.imap.host.trim(),
+          port: Number(mailForm.imap.port || 0),
+          secure: mailForm.imap.secure,
+          user: mailForm.imap.user.trim(),
+          pass: mailForm.imap.pass,
+          mailbox: mailForm.imap.mailbox.trim() || 'INBOX',
+        },
+      }
+
+      if (action === 'smtp') {
+        const result = await testSmtp(payload)
+        setMailResult(`SMTP test passed (${result.host}:${result.port})`)
+      } else if (action === 'imap') {
+        const result = await testImap(payload)
+        setMailResult(`IMAP test passed (${result.host}:${result.port})`)
+      } else {
+        const to = mailTestRecipient.trim() || mailForm.supportMail.trim()
+        if (!to) {
+          setMailResult('Recipient email is required for test mail')
+          return
+        }
+        const result = await sendMailTest({
+          ...payload,
+          to,
+          subject: 'ITSM Mail Configuration Test',
+          text: 'This is a test email from ITSM Admin Mail Configuration.',
+          from: mailForm.smtp.from.trim() || mailForm.supportMail.trim() || undefined,
+        })
+        const messageId = String(result?.messageId || '')
+        setMailResult(messageId ? `Test mail sent (${messageId})` : 'Test mail sent successfully')
+      }
+    } catch (error: any) {
+      setMailResult(error?.response?.data?.error || 'Mail action failed')
+    } finally {
+      setMailBusy(false)
+    }
+  }
+
+  const runDatabaseTest = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      setDbBusy(true)
+      setDbResult('')
+      const payload: any = {
+        connectionString: dbForm.connectionString.trim(),
+        host: dbForm.host.trim(),
+        port: Number(dbForm.port || 5432),
+        database: dbForm.database.trim(),
+        user: dbForm.user.trim(),
+        password: dbForm.password,
+        ssl: dbForm.ssl,
+      }
+      const result = await testDatabaseConfig(payload)
+      setDbResult(`Connected to ${result.database}@${result.host}:${result.port} in ${result.latencyMs}ms`)
+    } catch (error: any) {
+      setDbResult(error?.response?.data?.error || 'Database connection test failed')
+    } finally {
+      setDbBusy(false)
+    }
+  }
+
+  const saveInboundRouting = async () => {
+    if (role !== 'ADMIN') return
+    const defaultQueue = String(mailForm.inboundDefaultQueue || '').trim()
+    if (!defaultQueue) {
+      setMailResult('Inbound default queue/team is required')
+      return
+    }
+    try {
+      setMailBusy(true)
+      setMailResult('')
+      await updateInboundMailConfig({ defaultQueue })
+      setMailResult(`Inbound mails will be routed to "${defaultQueue}"`)
+    } catch (error: any) {
+      setMailResult(error?.response?.data?.error || 'Failed to save inbound routing')
+    } finally {
+      setMailBusy(false)
     }
   }
 
@@ -1077,6 +1405,211 @@ export default function AdminView(_props: AdminViewProps) {
     resetLeftPanelConfig()
     setLeftPanelConfig(loadLeftPanelConfig())
   }
+  const parseVisibilityRoles = (raw: string): string[] => {
+    const parsed = String(raw || '')
+      .split(',')
+      .map((v) => v.trim().toUpperCase())
+      .filter(Boolean)
+    return parsed.length ? Array.from(new Set(parsed)) : ['ADMIN', 'AGENT']
+  }
+  const closeTicketQueueModal = () => {
+    setTicketQueueModalOpen(false)
+    setTicketQueueModalMode(null)
+    setTicketQueueTargetId('')
+    setTicketQueueLabelInput('')
+    setTicketQueueServiceAccountInput('')
+    setTicketQueueVisibilityInput('ADMIN,AGENT')
+    setTicketQueueModalError('')
+  }
+  const hydrateTicketQueueForm = (id: string) => {
+    const target = leftPanelConfig.ticketQueues.find((q) => q.id === id)
+    if (!target) return
+    setTicketQueueLabelInput(target.label)
+    setTicketQueueServiceAccountInput(target.serviceAccount || '')
+    setTicketQueueVisibilityInput((target.visibilityRoles || []).join(',') || 'ADMIN,AGENT')
+  }
+  const handleTicketQueueAdd = () => {
+    setTicketQueueModalMode('add')
+    setTicketQueueModalOpen(true)
+    setTicketQueueModalError('')
+    setTicketQueueTargetId('')
+    setTicketQueueLabelInput('')
+    setTicketQueueServiceAccountInput('')
+    setTicketQueueVisibilityInput('ADMIN,AGENT')
+  }
+  const handleTicketQueueEdit = () => {
+    setTicketQueueModalMode('edit')
+    setTicketQueueModalOpen(true)
+    setTicketQueueModalError('')
+    if (!leftPanelConfig.ticketQueues.length) {
+      setTicketQueueTargetId('')
+      setTicketQueueLabelInput('')
+      setTicketQueueServiceAccountInput('')
+      setTicketQueueVisibilityInput('ADMIN,AGENT')
+      setTicketQueueModalError('No ticket queue available.')
+      return
+    }
+    const first = leftPanelConfig.ticketQueues[0]
+    setTicketQueueTargetId(first.id)
+    hydrateTicketQueueForm(first.id)
+  }
+  const handleTicketQueueDelete = () => {
+    setTicketQueueModalMode('delete')
+    setTicketQueueModalOpen(true)
+    setTicketQueueModalError('')
+    if (!leftPanelConfig.ticketQueues.length) {
+      setTicketQueueTargetId('')
+      setTicketQueueModalError('No ticket queue available.')
+      return
+    }
+    setTicketQueueTargetId(leftPanelConfig.ticketQueues[0].id)
+  }
+  const submitTicketQueueModal = () => {
+    if (!ticketQueueModalMode) return
+    setTicketQueueModalError('')
+    if (ticketQueueModalMode === 'add') {
+      const label = ticketQueueLabelInput.trim()
+      if (!label) return setTicketQueueModalError('Queue/team name is required.')
+      const exists = leftPanelConfig.ticketQueues.some((q) => q.label.trim().toLowerCase() === label.toLowerCase())
+      if (exists) return setTicketQueueModalError(`Queue "${label}" already exists.`)
+      const serviceAccount = ticketQueueServiceAccountInput.trim()
+      if (!serviceAccount) return setTicketQueueModalError('Service account is required.')
+      const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
+      persistQueueConfig({
+        ...leftPanelConfig,
+        ticketQueues: [...leftPanelConfig.ticketQueues, {
+          id: `tq-${Date.now()}`,
+          label,
+          serviceAccount,
+          visibilityRoles,
+        }],
+      })
+      closeTicketQueueModal()
+      return
+    }
+    if (ticketQueueModalMode === 'edit') {
+      if (!ticketQueueTargetId) return setTicketQueueModalError('Select a queue to edit.')
+      const target = leftPanelConfig.ticketQueues.find((q) => q.id === ticketQueueTargetId)
+      if (!target) return setTicketQueueModalError('Queue not found.')
+      const label = ticketQueueLabelInput.trim()
+      if (!label) return setTicketQueueModalError('Queue/team name is required.')
+      const duplicate = leftPanelConfig.ticketQueues.some((q) => q.id !== target.id && q.label.trim().toLowerCase() === label.toLowerCase())
+      if (duplicate) return setTicketQueueModalError(`Queue "${label}" already exists.`)
+      const serviceAccount = ticketQueueServiceAccountInput.trim()
+      if (!serviceAccount) return setTicketQueueModalError('Service account is required.')
+      const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
+      persistQueueConfig({
+        ...leftPanelConfig,
+        ticketQueues: leftPanelConfig.ticketQueues.map((q) => q.id === target.id
+          ? { ...q, label, serviceAccount, visibilityRoles }
+          : q),
+      })
+      closeTicketQueueModal()
+      return
+    }
+    if (!ticketQueueTargetId) return setTicketQueueModalError('Select a queue to delete.')
+    const target = leftPanelConfig.ticketQueues.find((q) => q.id === ticketQueueTargetId)
+    if (!target) return setTicketQueueModalError('Queue not found.')
+    if (target.label.trim().toLowerCase() === 'unassigned') return setTicketQueueModalError('Unassigned cannot be deleted.')
+    persistQueueConfig({
+      ...leftPanelConfig,
+      ticketQueues: leftPanelConfig.ticketQueues.filter((q) => q.id !== target.id),
+    })
+    closeTicketQueueModal()
+  }
+  const closeAssetCategoryModal = () => {
+    setAssetCategoryModalOpen(false)
+    setAssetCategoryModalMode(null)
+    setAssetCategoryTargetId('')
+    setAssetCategoryLabelInput('')
+    setAssetCategorySubcategoriesInput('')
+    setAssetCategoryVisibilityInput('ADMIN,AGENT')
+    setAssetCategoryModalError('')
+  }
+  const hydrateAssetCategoryForm = (id: string) => {
+    const target = leftPanelConfig.assetCategories.find((c) => c.id === id)
+    if (!target) return
+    setAssetCategoryLabelInput(target.label)
+    setAssetCategorySubcategoriesInput((target.subcategories || []).join(', '))
+    setAssetCategoryVisibilityInput((target.visibilityRoles || []).join(',') || 'ADMIN,AGENT')
+  }
+  const handleAssetCategoryAdd = () => {
+    setAssetCategoryModalMode('add')
+    setAssetCategoryModalOpen(true)
+    setAssetCategoryModalError('')
+    setAssetCategoryTargetId('')
+    setAssetCategoryLabelInput('')
+    setAssetCategorySubcategoriesInput('')
+    setAssetCategoryVisibilityInput('ADMIN,AGENT')
+  }
+  const handleAssetCategoryEdit = () => {
+    setAssetCategoryModalMode('edit')
+    setAssetCategoryModalOpen(true)
+    setAssetCategoryModalError('')
+    if (!leftPanelConfig.assetCategories.length) {
+      setAssetCategoryTargetId('')
+      setAssetCategoryModalError('No asset category available.')
+      return
+    }
+    const first = leftPanelConfig.assetCategories[0]
+    setAssetCategoryTargetId(first.id)
+    hydrateAssetCategoryForm(first.id)
+  }
+  const handleAssetCategoryDelete = () => {
+    setAssetCategoryModalMode('delete')
+    setAssetCategoryModalOpen(true)
+    setAssetCategoryModalError('')
+    if (!leftPanelConfig.assetCategories.length) {
+      setAssetCategoryTargetId('')
+      setAssetCategoryModalError('No asset category available.')
+      return
+    }
+    setAssetCategoryTargetId(leftPanelConfig.assetCategories[0].id)
+  }
+  const submitAssetCategoryModal = () => {
+    if (!assetCategoryModalMode) return
+    setAssetCategoryModalError('')
+    if (assetCategoryModalMode === 'add') {
+      const label = assetCategoryLabelInput.trim()
+      if (!label) return setAssetCategoryModalError('Category name is required.')
+      const exists = leftPanelConfig.assetCategories.some((c) => c.label.trim().toLowerCase() === label.toLowerCase())
+      if (exists) return setAssetCategoryModalError(`Category "${label}" already exists.`)
+      const subcategories = assetCategorySubcategoriesInput.split(',').map((v) => v.trim()).filter(Boolean)
+      const visibilityRoles = parseVisibilityRoles(assetCategoryVisibilityInput)
+      persistQueueConfig({
+        ...leftPanelConfig,
+        assetCategories: [...leftPanelConfig.assetCategories, { id: `ac-${Date.now()}`, label, subcategories, visibilityRoles }],
+      })
+      closeAssetCategoryModal()
+      return
+    }
+    if (assetCategoryModalMode === 'edit') {
+      if (!assetCategoryTargetId) return setAssetCategoryModalError('Select a category to edit.')
+      const target = leftPanelConfig.assetCategories.find((c) => c.id === assetCategoryTargetId)
+      if (!target) return setAssetCategoryModalError('Category not found.')
+      const label = assetCategoryLabelInput.trim()
+      if (!label) return setAssetCategoryModalError('Category name is required.')
+      const duplicate = leftPanelConfig.assetCategories.some((c) => c.id !== target.id && c.label.trim().toLowerCase() === label.toLowerCase())
+      if (duplicate) return setAssetCategoryModalError(`Category "${label}" already exists.`)
+      const subcategories = assetCategorySubcategoriesInput.split(',').map((v) => v.trim()).filter(Boolean)
+      const visibilityRoles = parseVisibilityRoles(assetCategoryVisibilityInput)
+      persistQueueConfig({
+        ...leftPanelConfig,
+        assetCategories: leftPanelConfig.assetCategories.map((c) =>
+          c.id === target.id ? { ...c, label, subcategories, visibilityRoles } : c),
+      })
+      closeAssetCategoryModal()
+      return
+    }
+    if (!assetCategoryTargetId) return setAssetCategoryModalError('Select a category to delete.')
+    const target = leftPanelConfig.assetCategories.find((c) => c.id === assetCategoryTargetId)
+    if (!target) return setAssetCategoryModalError('Category not found.')
+    persistQueueConfig({
+      ...leftPanelConfig,
+      assetCategories: leftPanelConfig.assetCategories.filter((c) => c.id !== target.id),
+    })
+    closeAssetCategoryModal()
+  }
 
   const addActivity = (message: string) => {
     setActivityLog((prev) => [`${message} (${new Date().toLocaleTimeString()})`, ...prev])
@@ -1118,7 +1651,6 @@ export default function AdminView(_props: AdminViewProps) {
     alert('All API keys have been revoked. Regenerate keys for integrations.')
   }
 
-  const roleBadge = role === 'ADMIN' ? 'Administrator' : role === 'AGENT' ? 'Agent' : 'End User'
   const queueFieldOptions: Record<'ticketsMyLists' | 'users' | 'assets' | 'suppliers', string[]> = {
     ticketsMyLists: ['status', 'type', 'category', 'priority', 'sla'],
     users: ['status', 'workMode', 'department'],
@@ -1232,6 +1764,10 @@ export default function AdminView(_props: AdminViewProps) {
       alert(`Queue "${targetNameInput}" not found in ${queuePanelLabels[panel]}. Available: ${queueNames}`)
       return
     }
+    if (existing.label.trim().toLowerCase() === 'unassigned') {
+      alert('Unassigned cannot be deleted.')
+      return
+    }
     if (!window.confirm(`Delete queue "${existing.label}" from ${queuePanelLabels[panel]}?`)) return
     const nextConfig = { ...leftPanelConfig, [panel]: list.filter((r) => r.id !== existing.id) }
     persistQueueConfig(nextConfig)
@@ -1282,11 +1818,24 @@ export default function AdminView(_props: AdminViewProps) {
       }
       if (detail.action === 'admin-save') {
         if (hasChanges) setShowConfirmSave(true)
+        return
+      }
+      if (detail.action === 'refresh') {
+        setLeftPanelConfig(loadLeftPanelConfig())
+        if (activeItem === 'sla-policies' && role === 'ADMIN') {
+          loadSlaRows()
+        }
+        if (activeItem === 'mail-configuration' && role === 'ADMIN') {
+          loadMailConfiguration()
+        }
+        if (activeItem === 'database-configuration' && role === 'ADMIN') {
+          loadDatabaseConfiguration()
+        }
       }
     }
     window.addEventListener('shared-toolbar-action', handler as EventListener)
     return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
-  }, [hasChanges, savedValues, values, title])
+  }, [activeItem, hasChanges, role, savedValues, values, title])
 
   const panelSections = visibleSections
   const renderPanelIcon = (sectionId: string) => {
@@ -1368,32 +1917,35 @@ export default function AdminView(_props: AdminViewProps) {
     )
   }
 
-  if (isQueueManagement) {
-    return (
-      <>
-        {adminLeftPanel}
-      </>
-    )
-  }
-
   if (isSlaPoliciesView) {
     return (
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div style={{ padding: 16 }}>
-            <h3 style={{ marginTop: 0 }}>SLA Policies</h3>
+            <div className="sla-policy-toolbar">
+              <h3 style={{ margin: 0 }}>SLA Policies</h3>
+              <div className="sla-policy-toolbar-actions">
+                {!showPolicyForm && (
+                  <button className="table-icon-btn" onClick={loadSlaRows} disabled={slaBusy} title="Refresh" aria-label="Refresh SLA policies">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="23 4 23 10 17 10" />
+                      <polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                  </button>
+                )}
+                {!showPolicyForm ? (
+                  <button className="admin-settings-primary" onClick={openCreatePolicyForm} disabled={slaBusy}>
+                    Add New Policy
+                  </button>
+                ) : <span />}
+              </div>
+            </div>
             {role !== 'ADMIN' ? (
               <p>Only administrators can manage SLA policies.</p>
             ) : (
               <>
-                {!showPolicyForm ? (
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-                    <button className="admin-settings-primary" onClick={openCreatePolicyForm} disabled={slaBusy}>
-                      Add New Policy
-                    </button>
-                  </div>
-                ) : null}
                 {showPolicyForm ? (
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '240px 240px 320px 1fr auto auto', gap: 10, alignItems: 'center', marginBottom: 12 }}>
@@ -1678,6 +2230,7 @@ export default function AdminView(_props: AdminViewProps) {
                 ) : slaLoading ? (
                   <p>Loading SLA policies...</p>
                 ) : (
+                  <>
                   <table className="rbac-permission-matrix sla-summary-table">
                     <colgroup>
                       <col style={{ width: 130 }} />
@@ -1706,10 +2259,10 @@ export default function AdminView(_props: AdminViewProps) {
                         <th rowSpan={2}>Policy</th>
                         <th rowSpan={2}>Format</th>
                         <th rowSpan={2}>Time Zone</th>
-                        <th colSpan={4}>C/P1</th>
-                        <th colSpan={4}>H/P2</th>
-                        <th colSpan={4}>M/P3</th>
-                        <th colSpan={4}>L/P4</th>
+                        <th colSpan={4}>Critical/Priority1 (P1)</th>
+                        <th colSpan={4}>High/Priority2 (P2)</th>
+                        <th colSpan={4}>Medium/Priority3 (P3)</th>
+                        <th colSpan={4}>Low/Priority4 (P4)</th>
                         <th rowSpan={2}>Actions</th>
                       </tr>
                       <tr>
@@ -1732,11 +2285,11 @@ export default function AdminView(_props: AdminViewProps) {
                       </tr>
                     </thead>
                     <tbody>
-                      {slaPoliciesGrouped.length === 0 ? (
+                      {slaTotalRows === 0 ? (
                         <tr>
                           <td colSpan={20}>No SLA policy available.</td>
                         </tr>
-                      ) : slaPoliciesGrouped.map((group) => (
+                      ) : slaPoliciesPage.map((group) => (
                         <tr key={group.name}>
                           {(() => {
                             const rows = group.rows.slice()
@@ -1793,7 +2346,297 @@ export default function AdminView(_props: AdminViewProps) {
                       ))}
                     </tbody>
                   </table>
+                  {slaTotalRows > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                      <span className="pagination">{slaRangeStart}-{slaRangeEnd} of {slaTotalRows}</span>
+                      <div className="toolbar-pagination-group">
+                        <button
+                          className="users-page-btn"
+                          onClick={() => setSlaPage((p) => Math.max(1, p - 1))}
+                          disabled={slaSafePage <= 1}
+                          aria-label="Previous page"
+                        >
+                          {'<'}
+                        </button>
+                        <button className="users-page-btn active" aria-label="Current page">
+                          {slaSafePage}
+                        </button>
+                        <button
+                          className="users-page-btn"
+                          onClick={() => setSlaPage((p) => Math.min(slaTotalPages, p + 1))}
+                          disabled={slaSafePage >= slaTotalPages}
+                          aria-label="Next page"
+                        >
+                          {'>'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  </>
                 )}
+              </>
+            )}
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  if (isMailConfigurationView) {
+    return (
+      <>
+        {adminLeftPanel}
+        <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
+          <div className="admin-config-page">
+            <div className="admin-config-head">
+              <h3>Mail Configuration</h3>
+              <div className="admin-config-actions">
+                <button className="admin-settings-ghost" onClick={loadMailConfiguration} disabled={mailBusy || mailLoading}>
+                  {mailLoading ? 'Loading...' : 'Reload'}
+                </button>
+                <button className="admin-settings-ghost" onClick={() => runMailAction('smtp')} disabled={mailBusy || mailLoading}>
+                  {mailBusy ? 'Working...' : 'Test SMTP'}
+                </button>
+                <button className="admin-settings-ghost" onClick={() => runMailAction('imap')} disabled={mailBusy || mailLoading}>
+                  {mailBusy ? 'Working...' : 'Test IMAP'}
+                </button>
+                <button className="admin-settings-ghost" onClick={saveInboundRouting} disabled={mailBusy || mailLoading}>
+                  {mailBusy ? 'Working...' : 'Save Inbound Queue'}
+                </button>
+                <button className="admin-settings-primary" onClick={() => runMailAction('send')} disabled={mailBusy || mailLoading}>
+                  {mailBusy ? 'Working...' : 'Send Test Mail'}
+                </button>
+              </div>
+            </div>
+            {role !== 'ADMIN' ? (
+              <p>Only administrators can manage mail configuration.</p>
+            ) : (
+              <>
+                <div className="admin-config-grid two">
+                  <article className="admin-config-card">
+                    <h4>Workspace Provider</h4>
+                    <p>Select mail/workspace provider according to client choice.</p>
+                    <label className="admin-field-row">
+                      <span>Mail Provider</span>
+                      <select value={mailForm.provider} onChange={(e) => handleMailProviderChange(e.target.value as MailProvider)}>
+                        <option value="gmail">Gmail</option>
+                        <option value="google-workspace">Google Workspace</option>
+                        <option value="zoho">Zoho Workspace / Zoho Mail</option>
+                        <option value="microsoft-workspace">Microsoft Workspace</option>
+                        <option value="outlook">Outlook</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Workspace Provider</span>
+                      <select value={mailForm.workspaceProvider} onChange={(e) => updateMailRoot('workspaceProvider', e.target.value)}>
+                        <option value="google-workspace">Google Workspace</option>
+                        <option value="microsoft-workspace">Microsoft Workspace</option>
+                        <option value="zoho">Zoho</option>
+                        <option value="outlook">Outlook</option>
+                        <option value="custom">Custom</option>
+                      </select>
+                    </label>
+                  </article>
+                  <article className="admin-config-card">
+                    <h4>Base Mail</h4>
+                    <p>Support mail used by application and alias mail.</p>
+                    <label className="admin-field-row">
+                      <span>Support Mail</span>
+                      <input
+                        value={mailForm.supportMail}
+                        onChange={(e) => updateMailRoot('supportMail', e.target.value)}
+                        placeholder="support@yourdomain.com"
+                      />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Alias Mail</span>
+                      <input
+                        value={mailForm.aliasMail}
+                        onChange={(e) => updateMailRoot('aliasMail', e.target.value)}
+                        placeholder="helpdesk@yourdomain.com"
+                      />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Inbound Default Queue Team</span>
+                      <input
+                        value={mailForm.inboundDefaultQueue}
+                        onChange={(e) => updateMailRoot('inboundDefaultQueue', e.target.value)}
+                        placeholder="Support Desk"
+                      />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Test Recipient</span>
+                      <input
+                        value={mailTestRecipient}
+                        onChange={(e) => setMailTestRecipient(e.target.value)}
+                        placeholder="admin@yourdomain.com"
+                      />
+                    </label>
+                  </article>
+                </div>
+                <div className="admin-config-grid two">
+                  <article className="admin-config-card">
+                    <h4>IMAP (Incoming)</h4>
+                    <div className="admin-config-row">
+                      <label className="admin-field-row">
+                        <span>Host</span>
+                        <input value={mailForm.imap.host} onChange={(e) => updateImapField('host', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Port</span>
+                        <input value={mailForm.imap.port} onChange={(e) => updateImapField('port', e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row">
+                      <label className="admin-field-row">
+                        <span>User</span>
+                        <input value={mailForm.imap.user} onChange={(e) => updateImapField('user', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Password / App Password</span>
+                        <input type="password" value={mailForm.imap.pass} onChange={(e) => updateImapField('pass', e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row">
+                      <label className="admin-field-row">
+                        <span>Mailbox</span>
+                        <input value={mailForm.imap.mailbox} onChange={(e) => updateImapField('mailbox', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Secure (TLS/SSL)</span>
+                        <input type="checkbox" checked={mailForm.imap.secure} onChange={(e) => updateImapField('secure', e.target.checked)} />
+                      </label>
+                    </div>
+                  </article>
+                  <article className="admin-config-card">
+                    <h4>SMTP (Outgoing)</h4>
+                    <div className="admin-config-row">
+                      <label className="admin-field-row">
+                        <span>Host</span>
+                        <input value={mailForm.smtp.host} onChange={(e) => updateSmtpField('host', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Port</span>
+                        <input value={mailForm.smtp.port} onChange={(e) => updateSmtpField('port', e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row">
+                      <label className="admin-field-row">
+                        <span>User</span>
+                        <input value={mailForm.smtp.user} onChange={(e) => updateSmtpField('user', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Password / App Password</span>
+                        <input type="password" value={mailForm.smtp.pass} onChange={(e) => updateSmtpField('pass', e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row">
+                      <label className="admin-field-row">
+                        <span>From Address</span>
+                        <input value={mailForm.smtp.from} onChange={(e) => updateSmtpField('from', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Secure (TLS/SSL)</span>
+                        <input type="checkbox" checked={mailForm.smtp.secure} onChange={(e) => updateSmtpField('secure', e.target.checked)} />
+                      </label>
+                    </div>
+                  </article>
+                </div>
+                <div className="admin-config-grid one">
+                  <article className="admin-config-card">
+                    <h4>API Configs</h4>
+                    <p>Provider API connection values for future OAuth/API based setup.</p>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row">
+                        <span>API Base URL</span>
+                        <input value={mailForm.apiBaseUrl} onChange={(e) => updateMailRoot('apiBaseUrl', e.target.value)} placeholder="https://api.provider.com" />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>API Key</span>
+                        <input value={mailForm.apiKey} onChange={(e) => updateMailRoot('apiKey', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>API Secret</span>
+                        <input type="password" value={mailForm.apiSecret} onChange={(e) => updateMailRoot('apiSecret', e.target.value)} />
+                      </label>
+                    </div>
+                  </article>
+                </div>
+                {mailResult ? <div className="admin-config-result">{mailResult}</div> : null}
+              </>
+            )}
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  if (isDatabaseConfigurationView) {
+    return (
+      <>
+        {adminLeftPanel}
+        <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
+          <div className="admin-config-page">
+            <div className="admin-config-head">
+              <h3>Database Configuration</h3>
+              <div className="admin-config-actions">
+                <button className="admin-settings-ghost" onClick={loadDatabaseConfiguration} disabled={dbBusy || dbLoading}>
+                  {dbLoading ? 'Loading...' : 'Reload'}
+                </button>
+                <button className="admin-settings-primary" onClick={runDatabaseTest} disabled={dbBusy || dbLoading}>
+                  {dbBusy ? 'Testing...' : 'Test Connection'}
+                </button>
+              </div>
+            </div>
+            {role !== 'ADMIN' ? (
+              <p>Only administrators can manage database configuration.</p>
+            ) : (
+              <>
+                <div className="admin-config-grid one">
+                  <article className="admin-config-card">
+                    <h4>Application Database Connection</h4>
+                    <p>Use either a connection string or explicit host credentials.</p>
+                    <label className="admin-field-row">
+                      <span>Connection String</span>
+                      <input
+                        value={dbForm.connectionString}
+                        onChange={(e) => setDbForm((prev) => ({ ...prev, connectionString: e.target.value }))}
+                        placeholder="postgresql://user:password@host:5432/database?sslmode=require"
+                      />
+                    </label>
+                    <div className="admin-config-divider">OR</div>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row">
+                        <span>Host</span>
+                        <input value={dbForm.host} onChange={(e) => setDbForm((prev) => ({ ...prev, host: e.target.value }))} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Port</span>
+                        <input value={dbForm.port} onChange={(e) => setDbForm((prev) => ({ ...prev, port: e.target.value }))} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Database</span>
+                        <input value={dbForm.database} onChange={(e) => setDbForm((prev) => ({ ...prev, database: e.target.value }))} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row">
+                        <span>User</span>
+                        <input value={dbForm.user} onChange={(e) => setDbForm((prev) => ({ ...prev, user: e.target.value }))} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Password</span>
+                        <input type="password" value={dbForm.password} onChange={(e) => setDbForm((prev) => ({ ...prev, password: e.target.value }))} />
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>SSL</span>
+                        <input type="checkbox" checked={dbForm.ssl} onChange={(e) => setDbForm((prev) => ({ ...prev, ssl: e.target.checked }))} />
+                      </label>
+                    </div>
+                  </article>
+                </div>
+                {dbResult ? <div className="admin-config-result">{dbResult}</div> : null}
               </>
             )}
           </div>
@@ -1805,6 +2648,263 @@ export default function AdminView(_props: AdminViewProps) {
   return (
     <>
       {adminLeftPanel}
+      <div style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
+        <div className="admin-settings-page">
+          <section className="admin-settings-main">
+            <div className="admin-settings-main-head">
+              <div>
+                <h2>{title}</h2>
+                <p>{selectedSection?.label || 'Configuration'} configuration workspace</p>
+              </div>
+            </div>
+            {!isQueueManagement && (
+              <div className="admin-settings-toolbar">
+                <div className="admin-settings-inline-search">
+                  <input
+                    placeholder="Search fields..."
+                    value={settingsQuery}
+                    onChange={(e) => setSettingsQuery(e.target.value)}
+                  />
+                </div>
+                <div className="admin-settings-toolbar-actions">
+                  <button className={`admin-settings-ghost${recentOnly ? ' active' : ''}`} onClick={() => setRecentOnly((v) => !v)}>
+                    {recentOnly ? 'Recent Changes: ON' : 'Recent Changes'}
+                  </button>
+                  <button className="admin-settings-ghost" onClick={handleImport}>Import</button>
+                  <button className="admin-settings-ghost" onClick={handleExport}>Export</button>
+                  <button className="admin-settings-ghost" onClick={() => setShowConfirmReset(true)}>Reset</button>
+                  <button className="admin-settings-danger" onClick={() => setShowConfirmRevoke(true)}>Revoke Keys</button>
+                </div>
+              </div>
+            )}
+            <div className="admin-settings-grid">
+              {topicPanels.length > 0 ? topicPanels.map((panel) => (
+                <article key={panel.id} className="admin-settings-card">
+                  <h3>{panel.title}</h3>
+                  <p>{panel.description}</p>
+                  {panel.fields.map((field) => renderField(field))}
+                </article>
+              )) : (
+                <article className="admin-settings-card">
+                  <div className="admin-settings-toolbar-actions">
+                    <button
+                      className={`admin-settings-ghost${queueSettingsView === 'ticket' ? ' active' : ''}`}
+                      onClick={() => setQueueSettingsView('ticket')}
+                    >
+                      Ticket
+                    </button>
+                    <button
+                      className={`admin-settings-ghost${queueSettingsView === 'asset' ? ' active' : ''}`}
+                      onClick={() => setQueueSettingsView('asset')}
+                    >
+                      Asset
+                    </button>
+                  </div>
+                  {queueSettingsView === 'ticket' ? (
+                    <>
+                      <h3 style={{ marginTop: 0 }}>Ticket Team Queues</h3>
+                      <p>Create/edit/delete queues with service account (app user) and visibility scope.</p>
+                      <div className="admin-settings-toolbar-actions">
+                        <button className="admin-settings-ghost" onClick={handleTicketQueueAdd}>Add Queue</button>
+                        <button className="admin-settings-ghost" onClick={handleTicketQueueEdit}>Edit Queue</button>
+                        <button className="admin-settings-ghost" onClick={handleTicketQueueDelete}>Delete Queue</button>
+                      </div>
+                      {ticketQueueModalOpen && ticketQueueModalMode && (
+                        <div style={{ marginTop: 10, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, background: '#fffafa' }}>
+                          <h4 style={{ margin: 0 }}>
+                            {ticketQueueModalMode === 'add' ? 'Add Ticket Queue Team' : ticketQueueModalMode === 'edit' ? 'Edit Ticket Queue Team' : 'Delete Ticket Queue Team'}
+                          </h4>
+                          {ticketQueueModalMode !== 'add' && (
+                            <label className="admin-field-row" style={{ marginTop: 10 }}>
+                              <span>Queue Team</span>
+                              <select
+                                value={ticketQueueTargetId}
+                                onChange={(e) => {
+                                  const nextId = e.target.value
+                                  setTicketQueueTargetId(nextId)
+                                  if (ticketQueueModalMode === 'edit') hydrateTicketQueueForm(nextId)
+                                }}
+                              >
+                                {leftPanelConfig.ticketQueues.map((queue) => (
+                                  <option key={queue.id} value={queue.id}>{queue.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {ticketQueueModalMode !== 'delete' && (
+                            <>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Queue/team name</span>
+                                <input
+                                  value={ticketQueueLabelInput}
+                                  onChange={(e) => setTicketQueueLabelInput(e.target.value)}
+                                  placeholder="L1 Team, L2 Team, Accounts Team, HR Team"
+                                />
+                              </label>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Service account</span>
+                                <input
+                                  value={ticketQueueServiceAccountInput}
+                                  onChange={(e) => setTicketQueueServiceAccountInput(e.target.value)}
+                                  placeholder="app.user"
+                                />
+                              </label>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Visibility roles (comma separated)</span>
+                                <input
+                                  value={ticketQueueVisibilityInput}
+                                  onChange={(e) => setTicketQueueVisibilityInput(e.target.value)}
+                                  placeholder="ADMIN,AGENT"
+                                />
+                              </label>
+                            </>
+                          )}
+                          {ticketQueueModalMode === 'delete' && (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                border: '1px solid #fecaca',
+                                background: '#fef2f2',
+                                borderRadius: 8,
+                                padding: '10px 12px',
+                              }}
+                            >
+                              <div style={{ fontWeight: 700, color: '#991b1b', marginBottom: 4 }}>Danger Zone</div>
+                              <p style={{ margin: 0, color: '#7f1d1d' }}>
+                                This action permanently deletes the selected ticket queue team and cannot be undone.
+                              </p>
+                            </div>
+                          )}
+                          {ticketQueueModalError ? (
+                            <p style={{ marginTop: 10, color: '#b91c1c' }}>{ticketQueueModalError}</p>
+                          ) : null}
+                          <div className="admin-settings-modal-actions" style={{ marginTop: 10 }}>
+                            <button className="admin-settings-ghost" onClick={closeTicketQueueModal}>Cancel</button>
+                            <button className="admin-settings-primary" onClick={submitTicketQueueModal}>
+                              {ticketQueueModalMode === 'delete' ? 'Delete' : 'Save'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div className="admin-queue-rules-plain">
+                        {leftPanelConfig.ticketQueues.length === 0 ? (
+                          <div className="admin-queue-rule-row"><small>No ticket queues configured.</small></div>
+                        ) : leftPanelConfig.ticketQueues.map((queue) => (
+                          <div key={queue.id} className="admin-queue-rule-row">
+                            <span>{queue.label}</span>
+                            <small>
+                              App User: {queue.serviceAccount || 'Not set'} | Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
+                            </small>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <h3 style={{ marginTop: 0 }}>Asset Categories & Subcategories</h3>
+                      <p>Maintain category tree like Hardware &gt; Laptop without hardcoding.</p>
+                      <div className="admin-settings-toolbar-actions">
+                        <button className="admin-settings-ghost" onClick={handleAssetCategoryAdd}>Add Category</button>
+                        <button className="admin-settings-ghost" onClick={handleAssetCategoryEdit}>Edit Category</button>
+                        <button className="admin-settings-ghost" onClick={handleAssetCategoryDelete}>Delete Category</button>
+                      </div>
+                      {assetCategoryModalOpen && assetCategoryModalMode && (
+                        <div style={{ marginTop: 10, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, background: '#fffafa' }}>
+                          <h4 style={{ margin: 0 }}>
+                            {assetCategoryModalMode === 'add' ? 'Add Asset Category' : assetCategoryModalMode === 'edit' ? 'Edit Asset Category' : 'Delete Asset Category'}
+                          </h4>
+                          {assetCategoryModalMode !== 'add' && (
+                            <label className="admin-field-row" style={{ marginTop: 10 }}>
+                              <span>Category</span>
+                              <select
+                                value={assetCategoryTargetId}
+                                onChange={(e) => {
+                                  const nextId = e.target.value
+                                  setAssetCategoryTargetId(nextId)
+                                  if (assetCategoryModalMode === 'edit') hydrateAssetCategoryForm(nextId)
+                                }}
+                              >
+                                {leftPanelConfig.assetCategories.map((category) => (
+                                  <option key={category.id} value={category.id}>{category.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                          {assetCategoryModalMode !== 'delete' && (
+                            <>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Main category name</span>
+                                <input
+                                  value={assetCategoryLabelInput}
+                                  onChange={(e) => setAssetCategoryLabelInput(e.target.value)}
+                                  placeholder="Hardware"
+                                />
+                              </label>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Subcategories (comma separated)</span>
+                                <input
+                                  value={assetCategorySubcategoriesInput}
+                                  onChange={(e) => setAssetCategorySubcategoriesInput(e.target.value)}
+                                  placeholder="Laptop, Workstation, Mobile"
+                                />
+                              </label>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Visibility roles (comma separated)</span>
+                                <input
+                                  value={assetCategoryVisibilityInput}
+                                  onChange={(e) => setAssetCategoryVisibilityInput(e.target.value)}
+                                  placeholder="ADMIN,AGENT"
+                                />
+                              </label>
+                            </>
+                          )}
+                          {assetCategoryModalMode === 'delete' && (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                border: '1px solid #fecaca',
+                                background: '#fef2f2',
+                                borderRadius: 8,
+                                padding: '10px 12px',
+                              }}
+                            >
+                              <div style={{ fontWeight: 700, color: '#991b1b', marginBottom: 4 }}>Danger Zone</div>
+                              <p style={{ margin: 0, color: '#7f1d1d' }}>
+                                This action permanently deletes the selected asset category and cannot be undone.
+                              </p>
+                            </div>
+                          )}
+                          {assetCategoryModalError ? (
+                            <p style={{ marginTop: 10, color: '#b91c1c' }}>{assetCategoryModalError}</p>
+                          ) : null}
+                          <div className="admin-settings-modal-actions" style={{ marginTop: 10 }}>
+                            <button className="admin-settings-ghost" onClick={closeAssetCategoryModal}>Cancel</button>
+                            <button className="admin-settings-primary" onClick={submitAssetCategoryModal}>
+                              {assetCategoryModalMode === 'delete' ? 'Delete' : 'Save'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      <div className="admin-queue-rules-plain">
+                        {leftPanelConfig.assetCategories.length === 0 ? (
+                          <div className="admin-queue-rule-row"><small>No asset categories configured.</small></div>
+                        ) : leftPanelConfig.assetCategories.map((category) => (
+                          <div key={category.id} className="admin-queue-rule-row">
+                            <span>{category.label}</span>
+                            <small>
+                              {(category.subcategories || []).length ? category.subcategories.join(', ') : 'No subcategory'} | Scope: {(category.visibilityRoles || []).join(', ') || 'ALL'}
+                            </small>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </article>
+              )}
+            </div>
+          </section>
+        </div>
+      </div>
 
       {showConfirmSave && (
         <div className="admin-settings-modal-backdrop" onClick={() => setShowConfirmSave(false)}>

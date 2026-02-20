@@ -80,6 +80,7 @@ export default function UsersView({
   const [panelRules, setPanelRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().users)
   const [userQueueView, setUserQueueView] = useState<'allUsers' | 'byProject'>('allUsers')
   const [showUserViewSelector, setShowUserViewSelector] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
   const [selectedProject, setSelectedProject] = useState('all')
   const [filters, setFilters] = useState({
     name: '',
@@ -130,7 +131,7 @@ export default function UsersView({
 
   useEffect(() => {
     loadUsers()
-  }, [search])
+  }, [search, refreshTick])
 
   useEffect(() => {
     setSearch(toolbarSearch)
@@ -171,6 +172,9 @@ export default function UsersView({
       }
       if (detail.action === 'filter') {
         setShowFilters((v) => !v)
+      }
+      if (detail.action === 'refresh') {
+        setRefreshTick((v) => v + 1)
       }
     }
     window.addEventListener('shared-toolbar-action', handler as EventListener)

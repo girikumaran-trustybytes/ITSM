@@ -21,6 +21,7 @@ async function ensureUserCrudSchema() {
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dateOfJoining" DATE`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT`)
+      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail")`)
@@ -106,6 +107,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
       `SELECT
          u."id",
          u."name",
+         u."avatarUrl",
          u."email",
          u."personalEmail",
          u."workEmail",
@@ -136,6 +138,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
     `SELECT
        u."id",
        u."name",
+       u."avatarUrl",
        u."email",
        u."personalEmail",
        u."workEmail",
@@ -176,6 +179,7 @@ export async function getUserById(id: number) {
     `SELECT
       u."id",
       u."name",
+      u."avatarUrl",
       u."email",
       u."role",
       u."phone",
@@ -222,6 +226,7 @@ export async function createUser(payload: any) {
     email,
     password: hashed,
     name: payload.name ?? null,
+    avatarUrl: payload.avatarUrl ?? null,
     phone: payload.phone ?? null,
     personalEmail: payload.personalEmail ?? null,
     workEmail: payload.workEmail ?? null,
@@ -249,15 +254,15 @@ export async function createUser(payload: any) {
   try {
     const rows = await query(
       `INSERT INTO "User" (
-        "email", "password", "name", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department",
+        "email", "password", "name", "avatarUrl", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department",
         "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9,
-        $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW()
       )
-      RETURNING "id", "name", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`,
+      RETURNING "id", "name", "avatarUrl", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`,
       [
-        data.email, data.password, data.name, data.phone, data.personalEmail, data.workEmail, data.employeeId, data.designation, data.department,
+        data.email, data.password, data.name, data.avatarUrl, data.phone, data.personalEmail, data.workEmail, data.employeeId, data.designation, data.department,
         data.reportingManager, data.dateOfJoining, data.employmentType, data.workMode, data.client, data.site, data.accountManager, data.role, data.status,
       ]
     )
@@ -288,6 +293,7 @@ export async function updateUser(id: number, payload: any) {
   const data: any = {}
   if (payload.email !== undefined) data.email = String(payload.email).trim().toLowerCase()
   if (payload.name !== undefined) data.name = payload.name
+  if (payload.avatarUrl !== undefined) data.avatarUrl = payload.avatarUrl
   if (payload.phone !== undefined) data.phone = payload.phone
   if (payload.personalEmail !== undefined) data.personalEmail = payload.personalEmail
   if (payload.workEmail !== undefined) data.workEmail = payload.workEmail
@@ -328,7 +334,7 @@ export async function updateUser(id: number, payload: any) {
     params.push(id)
     const rows = await query(
       `UPDATE "User" SET ${setParts.join(', ')} WHERE "id" = $${params.length}
-       RETURNING "id", "name", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`,
+       RETURNING "id", "name", "avatarUrl", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`,
       params
     )
     if (!rows[0]) throw { status: 404, message: 'User not found' }

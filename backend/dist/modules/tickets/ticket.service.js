@@ -16,6 +16,7 @@ const MAX_ATTACHMENT_BATCH_BYTES = 32 * 1024 * 1024;
 const ATTACHMENT_BASE_DIR = path_1.default.resolve(process.cwd(), 'uploads', 'tickets');
 let attachmentSchemaReady = null;
 let slaSchemaReady = null;
+let slaConfigSchemaReady = null;
 function buildTicketWhere(idOrTicketId, alias = 't', startIndex = 1) {
     if (isNumericId(idOrTicketId)) {
         return { clause: `${alias}."id" = $${startIndex}`, params: [Number(idOrTicketId)] };
@@ -28,11 +29,31 @@ async function getTicketRecord(idOrTicketId) {
 }
 function normalizePriority(value) {
     const v = String(value || '').trim().toLowerCase();
-    if (v === 'high' || v === 'critical')
+    if (v === 'p1')
+        return 'Critical';
+    if (v === 'p2')
+        return 'High';
+    if (v === 'p3')
+        return 'Medium';
+    if (v === 'p4')
+        return 'Low';
+    if (v === 'critical')
+        return 'Critical';
+    if (v === 'high')
         return 'High';
     if (v === 'medium')
         return 'Medium';
     return 'Low';
+}
+function priorityRank(value) {
+    const normalized = normalizePriority(value);
+    if (normalized === 'Critical')
+        return 1;
+    if (normalized === 'High')
+        return 2;
+    if (normalized === 'Medium')
+        return 3;
+    return 4;
 }
 function formatSlaClock(ms) {
     const sign = ms < 0 ? '-' : '';
@@ -54,14 +75,30 @@ async function ensureSlaTrackingSchema() {
     }
     await slaSchemaReady;
 }
+async function ensureSlaConfigSchema() {
+    if (!slaConfigSchemaReady) {
+        slaConfigSchemaReady = (async () => {
+            await (0, db_1.query)('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "priorityRank" INTEGER');
+            await (0, db_1.query)('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "format" TEXT');
+            await (0, db_1.query)('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "timeZone" TEXT');
+            await (0, db_1.query)('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "businessSchedule" JSONB');
+        })();
+    }
+    await slaConfigSchemaReady;
+}
 async function getSlaPolicyByPriority(priority) {
+    await ensureSlaConfigSchema();
     const normalized = normalizePriority(priority);
+    const rank = priorityRank(priority);
     const byPriority = await (0, db_1.queryOne)(`SELECT *
      FROM "SlaConfig"
      WHERE "active" = TRUE
-       AND LOWER("priority") = LOWER($1)
+       AND (
+         "priorityRank" = $1
+         OR LOWER("priority") = LOWER($2)
+       )
      ORDER BY "updatedAt" DESC
-     LIMIT 1`, [normalized]);
+     LIMIT 1`, [rank, normalized]);
     if (byPriority)
         return byPriority;
     const fallback = await (0, db_1.queryOne)(`SELECT *
@@ -73,11 +110,78 @@ async function getSlaPolicyByPriority(priority) {
 }
 function fallbackSlaMinutes(priority) {
     const normalized = normalizePriority(priority);
+    if (normalized === 'Critical')
+        return { responseTimeMin: 15, resolutionTimeMin: 4 * 60 };
     if (normalized === 'High')
         return { responseTimeMin: 30, resolutionTimeMin: 8 * 60 };
     if (normalized === 'Medium')
         return { responseTimeMin: 60, resolutionTimeMin: 24 * 60 };
     return { responseTimeMin: 240, resolutionTimeMin: 72 * 60 };
+}
+const weekdayByShortName = {
+    Sun: 'Sunday',
+    Mon: 'Monday',
+    Tue: 'Tuesday',
+    Wed: 'Wednesday',
+    Thu: 'Thursday',
+    Fri: 'Friday',
+    Sat: 'Saturday',
+};
+const timeFormatterByZone = new Map();
+function getTimeFormatter(timeZone) {
+    const key = String(timeZone || 'UTC');
+    if (!timeFormatterByZone.has(key)) {
+        timeFormatterByZone.set(key, new Intl.DateTimeFormat('en-US', {
+            timeZone: key,
+            weekday: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+        }));
+    }
+    return timeFormatterByZone.get(key);
+}
+function parseMinuteOfDay(value) {
+    const text = String(value || '');
+    const [hRaw, mRaw] = text.split(':');
+    const h = Number(hRaw);
+    const m = Number(mRaw);
+    if (!Number.isFinite(h) || !Number.isFinite(m))
+        return null;
+    if (h < 0 || h > 23 || m < 0 || m > 59)
+        return null;
+    return h * 60 + m;
+}
+function isBusinessMinute(date, timeZone, schedule) {
+    const parts = getTimeFormatter(timeZone).formatToParts(date);
+    const weekdayShort = parts.find((p) => p.type === 'weekday')?.value || 'Mon';
+    const hour = Number(parts.find((p) => p.type === 'hour')?.value || '0');
+    const minute = Number(parts.find((p) => p.type === 'minute')?.value || '0');
+    const dayName = weekdayByShortName[weekdayShort] || 'Monday';
+    const dayConfig = schedule?.[dayName];
+    if (!dayConfig?.enabled)
+        return false;
+    const currentMinute = hour * 60 + minute;
+    const slots = Array.isArray(dayConfig?.slots) ? dayConfig.slots : [];
+    return slots.some((slot) => {
+        const start = parseMinuteOfDay(slot?.start);
+        const end = parseMinuteOfDay(slot?.end);
+        if (start === null || end === null || end <= start)
+            return false;
+        return currentMinute >= start && currentMinute < end;
+    });
+}
+function addBusinessMinutes(start, totalMinutes, timeZone, schedule) {
+    let remaining = Math.max(0, Math.floor(totalMinutes));
+    let cursor = new Date(start);
+    let guard = 0;
+    while (remaining > 0 && guard < 2000000) {
+        cursor = new Date(cursor.getTime() + 60 * 1000);
+        if (isBusinessMinute(cursor, timeZone, schedule))
+            remaining -= 1;
+        guard += 1;
+    }
+    return cursor;
 }
 async function upsertSlaTrackingForTicket(ticket, options) {
     await ensureSlaTrackingSchema();
@@ -86,8 +190,15 @@ async function upsertSlaTrackingForTicket(ticket, options) {
     const responseMin = Number(policy?.responseTimeMin ?? fallback.responseTimeMin);
     const resolutionMin = Number(policy?.resolutionTimeMin ?? fallback.resolutionTimeMin);
     const startTime = ticket.slaStart ? new Date(ticket.slaStart) : (ticket.createdAt ? new Date(ticket.createdAt) : new Date());
-    const responseTargetAt = new Date(startTime.getTime() + responseMin * 60 * 1000);
-    const resolutionTargetAt = new Date(startTime.getTime() + resolutionMin * 60 * 1000);
+    const businessHoursEnabled = Boolean(policy?.businessHours);
+    const businessTimeZone = String(policy?.timeZone || 'UTC');
+    const businessSchedule = policy?.businessSchedule && typeof policy.businessSchedule === 'object' ? policy.businessSchedule : null;
+    const responseTargetAt = businessHoursEnabled && businessSchedule
+        ? addBusinessMinutes(startTime, responseMin, businessTimeZone, businessSchedule)
+        : new Date(startTime.getTime() + responseMin * 60 * 1000);
+    const resolutionTargetAt = businessHoursEnabled && businessSchedule
+        ? addBusinessMinutes(startTime, resolutionMin, businessTimeZone, businessSchedule)
+        : new Date(startTime.getTime() + resolutionMin * 60 * 1000);
     const status = ['Resolved', 'Closed'].includes(String(ticket.status || '')) ? 'resolved' : 'running';
     await (0, db_1.query)(`INSERT INTO "SlaTracking" (
       "ticketId", "slaName", "startTime", "breachTime", "status", "policyId",
@@ -299,7 +410,7 @@ const createTicket = async (payload, creator = 'system') => {
     }
     function computeSlaBreachTime(start, priority) {
         // simple SLA mapping (hours)
-        const hoursByPriority = { High: 8, Medium: 24, Low: 72 };
+        const hoursByPriority = { Critical: 4, High: 8, Medium: 24, Low: 72 };
         const hours = hoursByPriority[priority] || 24;
         return new Date(start.getTime() + hours * 60 * 60 * 1000);
     }

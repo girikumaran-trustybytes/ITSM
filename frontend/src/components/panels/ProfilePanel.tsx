@@ -1,18 +1,22 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
+import { getUserAvatarUrl, getUserInitials } from '../../utils/avatar'
 
 export default function ProfilePanel() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const initials = user?.name ? user.name.trim()[0]?.toUpperCase() : 'G'
+  const initials = getUserInitials(user, 'G')
+  const avatarUrl = getUserAvatarUrl(user)
 
   return (
     <div className="profile-menu">
       <div className="profile-menu-header">
         <div className="profile-menu-title">Account</div>
         <div className="profile-menu-user">
-          <div className="profile-menu-avatar">{initials}</div>
+          <div className="profile-menu-avatar unified-user-avatar">
+            {avatarUrl ? <img src={avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
+          </div>
           <div className="profile-menu-name">{user?.name || 'User'}</div>
         </div>
       </div>

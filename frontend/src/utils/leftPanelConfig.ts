@@ -5,11 +5,27 @@ export type QueueRule = {
   value: string
 }
 
+export type TicketQueueConfig = {
+  id: string
+  label: string
+  serviceAccount: string
+  visibilityRoles: string[]
+}
+
+export type AssetCategoryConfig = {
+  id: string
+  label: string
+  subcategories: string[]
+  visibilityRoles: string[]
+}
+
 export type LeftPanelConfig = {
   ticketsMyLists: QueueRule[]
   users: QueueRule[]
   assets: QueueRule[]
   suppliers: QueueRule[]
+  ticketQueues: TicketQueueConfig[]
+  assetCategories: AssetCategoryConfig[]
 }
 
 const STORAGE_KEY = 'itsm_left_panel_config_v1'
@@ -34,6 +50,8 @@ const defaultConfig: LeftPanelConfig = {
     { id: 'a-retired', label: 'Retired', field: 'status', value: 'retired' },
   ],
   suppliers: [],
+  ticketQueues: [],
+  assetCategories: [],
 }
 
 function normalizeTicketMyLists(rules: QueueRule[]): QueueRule[] {
@@ -77,6 +95,24 @@ function safeParse(raw: string | null): LeftPanelConfig {
       users: Array.isArray(parsed?.users) ? parsed.users : defaultConfig.users,
       assets: normalizeAssetRules(Array.isArray(parsed?.assets) ? parsed.assets : defaultConfig.assets),
       suppliers: Array.isArray(parsed?.suppliers) ? parsed.suppliers : defaultConfig.suppliers,
+      ticketQueues: Array.isArray(parsed?.ticketQueues) ? parsed.ticketQueues.map((q: any) => ({
+        id: String(q?.id || `q-${Date.now()}`),
+        label: String(q?.label || '').trim(),
+        serviceAccount: String(q?.serviceAccount || '').trim(),
+        visibilityRoles: Array.isArray(q?.visibilityRoles) && q.visibilityRoles.length
+          ? q.visibilityRoles.map((r: any) => String(r || '').toUpperCase()).filter(Boolean)
+          : ['ADMIN', 'AGENT'],
+      })).filter((q: any) => q.label) : defaultConfig.ticketQueues,
+      assetCategories: Array.isArray(parsed?.assetCategories) ? parsed.assetCategories.map((c: any) => ({
+        id: String(c?.id || `ac-${Date.now()}`),
+        label: String(c?.label || '').trim(),
+        subcategories: Array.isArray(c?.subcategories)
+          ? c.subcategories.map((s: any) => String(s || '').trim()).filter(Boolean)
+          : [],
+        visibilityRoles: Array.isArray(c?.visibilityRoles) && c.visibilityRoles.length
+          ? c.visibilityRoles.map((r: any) => String(r || '').toUpperCase()).filter(Boolean)
+          : ['ADMIN', 'AGENT'],
+      })).filter((c: any) => c.label) : defaultConfig.assetCategories,
     }
   } catch {
     return defaultConfig
