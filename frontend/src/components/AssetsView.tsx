@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import * as assetService from '../services/asset.service'
 import * as userService from '../services/user.service'
 import * as ticketService from '../services/ticket.service'
@@ -7,7 +8,6 @@ import * as changeService from '../services/change.service'
 import * as problemService from '../services/problem.service'
 import * as serviceService from '../services/service.service'
 import { useAuth } from '../contexts/AuthContext'
-import { useColumnResize } from '../hooks/useColumnResize'
 import { getRowsPerPage } from '../utils/pagination'
 import { loadLeftPanelConfig, type QueueRule, type AssetCategoryConfig } from '../utils/leftPanelConfig'
 
@@ -21,9 +21,13 @@ type Asset = {
   status: string
   serial?: string | null
   model?: string | null
+  location?: string | null
+  warrantyUntil?: string | null
+  purchaseDate?: string | null
+  warrantyStart?: string | null
+  assignedUserEmail?: string | null
   assignedToId?: number | null
   assignedTo?: { id: number; name?: string | null; email: string } | null
-  purchaseDate?: string | null
 }
 
 const emptyForm = {
@@ -123,6 +127,8 @@ export default function AssetsView({
   onPaginationMetaChange,
 }: AssetsViewProps) {
   const { user } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
   const [assets, setAssets] = useState<Asset[]>([])
   const [assetsAll, setAssetsAll] = useState<Asset[]>([])
@@ -137,7 +143,6 @@ export default function AssetsView({
   const [editing, setEditing] = useState<Asset | null>(null)
   const [form, setForm] = useState({ ...emptyForm })
   const [activeTab, setActiveTab] = useState('identification')
-  const [showFilters, setShowFilters] = useState(false)
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1100
@@ -158,12 +163,8 @@ export default function AssetsView({
     assigned: '',
     purchase: '',
   })
-  const [selectedIds, setSelectedIds] = useState<number[]>([])
-  const { widths: columnWidths, startResize } = useColumnResize({
-    initialWidths: [30, 300, 150, 170, 140, 150, 190, 140, 130],
-    minWidth: 0,
-  })
-  const columnTemplate = columnWidths.map((w) => `${w}px`).join(' ')
+  const [assetStatusFilter, setAssetStatusFilter] = useState('All')
+  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null)
   const [internalPage, setInternalPage] = useState(1)
   const rowsPerPage = getRowsPerPage()
   const [total, setTotal] = useState(0)
@@ -237,9 +238,7 @@ export default function AssetsView({
         setForm({ ...emptyForm })
         setShowModal(true)
       }
-      if (detail.action === 'filter') {
-        setShowFilters((v) => !v)
-      }
+      if (detail.action === 'filter') return
       if (detail.action === 'refresh') {
         setRefreshTick((v) => v + 1)
       }
@@ -381,17 +380,6 @@ export default function AssetsView({
       return true
     })
   }, [assets, assetQueueFilter, filters, panelRules])
-  const allSelected = filtered.length > 0 && filtered.every((a) => selectedIds.includes(a.id))
-  const toggleSelectAll = () => {
-    if (allSelected) {
-      setSelectedIds((prev) => prev.filter((id) => !filtered.some((a) => a.id === id)))
-    } else {
-      setSelectedIds((prev) => Array.from(new Set([...prev, ...filtered.map((a) => a.id)])))
-    }
-  }
-  const toggleSelectOne = (id: number) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }
   const assetVisuals = useMemo(() => {
     const totalCount = assets.length
     const inUse = assets.filter((a) => String(a.status || '').toLowerCase() === 'in use').length
@@ -452,6 +440,26 @@ export default function AssetsView({
     loadRelations()
     setShowModal(true)
   }
+
+  const openDetail = (asset: Asset) => {
+    const id = Number(asset.id)
+    if (!Number.isFinite(id) || id <= 0) return
+    navigate(`/assets/${id}`)
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const editIdRaw = String(params.get('edit') || '').trim()
+    if (!editIdRaw) return
+    const editId = Number(editIdRaw)
+    if (!Number.isFinite(editId) || editId <= 0) return
+    const target = assets.find((a) => Number(a.id) === editId)
+    if (!target) return
+    openEdit(target)
+    params.delete('edit')
+    const search = params.toString()
+    navigate(search ? `/assets?${search}` : '/assets', { replace: true })
+  }, [location.search, assets])
 
   const toIsoDate = (value: string) => (value ? new Date(value).toISOString() : null)
 
@@ -541,16 +549,6 @@ export default function AssetsView({
     }
   }
 
-  const handleDelete = async (asset: Asset) => {
-    if (!confirm(`Delete asset "${asset.name}"? This cannot be undone.`)) return
-    try {
-      await assetService.deleteAsset(asset.id)
-      setAssets((prev) => prev.filter((a) => a.id !== asset.id))
-    } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to delete asset')
-    }
-  }
-
   const countForRule = (rule: QueueRule) => {
     if (rule.field === 'assigned' && rule.value === 'assigned') return assets.filter((a) => Boolean(a.assignedTo || a.assignedToId)).length
     if (rule.field === 'assigned' && rule.value === 'unassigned') return assets.filter((a) => !a.assignedTo && !a.assignedToId).length
@@ -558,6 +556,18 @@ export default function AssetsView({
     if (rule.field === 'status') return assets.filter((a) => String(a.status || '').toLowerCase() === String(rule.value || '').toLowerCase()).length
     if (rule.field === 'category') return assets.filter((a) => String(a.category || '').toLowerCase() === String(rule.value || '').toLowerCase()).length
     return 0
+  }
+
+  const handleDelete = async (asset: Asset) => {
+    if (!confirm(`Delete asset "${asset.name}"? This cannot be undone.`)) return
+    try {
+      await assetService.deleteAsset(asset.id)
+      setAssets((prev) => prev.filter((a) => a.id !== asset.id))
+      setAssetsAll((prev) => prev.filter((a) => a.id !== asset.id))
+      setSelectedAssetId((prev) => (prev === asset.id ? null : prev))
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to delete asset')
+    }
   }
   const countByType = (type: string) => assets.filter((a) => normalizeKey(getAssetType(a)) === normalizeKey(type)).length
   const countByGroup = (group: string) => {
@@ -636,11 +646,39 @@ export default function AssetsView({
       </svg>
     )
   }
+
+  const cardRows = useMemo(() => {
+    if (assetStatusFilter === 'All') return filtered
+    return filtered.filter((a) => String(a.status || '').toLowerCase() === assetStatusFilter.toLowerCase())
+  }, [filtered, assetStatusFilter])
+
+  const selectedAsset = useMemo(() => {
+    if (!cardRows.length) return null
+    if (!selectedAssetId) return cardRows[0]
+    return cardRows.find((a) => a.id === selectedAssetId) || cardRows[0]
+  }, [cardRows, selectedAssetId])
+
+  useEffect(() => {
+    if (!cardRows.length) {
+      setSelectedAssetId(null)
+      return
+    }
+    if (!selectedAssetId || !cardRows.some((a) => a.id === selectedAssetId)) {
+      setSelectedAssetId(cardRows[0].id)
+    }
+  }, [cardRows, selectedAssetId])
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '-'
+    const d = new Date(value)
+    if (Number.isNaN(d.getTime())) return '-'
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
   const assetQueueViews = [
-    { key: 'assetType', label: 'Assets by Asset Type', icon: '💻' },
-    { key: 'assetGroup', label: 'Assets by Asset Group', icon: '📁' },
-    { key: 'ownership', label: 'Assets by Ownership', icon: '▦' },
-    { key: 'allAssets', label: 'All Assets', icon: '⌕' },
+    { key: 'assetType', label: 'Assets by Asset Type', icon: 'AT' },
+    { key: 'assetGroup', label: 'Assets by Asset Group', icon: 'AG' },
+    { key: 'ownership', label: 'Assets by Ownership', icon: 'OW' },
+    { key: 'allAssets', label: 'All Assets', icon: 'AL' },
   ] as const
   const currentAssetQueue = assetQueueViews.find((v) => v.key === assetQueueView) || assetQueueViews[0]
   const assetLeftPanel = (!leftPanelCollapsed && queueRoot) ? createPortal(
@@ -795,141 +833,112 @@ export default function AssetsView({
               setPage(1)
             }}
           />
-          <button className="assets-icon-btn" title="Filter" onClick={() => setShowFilters((v) => !v)}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
-            </svg>
-          </button>
           <button className="assets-primary-btn" onClick={openCreate}>+ New Asset</button>
         </div>
       </div>
-      <div className="assets-table">
-        <div className="assets-row assets-head" style={{ gridTemplateColumns: columnTemplate }}>
-          <div className="assets-col check">
-            <input type="checkbox" aria-label="Select all assets" checked={allSelected} onChange={toggleSelectAll} />
-          </div>
-          <div className="assets-col name">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(1, e)} />
-            Asset
-          </div>
-          <div className="assets-col serial">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(2, e)} />
-            Serial
-          </div>
-          <div className="assets-col category">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(3, e)} />
-            Category
-          </div>
-          <div className="assets-col status">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(4, e)} />
-            Status
-          </div>
-          <div className="assets-col supplier">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(5, e)} />
-            Model
-          </div>
-          <div className="assets-col assigned">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(6, e)} />
-            Assigned To
-          </div>
-          <div className="assets-col date">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(7, e)} />
-            Purchase
-          </div>
-          <div className="assets-col actions">
-            <span className="col-resize-handle" onMouseDown={(e) => startResize(8, e)} />
-            Actions
-          </div>
+      <div className="asset-cards-toolbar">
+        <select value="All Assets" onChange={() => undefined}>
+          <option>All Assets</option>
+        </select>
+        <label className="asset-cards-status-filter">
+          <span>Status:</span>
+          <select value={assetStatusFilter} onChange={(e) => setAssetStatusFilter(e.target.value)}>
+            <option value="All">All</option>
+            <option value="Active">Active</option>
+            <option value="In Use">In Use</option>
+            <option value="Available">Available</option>
+            <option value="In Repair">In Repair</option>
+            <option value="Retired">Retired</option>
+          </select>
+        </label>
+        <div className="asset-cards-search">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.5" y1="16.5" x2="21" y2="21" />
+          </svg>
+          <input
+            placeholder="Search"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
+          />
         </div>
-        {showFilters && (
-          <div className="assets-row assets-filters" style={{ gridTemplateColumns: columnTemplate }}>
-            <div className="assets-col check">
-              <button
-                className="filter-clear-btn"
-                onClick={() => {
-                  setFilters({
-                    name: '',
-                    serial: '',
-                    category: '',
-                    status: '',
-                    model: '',
-                    assigned: '',
-                    purchase: '',
-                  })
-                  setShowFilters(false)
-                }}
-                title="Clear filters"
-                aria-label="Clear filters"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="assets-col name">
-              <input className="table-filter-input" value={filters.name} onChange={(e) => setFilters({ ...filters, name: e.target.value })} />
-            </div>
-            <div className="assets-col serial">
-              <input className="table-filter-input" value={filters.serial} onChange={(e) => setFilters({ ...filters, serial: e.target.value })} />
-            </div>
-            <div className="assets-col category">
-              <input className="table-filter-input" value={filters.category} onChange={(e) => setFilters({ ...filters, category: e.target.value })} />
-            </div>
-            <div className="assets-col status">
-              <input className="table-filter-input" value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} />
-            </div>
-            <div className="assets-col supplier">
-              <input className="table-filter-input" value={filters.model} onChange={(e) => setFilters({ ...filters, model: e.target.value })} />
-            </div>
-            <div className="assets-col assigned">
-              <input className="table-filter-input" value={filters.assigned} onChange={(e) => setFilters({ ...filters, assigned: e.target.value })} />
-            </div>
-            <div className="assets-col date">
-              <input className="table-filter-input" value={filters.purchase} onChange={(e) => setFilters({ ...filters, purchase: e.target.value })} />
-            </div>
-            <div className="assets-col actions" />
-          </div>
-        )}
-        {filtered.map((asset) => (
-          <div
-            key={asset.id}
-            className="assets-row"
-            style={{ gridTemplateColumns: columnTemplate }}
-          >
-            <div className="assets-col check">
-              <input
-                type="checkbox"
-                aria-label={`Select ${asset.name}`}
-                checked={selectedIds.includes(asset.id)}
-                onChange={() => toggleSelectOne(asset.id)}
-              />
-            </div>
-            <div className="assets-col name">
-              <div style={{ fontWeight: 700 }}>{asset.name}</div>
-              <div style={{ fontSize: 12, color: '#6b7280' }}>{asset.assetId || '-'}</div>
-            </div>
-            <div className="assets-col serial">{asset.serial || '-'}</div>
-            <div className="assets-col category">{asset.category}</div>
-            <div className="assets-col status">
-              <span className={`asset-status ${asset.status.toLowerCase().replace(/\s+/g, '-')}`}>{asset.status}</span>
-            </div>
-            <div className="assets-col supplier">{asset.model || '-'}</div>
-            <div className="assets-col assigned">
-              {asset.assignedTo ? (asset.assignedTo.name || asset.assignedTo.email) : (asset.assignedToId ? `User #${asset.assignedToId}` : 'Unassigned')}
-            </div>
-            <div className="assets-col date">{asset.purchaseDate ? asset.purchaseDate.slice(0, 10) : '-'}</div>
-            <div className="assets-col actions">
-              <button className="assets-link-btn" onClick={() => openEdit(asset)}>Edit</button>
-              {user?.role === 'ADMIN' && (
-                <button className="assets-link-btn danger" onClick={() => handleDelete(asset)}>Delete</button>
-              )}
-            </div>
-          </div>
-        ))}
-        {filtered.length === 0 && (
-          <div className="assets-empty">No assets found.</div>
-        )}
       </div>
+
+      <div className="asset-cards-grid">
+        {cardRows.map((asset) => {
+          const selected = selectedAsset?.id === asset.id
+          return (
+            <article key={asset.id} className={`asset-card-tile${selected ? ' selected' : ''}`} onClick={() => setSelectedAssetId(asset.id)}>
+              <div className="asset-card-head">
+                <div className="asset-card-icon">{renderAssetTypeIcon(asset.assetType || asset.category)}</div>
+                <div className="asset-card-head-main">
+                  <div className="asset-card-title-row">
+                    <h4>{asset.name}</h4>
+                    <span className={`asset-status ${String(asset.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{asset.status || 'Active'}</span>
+                  </div>
+                  <div className="asset-card-divider" />
+                </div>
+              </div>
+              <div className="asset-card-facts">
+                <div><span>Asset ID:</span><strong>{asset.assetId || `AST-${asset.id}`}</strong></div>
+                <div><span>Category:</span><strong>{asset.category || '-'}</strong></div>
+                <div><span>Serial No:</span><strong>{asset.serial || '-'}</strong></div>
+                <div><span>Location:</span><strong>{asset.location || '-'}</strong></div>
+                <div><span>Assigned To:</span><strong>{asset.assignedTo ? (asset.assignedTo.name || asset.assignedTo.email) : 'Unassigned'}</strong></div>
+                <div><span>Warranty:</span><strong>{formatDate(asset.warrantyUntil)}</strong></div>
+              </div>
+              <div className="asset-card-actions">
+                <button className="asset-btn assign" onClick={(e) => { e.stopPropagation(); alert('Assign flow will be wired next.') }}>Assign</button>
+                <button className="asset-btn edit" onClick={(e) => { e.stopPropagation(); openEdit(asset) }}>Edit</button>
+                {user?.role === 'ADMIN' ? (
+                  <button className="asset-btn delete" onClick={(e) => { e.stopPropagation(); handleDelete(asset) }}>Delete</button>
+                ) : null}
+                <button className="asset-btn view" onClick={(e) => { e.stopPropagation(); openDetail(asset) }}>View</button>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      {selectedAsset ? (
+        <section className="asset-detail-surface">
+          <div className="asset-detail-head">
+            <div className="asset-card-icon">{renderAssetTypeIcon(selectedAsset.assetType || selectedAsset.category)}</div>
+            <div className="asset-detail-head-main">
+              <div className="asset-card-title-row">
+                <h3>{selectedAsset.name}</h3>
+                <span className={`asset-status ${String(selectedAsset.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{selectedAsset.status || 'Active'}</span>
+              </div>
+              <div className="asset-card-divider" />
+            </div>
+          </div>
+          <div className="asset-detail-grid">
+            <div className="asset-detail-col">
+              <div><span>Asset ID:</span><strong>{selectedAsset.assetId || `AST-${selectedAsset.id}`}</strong></div>
+              <div><span>Serial No:</span><strong>{selectedAsset.serial || '-'}</strong></div>
+              <div><span>Location:</span><strong>{selectedAsset.location || '-'}</strong></div>
+              <div><span>Assigned To:</span><strong>{selectedAsset.assignedTo ? (selectedAsset.assignedTo.name || selectedAsset.assignedTo.email) : 'Unassigned'}</strong></div>
+            </div>
+            <div className="asset-detail-col">
+              <div><span>Category:</span><strong>{selectedAsset.category || '-'}</strong></div>
+              <div><span>Model:</span><strong>{selectedAsset.model || '-'}</strong></div>
+              <div><span>Purchase Date:</span><strong>{formatDate(selectedAsset.purchaseDate)}</strong></div>
+              <div><span>Warranty Expiry:</span><strong>{formatDate(selectedAsset.warrantyUntil)}</strong></div>
+            </div>
+          </div>
+          <div className="asset-card-actions detail">
+            <button className="asset-btn assign" onClick={() => alert('Assign flow will be wired next.')}>Reassign</button>
+            <button className="asset-btn edit" onClick={() => openEdit(selectedAsset)}>Edit</button>
+            <button className="asset-btn delete" onClick={() => handleDelete(selectedAsset)}>Delete</button>
+            <button className="asset-btn view" onClick={() => openDetail(selectedAsset)}>View</button>
+          </div>
+        </section>
+      ) : (
+        <div className="assets-empty">No assets found.</div>
+      )}
 
         {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
@@ -1269,6 +1278,10 @@ export default function AssetsView({
     </>
   )
 }
+
+
+
+
 
 
 

@@ -4,8 +4,27 @@ export type NotificationState = {
   clearedAt?: number
 }
 
+function normalizeIds(input: any): number[] {
+  if (!Array.isArray(input)) return []
+  return Array.from(
+    new Set(
+      input
+        .map((v: any) => Number(v))
+        .filter((v: number) => Number.isFinite(v) && v > 0)
+    )
+  ).slice(0, 5000)
+}
+
+function getUserStateIdentity(user: any) {
+  const id = user?.id != null ? String(user.id).trim() : ''
+  if (id) return id
+  const email = user?.email != null ? String(user.email).trim().toLowerCase() : ''
+  if (email) return `email:${email}`
+  return 'anon'
+}
+
 export function getNotificationStateKey(user: any) {
-  return `itsm.notifications.state.${String(user?.id || 'anon')}`
+  return `itsm.notifications.state.${getUserStateIdentity(user)}`
 }
 
 function getAnonNotificationStateKey() {
@@ -22,8 +41,8 @@ export function loadNotificationState(user: any): NotificationState {
     const parsed = JSON.parse(raw)
     const clearedAt = Number(parsed?.clearedAt)
     return {
-      readIds: Array.isArray(parsed?.readIds) ? parsed.readIds.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
-      deletedIds: Array.isArray(parsed?.deletedIds) ? parsed.deletedIds.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : [],
+      readIds: normalizeIds(parsed?.readIds),
+      deletedIds: normalizeIds(parsed?.deletedIds),
       clearedAt: Number.isFinite(clearedAt) && clearedAt > 0 ? clearedAt : undefined,
     }
   } catch {

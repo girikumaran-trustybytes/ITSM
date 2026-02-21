@@ -7,6 +7,16 @@ function normalizeRole(input: any) {
   return 'USER'
 }
 
+export type PresenceStatus = 'Available' | 'Do not disturb' | 'Set as away'
+
+function normalizePresenceStatus(input: any): PresenceStatus {
+  const raw = String(input || '').trim().toLowerCase()
+  if (raw === 'available' || raw === 'online' || raw === 'active') return 'Available'
+  if (raw === 'do not disturb' || raw === 'dnd' || raw === 'busy') return 'Do not disturb'
+  if (raw === 'set as away' || raw === 'away') return 'Set as away'
+  return 'Available'
+}
+
 let userSchemaReady: Promise<void> | null = null
 
 async function ensureUserCrudSchema() {
@@ -37,6 +47,13 @@ async function ensureUserCrudSchema() {
         )
       `)
       await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_accounts_user_id ON "ServiceAccounts"("userId")`)
+      await query(`
+        CREATE TABLE IF NOT EXISTS "UserPresence" (
+          "userId" INTEGER PRIMARY KEY REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+          "status" TEXT NOT NULL DEFAULT 'Available',
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
     })()
   }
   await userSchemaReady
@@ -121,6 +138,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
          u."workMode",
          u."role",
          u."status",
+         COALESCE(up."status", 'Available') AS "presenceStatus",
          u."createdAt",
          COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
          COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
@@ -128,6 +146,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
          'none'::text AS "inviteStatus"
        FROM "User" u
        LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+       LEFT JOIN "UserPresence" up ON up."userId" = u."id"
        ${where}
        ORDER BY u."name" ASC NULLS LAST, u."email" ASC
        LIMIT $${params.length}`,
@@ -152,6 +171,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
        u."workMode",
        u."role",
        u."status",
+       COALESCE(up."status", 'Available') AS "presenceStatus",
        u."createdAt",
        COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
        COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
@@ -159,6 +179,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
        COALESCE(ui.status, 'none') AS "inviteStatus"
      FROM "User" u
      LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+     LEFT JOIN "UserPresence" up ON up."userId" = u."id"
      LEFT JOIN LATERAL (
        SELECT status
        FROM user_invites
@@ -196,6 +217,7 @@ export async function getUserById(id: number) {
       u."employmentType",
       u."workMode",
       u."status",
+      COALESCE(up."status", 'Available') AS "presenceStatus",
       u."createdAt",
       u."updatedAt",
       COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
@@ -203,6 +225,7 @@ export async function getUserById(id: number) {
       COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds"
     FROM "User" u
     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+    LEFT JOIN "UserPresence" up ON up."userId" = u."id"
     WHERE u."id" = $1`,
     [id]
   )
@@ -378,4 +401,30 @@ export async function deleteUser(id: number) {
     if (err?.status === 404) throw err
     throw err
   }
+}
+
+export async function getUserPresence(userId: number): Promise<{ status: PresenceStatus }> {
+  await ensureUserCrudSchema()
+  const user = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [userId])
+  if (!user) throw { status: 404, message: 'User not found' }
+  const row = await queryOne<{ status: string }>(
+    'SELECT "status" FROM "UserPresence" WHERE "userId" = $1',
+    [userId]
+  )
+  return { status: normalizePresenceStatus(row?.status) }
+}
+
+export async function saveUserPresence(userId: number, statusInput: any): Promise<{ status: PresenceStatus }> {
+  await ensureUserCrudSchema()
+  const user = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [userId])
+  if (!user) throw { status: 404, message: 'User not found' }
+  const status = normalizePresenceStatus(statusInput)
+  await query(
+    `INSERT INTO "UserPresence" ("userId", "status", "updatedAt")
+     VALUES ($1, $2, NOW())
+     ON CONFLICT ("userId")
+     DO UPDATE SET "status" = EXCLUDED."status", "updatedAt" = NOW()`,
+    [userId, status]
+  )
+  return { status }
 }

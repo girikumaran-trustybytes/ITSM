@@ -184,3 +184,26 @@ export async function markInvitePending(req: Request, res: Response) {
     res.status(err.status || 500).json({ error: err.message || 'Failed to mark invite pending' })
   }
 }
+
+export async function getMyPresence(req: Request, res: Response) {
+  try {
+    const id = Number((req as any).user?.id || 0)
+    if (!id) return res.status(401).json({ error: 'Unauthorized' })
+    const result = await svc.getUserPresence(id)
+    res.json(result)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to load presence' })
+  }
+}
+
+export async function putMyPresence(req: Request, res: Response) {
+  try {
+    const id = Number((req as any).user?.id || 0)
+    if (!id) return res.status(401).json({ error: 'Unauthorized' })
+    const status = (req.body as any)?.status
+    const result = await svc.saveUserPresence(id, status)
+    res.json(result)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to save presence' })
+  }
+}

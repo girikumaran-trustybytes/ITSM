@@ -799,6 +799,8 @@ export default function TicketsView() {
     return 'available'
   }
 
+  const shouldShowQueuePresenceDot = (presenceClass: 'available' | 'away' | 'dnd' | 'offline') => presenceClass !== 'away'
+
   const findAgentRecord = (agentKey: string, label?: string) => {
     const key = String(agentKey || '').trim().toLowerCase()
     const displayLabel = String(label || '').trim().toLowerCase()
@@ -1264,7 +1266,9 @@ export default function TicketsView() {
                             return (
                           <div className="queue-avatar queue-avatar-with-presence">
                             {renderQueueAgentAvatar(record || { id: agentKey, name: agent.label }, agent.label)}
-                            <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                            {shouldShowQueuePresenceDot(presenceClass) ? (
+                              <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                            ) : null}
                           </div>
                             )
                           })()}
@@ -1297,7 +1301,12 @@ export default function TicketsView() {
               >
                 <div className="queue-avatar queue-avatar-with-presence">
                   {renderQueueAgentAvatar(a, getAgentDisplayName(a))}
-                  <span className={`queue-avatar-presence queue-avatar-presence-${getAgentPresenceClass(a)}`} />
+                  {(() => {
+                    const presenceClass = getAgentPresenceClass(a)
+                    return shouldShowQueuePresenceDot(presenceClass) ? (
+                      <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                    ) : null
+                  })()}
                 </div>
                 <div className="queue-name">{getAgentDisplayName(a)}</div>
                 <div className="queue-count">

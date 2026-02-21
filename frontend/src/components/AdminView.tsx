@@ -1924,7 +1924,29 @@ export default function AdminView(_props: AdminViewProps) {
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div style={{ padding: 16 }}>
             <div className="sla-policy-toolbar">
-              <h3 style={{ margin: 0 }}>SLA Policies</h3>
+              <div className="sla-policy-toolbar-left">
+                <button
+                  className="table-icon-btn"
+                  onClick={() => setSidebarCollapsed((v) => !v)}
+                  title={sidebarCollapsed ? 'Show Menu' : 'Hide Menu'}
+                  aria-label={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                    {sidebarCollapsed ? (
+                      <>
+                        <polyline points="13 18 7 12 13 6" />
+                        <polyline points="19 18 13 12 19 6" />
+                      </>
+                    ) : (
+                      <>
+                        <polyline points="11 18 17 12 11 6" />
+                        <polyline points="5 18 11 12 5 6" />
+                      </>
+                    )}
+                  </svg>
+                </button>
+                <h3 style={{ margin: 0 }}>SLA Policies</h3>
+              </div>
               <div className="sla-policy-toolbar-actions">
                 {!showPolicyForm && (
                   <button className="table-icon-btn" onClick={loadSlaRows} disabled={slaBusy} title="Refresh" aria-label="Refresh SLA policies">
@@ -1937,7 +1959,7 @@ export default function AdminView(_props: AdminViewProps) {
                 )}
                 {!showPolicyForm ? (
                   <button className="admin-settings-primary" onClick={openCreatePolicyForm} disabled={slaBusy}>
-                    Add New Policy
+                    Add Policy
                   </button>
                 ) : <span />}
               </div>
@@ -2649,14 +2671,45 @@ export default function AdminView(_props: AdminViewProps) {
     <>
       {adminLeftPanel}
       <div style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-        <div className="admin-settings-page">
-          <section className="admin-settings-main">
-            <div className="admin-settings-main-head">
-              <div>
-                <h2>{title}</h2>
-                <p>{selectedSection?.label || 'Configuration'} configuration workspace</p>
+        <div className={isQueueManagement ? '' : 'admin-settings-page'}>
+          <section className={isQueueManagement ? '' : 'admin-settings-main'}>
+            {isQueueManagement && (
+              <div className="queue-panel-toolbar">
+                <div className="queue-panel-toolbar-left">
+                  <h3 style={{ margin: 0 }}>Queue & Panel management</h3>
+                </div>
+                <div className="queue-panel-toolbar-actions">
+                  <button
+                    className="table-icon-btn"
+                    onClick={() => setSidebarCollapsed((v) => !v)}
+                    title={sidebarCollapsed ? 'Show Menu' : 'Hide Menu'}
+                    aria-label={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                      {sidebarCollapsed ? (
+                        <>
+                          <polyline points="13 18 7 12 13 6" />
+                          <polyline points="19 18 13 12 19 6" />
+                        </>
+                      ) : (
+                        <>
+                          <polyline points="11 18 17 12 11 6" />
+                          <polyline points="5 18 11 12 5 6" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+            {!isQueueManagement && (
+              <div className="admin-settings-main-head">
+                <div>
+                  <h2>{title}</h2>
+                  <p>{selectedSection?.label || 'Configuration'} configuration workspace</p>
+                </div>
+              </div>
+            )}
             {!isQueueManagement && (
               <div className="admin-settings-toolbar">
                 <div className="admin-settings-inline-search">

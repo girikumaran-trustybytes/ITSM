@@ -9,6 +9,8 @@ const router = Router()
 router.use(authenticateJWT)
 
 router.get('/', permit(['ADMIN','AGENT']), ctrl.list)
+router.get('/me/presence', permit(['ADMIN','AGENT','USER','SUPPLIER','CUSTOM']), ctrl.getMyPresence)
+router.put('/me/presence', permit(['ADMIN','AGENT','USER','SUPPLIER','CUSTOM']), ctrl.putMyPresence)
 router.post('/rbac/ticket-actions', permit(['ADMIN']), authorize('admin', 'edit'), ctrl.addTicketCustomAction)
 router.get('/:id/permissions', permit(['ADMIN','AGENT']), ctrl.getPermissions)
 router.patch('/:id/permissions', permit(['ADMIN']), authorize('admin', 'edit'), ctrl.updatePermissions)

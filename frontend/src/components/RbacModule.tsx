@@ -203,6 +203,11 @@ export default function RbacModule({ isAdmin }: Props) {
     return `${u.email} | ${u.name || 'No name'} | ${titleCase(u.role)} | ${titleCase(u.inviteStatus || u.status || 'none')}`
   }
 
+  const getRoleLabel = (u: RbacUserRow) => {
+    if (u.isServiceAccount) return 'Service Account (Agent)'
+    return titleCase(u.role || 'user')
+  }
+
   const usersForSelection = useMemo(() => {
     return users
       .slice()
@@ -757,28 +762,31 @@ export default function RbacModule({ isAdmin }: Props) {
   return (
     <>
       <div className="rbac-top-action-row">
-        <button
-          className="rbac-add-btn"
-          onClick={() => {
-            resetAddModal()
-            resetServiceAccountFlow()
-            setServiceAccountView('picker')
-          }}
-          disabled={!isAdmin}
-        >
-          <span className="rbac-add-btn-plus" aria-hidden="true">+</span>
-          <span>Add Service Account</span>
-        </button>
-        {selectedUserId && (
-          <>
-            <button className="rbac-update-btn" onClick={handleSave} disabled={!isDirty || saving || !selectedUserId}>
-              {saving ? 'Updating...' : 'Update'}
-            </button>
-            <button className="admin-settings-ghost" onClick={() => setSelectedUserId(null)}>
-              Cancel
-            </button>
-          </>
-        )}
+        <div className="rbac-top-action-title">User & Access management</div>
+        <div className="rbac-top-action-actions">
+          {selectedUserId && (
+            <>
+              <button className="rbac-update-btn" onClick={handleSave} disabled={!isDirty || saving || !selectedUserId}>
+                {saving ? 'Updating...' : 'Update'}
+              </button>
+              <button className="admin-settings-ghost" onClick={() => setSelectedUserId(null)}>
+                Cancel
+              </button>
+            </>
+          )}
+          <button
+            className="rbac-add-btn"
+            onClick={() => {
+              resetAddModal()
+              resetServiceAccountFlow()
+              setServiceAccountView('picker')
+            }}
+            disabled={!isAdmin}
+          >
+            <span className="rbac-add-btn-plus" aria-hidden="true">+</span>
+            <span>Add Service Account (Agent)</span>
+          </button>
+        </div>
       </div>
 
       {serviceAccountView !== 'none' ? (
@@ -838,7 +846,7 @@ export default function RbacModule({ isAdmin }: Props) {
                   </p>
                 )}
                 <label className="rbac-service-account-toggle">
-                  <span>Make as Service Account</span>
+                  <span>Make as Service Account (Agent)</span>
                   <span className="rbac-toggle-switch">
                     <input type="checkbox" checked={convertToServiceAccount} onChange={(e) => setConvertToServiceAccount(e.target.checked)} />
                     <span className="rbac-toggle-slider" />
@@ -934,7 +942,7 @@ export default function RbacModule({ isAdmin }: Props) {
                       </label>
                     </div>
                     <label className="rbac-service-account-toggle">
-                      <span>Make as Service Account</span>
+                      <span>Make as Service Account (Agent)</span>
                       <span className="rbac-toggle-switch">
                         <input type="checkbox" checked={convertToServiceAccount} onChange={(e) => setConvertToServiceAccount(e.target.checked)} />
                         <span className="rbac-toggle-slider" />
@@ -965,17 +973,17 @@ export default function RbacModule({ isAdmin }: Props) {
                       </div>
                     )}
                     {!convertToServiceAccount && (
-                      <p className="rbac-service-account-note">Enable "Make as Service Account" to continue.</p>
+                      <p className="rbac-service-account-note">Enable "Make as Service Account (Agent)" to continue.</p>
                     )}
                     <div className="rbac-service-account-actions">
-                      <button className="admin-settings-primary" onClick={handleCreateUserAndContinueServiceAccount} disabled={!convertToServiceAccount}>Add Service Account</button>
+                      <button className="admin-settings-primary" onClick={handleCreateUserAndContinueServiceAccount} disabled={!convertToServiceAccount}>Add Service Account (Agent)</button>
                     </div>
                   </>
                 ) : (
                   <>
                     <p className="rbac-service-account-note">User created. Continue with service account conversion and queue scopes.</p>
                     <label className="rbac-service-account-toggle">
-                      <span>Make as Service Account</span>
+                      <span>Make as Service Account (Agent)</span>
                       <span className="rbac-toggle-switch">
                         <input type="checkbox" checked={convertToServiceAccount} onChange={(e) => setConvertToServiceAccount(e.target.checked)} />
                         <span className="rbac-toggle-slider" />
@@ -1127,7 +1135,7 @@ export default function RbacModule({ isAdmin }: Props) {
               <table className="rbac-permission-matrix">
                 <thead>
                   <tr>
-                    <th scope="col">Service Account</th>
+                    <th scope="col">Service Account (Agent)</th>
                     <th scope="col">Name</th>
                     <th scope="col">Role</th>
                     <th scope="col">Invite Status</th>
@@ -1141,7 +1149,7 @@ export default function RbacModule({ isAdmin }: Props) {
                       <tr key={u.id}>
                         <td>{u.email}</td>
                         <td>{u.name || 'No name'}</td>
-                        <td>{titleCase(u.role || 'user')}</td>
+                        <td>{getRoleLabel(u)}</td>
                         <td>{titleCase(u.inviteStatus || 'none')}</td>
                         <td>{titleCase(u.status || 'active')}</td>
                         <td>
@@ -1154,7 +1162,7 @@ export default function RbacModule({ isAdmin }: Props) {
                   ) : (
                     <tr>
                       <td colSpan={6}>
-                        <div className="rbac-empty-state">No service account users found.</div>
+                        <div className="rbac-empty-state">No service account (agent) users found.</div>
                       </td>
                     </tr>
                   )}

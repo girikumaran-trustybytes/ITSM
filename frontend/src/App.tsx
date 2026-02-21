@@ -24,10 +24,11 @@ import NotificationsPanel from './components/panels/NotificationsPanel'
 import TodoPanel from './components/panels/TodoPanel'
 import FeedPanel, { FEED_FILTERS, type FeedFilter } from './components/panels/FeedPanel'
 import SearchPanel from './components/panels/SearchPanel'
-import { listNotifications as fetchNotifications } from './services/notifications.service'
-import { loadNotificationState } from './utils/notificationsState'
+import { getNotificationState as fetchNotificationState, listNotifications as fetchNotifications } from './services/notifications.service'
+import { loadNotificationState, saveNotificationState } from './utils/notificationsState'
 import { getUserAvatarUrl, getUserInitials } from './utils/avatar'
-import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from './utils/presence'
+import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from './utils/presence'
+import { getMyPresence, putMyPresence } from './services/presence.service'
 
 const emptyPagination = {
   page: 1,
@@ -69,6 +70,12 @@ function getNavFromPath(pathname: string) {
   return 'dashboard'
 }
 
+function toNotificationId(value: any): number | null {
+  const id = Number(value)
+  if (!Number.isFinite(id) || id <= 0) return null
+  return id
+}
+
 function MainShell() {
   const [activeNav, setActiveNav] = useState('dashboard')
   const { user } = useAuth()
@@ -77,6 +84,8 @@ function MainShell() {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showPresenceMenu, setShowPresenceMenu] = useState(false)
   const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
+  const presenceHydratedRef = React.useRef(false)
+  const lastRemotePresenceRef = React.useRef<PresenceStatus | null>(null)
   const [activePanel, setActivePanel] = useState<null | 'search' | 'notifications' | 'todo' | 'feed'>(null)
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('All Activity')
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
@@ -128,7 +137,44 @@ function MainShell() {
 
   useEffect(() => {
     setStoredPresenceStatus(presenceStatus)
-  }, [presenceStatus])
+    if (!presenceHydratedRef.current || !user?.id) return
+    if (lastRemotePresenceRef.current === presenceStatus) return
+    putMyPresence(presenceStatus)
+      .then((res) => {
+        lastRemotePresenceRef.current = normalizePresenceStatus(res?.status)
+      })
+      .catch(() => undefined)
+  }, [presenceStatus, user?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    const hydratePresence = async () => {
+      presenceHydratedRef.current = false
+      lastRemotePresenceRef.current = null
+      const local = getStoredPresenceStatus()
+      setPresenceStatus(local)
+      if (!user?.id) {
+        presenceHydratedRef.current = true
+        return
+      }
+      try {
+        const res = await getMyPresence()
+        if (cancelled) return
+        const next = normalizePresenceStatus(res?.status)
+        lastRemotePresenceRef.current = next
+        setPresenceStatus(next)
+        setStoredPresenceStatus(next)
+      } catch {
+        // fallback to local value on API failure
+      } finally {
+        if (!cancelled) presenceHydratedRef.current = true
+      }
+    }
+    hydratePresence()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
 
   useEffect(() => {
     const syncPresence = () => setPresenceStatus(getStoredPresenceStatus())
@@ -165,6 +211,30 @@ function MainShell() {
   }, [activePanel])
 
   useEffect(() => {
+    let cancelled = false
+    const syncNotificationState = async () => {
+      if (!user) return
+      try {
+        const remote = await fetchNotificationState()
+        if (cancelled) return
+        const next = {
+          readIds: Array.isArray(remote?.readIds) ? remote.readIds.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0) : [],
+          deletedIds: Array.isArray(remote?.deletedIds) ? remote.deletedIds.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0) : [],
+          clearedAt: Number.isFinite(Number(remote?.clearedAt)) ? Number(remote.clearedAt) : undefined,
+        }
+        saveNotificationState(user, next)
+        window.dispatchEvent(new CustomEvent('notifications-state-changed'))
+      } catch {
+        // ignore remote state sync failures
+      }
+    }
+    syncNotificationState()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  useEffect(() => {
     let mounted = true
     let popupTimer: number | null = null
     const refreshUnreadCount = async () => {
@@ -176,19 +246,23 @@ function MainShell() {
         const rows: any[] = await fetchNotifications({ limit: 120 })
         const state = loadNotificationState(user)
         const visible = (Array.isArray(rows) ? rows : []).filter((n: any) => {
-          const id = Number(n?.id)
+          const id = toNotificationId(n?.id)
+          if (!id) return false
           if (state.deletedIds.includes(id)) return false
           if (!state.clearedAt) return true
           const createdMs = n?.createdAt ? new Date(String(n.createdAt)).getTime() : 0
           return !Number.isFinite(createdMs) || createdMs > state.clearedAt
         })
-        const unread = visible.filter((n: any) => !state.readIds.includes(Number(n?.id))).length
+        const unread = visible.filter((n: any) => {
+          const id = toNotificationId(n?.id)
+          return !id || !state.readIds.includes(id)
+        }).length
         if (mounted) setUnreadNotificationCount(unread)
 
         const sorted = visible
           .slice()
-          .sort((a: any, b: any) => Number(a?.id || 0) - Number(b?.id || 0))
-        const maxId = sorted.length ? Number(sorted[sorted.length - 1]?.id || 0) : 0
+          .sort((a: any, b: any) => (toNotificationId(a?.id) || 0) - (toNotificationId(b?.id) || 0))
+        const maxId = sorted.length ? (toNotificationId(sorted[sorted.length - 1]?.id) || 0) : 0
 
         if (!notificationInitRef.current) {
           notificationInitRef.current = true
@@ -196,7 +270,7 @@ function MainShell() {
           return
         }
 
-        const fresh = sorted.filter((n: any) => Number(n?.id || 0) > lastSeenNotificationIdRef.current)
+        const fresh = sorted.filter((n: any) => (toNotificationId(n?.id) || 0) > lastSeenNotificationIdRef.current)
         if (fresh.length > 0 && mounted) {
           const latest = fresh[fresh.length - 1]
           const ticketId = String(latest?.ticketId || latest?.meta?.ticketId || '')
