@@ -31,6 +31,7 @@ const router = (0, express_1.Router)();
 router.use(auth_middleware_1.authenticateJWT);
 router.use((0, rbac_middleware_1.permit)(['ADMIN']));
 router.get('/config', ctrl.getConfig);
+router.post('/config/inbound', ctrl.updateInboundRouting);
 router.post('/smtp/test', ctrl.testSmtp);
 router.post('/imap/test', ctrl.testImap);
 router.post('/smtp/send', ctrl.sendTestMail);

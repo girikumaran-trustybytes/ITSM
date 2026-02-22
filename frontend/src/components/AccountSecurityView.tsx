@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { changePassword } from '../services/auth.service'
-import { updateUser } from '../services/user.service'
+import { updateUser } from '../modules/users/services/user.service'
 import { getUserAvatarUrl, getUserInitials, setUserAvatarOverride } from '../utils/avatar'
 
 type SecurityTab = 'account-information' | 'password'
@@ -332,3 +332,4 @@ export default function AccountSecurityView() {
     </div>
   )
 }
+

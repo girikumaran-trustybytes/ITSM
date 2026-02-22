@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markInvitePending = exports.reinviteServiceAccount = exports.sendServiceAccountInvite = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
+exports.putMyPresence = exports.getMyPresence = exports.markInvitePending = exports.reinviteServiceAccount = exports.sendServiceAccountInvite = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
 const svc = __importStar(require("./users.service"));
 const logger_1 = require("../../common/logger/logger");
 const rbacSvc = __importStar(require("./rbac.service"));
@@ -83,6 +83,10 @@ async function update(req, res) {
         if (!id)
             return res.status(400).json({ error: 'Invalid id' });
         const payload = req.body || {};
+        const actorRole = String(req?.user?.role || '').toUpperCase();
+        if (payload?.name !== undefined && actorRole !== 'ADMIN') {
+            return res.status(403).json({ error: 'Only admin can change user name' });
+        }
         const updated = await svc.updateUser(id, payload);
         await (0, logger_1.auditLog)({ action: 'update_user', entity: 'user', entityId: updated.id, user: req.user?.id });
         res.json(updated);
@@ -207,3 +211,30 @@ async function markInvitePending(req, res) {
     }
 }
 exports.markInvitePending = markInvitePending;
+async function getMyPresence(req, res) {
+    try {
+        const id = Number(req.user?.id || 0);
+        if (!id)
+            return res.status(401).json({ error: 'Unauthorized' });
+        const result = await svc.getUserPresence(id);
+        res.json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to load presence' });
+    }
+}
+exports.getMyPresence = getMyPresence;
+async function putMyPresence(req, res) {
+    try {
+        const id = Number(req.user?.id || 0);
+        if (!id)
+            return res.status(401).json({ error: 'Unauthorized' });
+        const status = req.body?.status;
+        const result = await svc.saveUserPresence(id, status);
+        res.json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to save presence' });
+    }
+}
+exports.putMyPresence = putMyPresence;

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.listUsers = void 0;
+exports.saveUserPresence = exports.getUserPresence = exports.deleteUser = exports.updateUser = exports.createUser = exports.getUserById = exports.listUsers = void 0;
 const db_1 = require("../../db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 function normalizeRole(input) {
@@ -11,6 +11,16 @@ function normalizeRole(input) {
     if (['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM'].includes(value))
         return value;
     return 'USER';
+}
+function normalizePresenceStatus(input) {
+    const raw = String(input || '').trim().toLowerCase();
+    if (raw === 'available' || raw === 'online' || raw === 'active')
+        return 'Available';
+    if (raw === 'do not disturb' || raw === 'dnd' || raw === 'busy')
+        return 'Do not disturb';
+    if (raw === 'set as away' || raw === 'away')
+        return 'Set as away';
+    return 'Available';
 }
 let userSchemaReady = null;
 async function ensureUserCrudSchema() {
@@ -25,6 +35,7 @@ async function ensureUserCrudSchema() {
             await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dateOfJoining" DATE`);
             await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`);
             await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT`);
+            await (0, db_1.query)(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`);
             await (0, db_1.query)(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId")`);
             await (0, db_1.query)(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail")`);
             await (0, db_1.query)(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail")`);
@@ -40,6 +51,13 @@ async function ensureUserCrudSchema() {
         )
       `);
             await (0, db_1.query)(`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_accounts_user_id ON "ServiceAccounts"("userId")`);
+            await (0, db_1.query)(`
+        CREATE TABLE IF NOT EXISTS "UserPresence" (
+          "userId" INTEGER PRIMARY KEY REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+          "status" TEXT NOT NULL DEFAULT 'Available',
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
         })();
     }
     await userSchemaReady;
@@ -93,6 +111,7 @@ async function listUsers(opts = {}) {
         return (0, db_1.query)(`SELECT
          u."id",
          u."name",
+         u."avatarUrl",
          u."email",
          u."personalEmail",
          u."workEmail",
@@ -106,6 +125,7 @@ async function listUsers(opts = {}) {
          u."workMode",
          u."role",
          u."status",
+         COALESCE(up."status", 'Available') AS "presenceStatus",
          u."createdAt",
          COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
          COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
@@ -113,6 +133,7 @@ async function listUsers(opts = {}) {
          'none'::text AS "inviteStatus"
        FROM "User" u
        LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+       LEFT JOIN "UserPresence" up ON up."userId" = u."id"
        ${where}
        ORDER BY u."name" ASC NULLS LAST, u."email" ASC
        LIMIT $${params.length}`, params);
@@ -120,6 +141,7 @@ async function listUsers(opts = {}) {
     return (0, db_1.query)(`SELECT
        u."id",
        u."name",
+       u."avatarUrl",
        u."email",
        u."personalEmail",
        u."workEmail",
@@ -133,6 +155,7 @@ async function listUsers(opts = {}) {
        u."workMode",
        u."role",
        u."status",
+       COALESCE(up."status", 'Available') AS "presenceStatus",
        u."createdAt",
        COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
        COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
@@ -140,6 +163,7 @@ async function listUsers(opts = {}) {
        COALESCE(ui.status, 'none') AS "inviteStatus"
      FROM "User" u
      LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+     LEFT JOIN "UserPresence" up ON up."userId" = u."id"
      LEFT JOIN LATERAL (
        SELECT status
        FROM user_invites
@@ -157,6 +181,7 @@ async function getUserById(id) {
     return (0, db_1.queryOne)(`SELECT
       u."id",
       u."name",
+      u."avatarUrl",
       u."email",
       u."role",
       u."phone",
@@ -173,6 +198,7 @@ async function getUserById(id) {
       u."employmentType",
       u."workMode",
       u."status",
+      COALESCE(up."status", 'Available') AS "presenceStatus",
       u."createdAt",
       u."updatedAt",
       COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
@@ -180,6 +206,7 @@ async function getUserById(id) {
       COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds"
     FROM "User" u
     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+    LEFT JOIN "UserPresence" up ON up."userId" = u."id"
     WHERE u."id" = $1`, [id]);
 }
 exports.getUserById = getUserById;
@@ -202,6 +229,7 @@ async function createUser(payload) {
         email,
         password: hashed,
         name: payload.name ?? null,
+        avatarUrl: payload.avatarUrl ?? null,
         phone: payload.phone ?? null,
         personalEmail: payload.personalEmail ?? null,
         workEmail: payload.workEmail ?? null,
@@ -228,14 +256,14 @@ async function createUser(payload) {
         data.role = 'AGENT';
     try {
         const rows = await (0, db_1.query)(`INSERT INTO "User" (
-        "email", "password", "name", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department",
+        "email", "password", "name", "avatarUrl", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department",
         "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt"
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9,
-        $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW()
       )
-      RETURNING "id", "name", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, [
-            data.email, data.password, data.name, data.phone, data.personalEmail, data.workEmail, data.employeeId, data.designation, data.department,
+      RETURNING "id", "name", "avatarUrl", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, [
+            data.email, data.password, data.name, data.avatarUrl, data.phone, data.personalEmail, data.workEmail, data.employeeId, data.designation, data.department,
             data.reportingManager, data.dateOfJoining, data.employmentType, data.workMode, data.client, data.site, data.accountManager, data.role, data.status,
         ]);
         const created = rows[0];
@@ -262,6 +290,8 @@ async function updateUser(id, payload) {
         data.email = String(payload.email).trim().toLowerCase();
     if (payload.name !== undefined)
         data.name = payload.name;
+    if (payload.avatarUrl !== undefined)
+        data.avatarUrl = payload.avatarUrl;
     if (payload.phone !== undefined)
         data.phone = payload.phone;
     if (payload.personalEmail !== undefined)
@@ -315,7 +345,7 @@ async function updateUser(id, payload) {
         setParts.push('"updatedAt" = NOW()');
         params.push(id);
         const rows = await (0, db_1.query)(`UPDATE "User" SET ${setParts.join(', ')} WHERE "id" = $${params.length}
-       RETURNING "id", "name", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, params);
+       RETURNING "id", "name", "avatarUrl", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`, params);
         if (!rows[0])
             throw { status: 404, message: 'User not found' };
         const shouldSyncServiceAccount = explicitServiceAccount !== null ||
@@ -357,3 +387,25 @@ async function deleteUser(id) {
     }
 }
 exports.deleteUser = deleteUser;
+async function getUserPresence(userId) {
+    await ensureUserCrudSchema();
+    const user = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [userId]);
+    if (!user)
+        throw { status: 404, message: 'User not found' };
+    const row = await (0, db_1.queryOne)('SELECT "status" FROM "UserPresence" WHERE "userId" = $1', [userId]);
+    return { status: normalizePresenceStatus(row?.status) };
+}
+exports.getUserPresence = getUserPresence;
+async function saveUserPresence(userId, statusInput) {
+    await ensureUserCrudSchema();
+    const user = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [userId]);
+    if (!user)
+        throw { status: 404, message: 'User not found' };
+    const status = normalizePresenceStatus(statusInput);
+    await (0, db_1.query)(`INSERT INTO "UserPresence" ("userId", "status", "updatedAt")
+     VALUES ($1, $2, NOW())
+     ON CONFLICT ("userId")
+     DO UPDATE SET "status" = EXCLUDED."status", "updatedAt" = NOW()`, [userId, status]);
+    return { status };
+}
+exports.saveUserPresence = saveUserPresence;

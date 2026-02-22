@@ -1,9 +1,9 @@
 import React from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
-import { deleteAsset, getAsset, updateAsset } from '../services/asset.service'
-import { listUsers } from '../services/user.service'
-import { createTicket } from '../services/ticket.service'
+import { deleteAsset, getAsset, updateAsset } from '../modules/assets/services/asset.service'
+import { listUsers } from '../modules/users/services/user.service'
+import { createTicket } from '../modules/tickets/services/ticket.service'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function AssetDetailView() {
@@ -532,3 +532,4 @@ export default function AssetDetailView() {
     </>
   )
 }
+

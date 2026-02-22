@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import api from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
-import * as userService from '../services/user.service'
+import * as userService from '../modules/users/services/user.service'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -323,3 +323,4 @@ export default function Dashboard() {
     </div>
   )
 }
+

@@ -1,6 +1,6 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import * as userService from '../services/user.service'
+import * as userService from '../modules/users/services/user.service'
 import { useColumnResize } from '../hooks/useColumnResize'
 import { getRowsPerPage } from '../utils/pagination'
 import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
@@ -1101,4 +1101,5 @@ export default function UsersView({
     </>
   )
 }
+
 

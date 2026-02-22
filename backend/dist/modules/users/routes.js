@@ -31,6 +31,8 @@ const authorize_middleware_1 = require("../../common/middleware/authorize.middle
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.authenticateJWT);
 router.get('/', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.list);
+router.get('/me/presence', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM']), ctrl.getMyPresence);
+router.put('/me/presence', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM']), ctrl.putMyPresence);
 router.post('/rbac/ticket-actions', (0, rbac_middleware_1.permit)(['ADMIN']), (0, authorize_middleware_1.authorize)('admin', 'edit'), ctrl.addTicketCustomAction);
 router.get('/:id/permissions', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), ctrl.getPermissions);
 router.patch('/:id/permissions', (0, rbac_middleware_1.permit)(['ADMIN']), (0, authorize_middleware_1.authorize)('admin', 'edit'), ctrl.updatePermissions);

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import * as ticketService from '../services/ticket.service'
-import * as assetService from '../services/asset.service'
-import * as userService from '../services/user.service'
-import * as supplierService from '../services/supplier.service'
+import * as ticketService from '../modules/tickets/services/ticket.service'
+import * as assetService from '../modules/assets/services/asset.service'
+import * as userService from '../modules/users/services/user.service'
+import * as supplierService from '../modules/suppliers/services/supplier.service'
 
 const donutColors = ['#2563eb', '#14b8a6', '#f97316', '#8b5cf6', '#0ea5e9', '#f43f5e']
 
@@ -788,3 +788,4 @@ export default function ReportsView() {
     </div>
   )
 }
+

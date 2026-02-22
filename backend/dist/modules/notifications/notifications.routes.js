@@ -30,4 +30,6 @@ const ctrl = __importStar(require("./notifications.controller"));
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.authenticateJWT);
 router.get('/', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT', 'USER']), ctrl.list);
+router.get('/state', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT', 'USER']), ctrl.getState);
+router.put('/state', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT', 'USER']), ctrl.putState);
 exports.default = router;

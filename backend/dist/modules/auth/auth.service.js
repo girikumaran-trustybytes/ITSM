@@ -3,25 +3,34 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.refresh = exports.changePassword = exports.resetPassword = exports.forgotPassword = exports.verifyMfa = exports.loginWithGoogle = exports.login = void 0;
+exports.completeSsoCallback = exports.loginWithSsoCode = exports.refresh = exports.changePassword = exports.resetPassword = exports.forgotPassword = exports.verifyMfa = exports.loginWithGoogle = exports.login = exports.getSsoStartUrl = exports.getSsoConfig = void 0;
 const crypto_1 = require("crypto");
 const db_1 = require("../../db");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const mail_integration_1 = require("../../services/mail.integration");
-const google_auth_library_1 = require("google-auth-library");
 const ACCESS_EXPIRES = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m';
 const REFRESH_EXPIRES_DAYS = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS || 7);
 const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access_secret';
 const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'refresh_secret';
 const GOOGLE_CLIENT_ID = String(process.env.GOOGLE_CLIENT_ID || '').trim();
 const GOOGLE_HOSTED_DOMAIN = String(process.env.GOOGLE_HOSTED_DOMAIN || '').trim().toLowerCase();
+const GOOGLE_CLIENT_SECRET = String(process.env.GOOGLE_CLIENT_SECRET || '').trim();
+const ZOHO_CLIENT_ID = String(process.env.ZOHO_CLIENT_ID || '').trim();
+const ZOHO_CLIENT_SECRET = String(process.env.ZOHO_CLIENT_SECRET || '').trim();
+const ZOHO_HOSTED_DOMAIN = String(process.env.ZOHO_HOSTED_DOMAIN || '').trim().toLowerCase();
+const ZOHO_ACCOUNTS_BASE = String(process.env.ZOHO_ACCOUNTS_BASE || 'https://accounts.zoho.com').trim().replace(/\/+$/, '');
+const MS_CLIENT_ID = String(process.env.MS_CLIENT_ID || process.env.MICROSOFT_CLIENT_ID || '').trim();
+const MS_CLIENT_SECRET = String(process.env.MS_CLIENT_SECRET || process.env.MICROSOFT_CLIENT_SECRET || '').trim();
+const MS_TENANT_ID = String(process.env.MS_TENANT_ID || process.env.MICROSOFT_TENANT_ID || 'common').trim();
+const MS_HOSTED_DOMAIN = String(process.env.MS_HOSTED_DOMAIN || process.env.MICROSOFT_HOSTED_DOMAIN || '').trim().toLowerCase();
+const BACKEND_PUBLIC_URL = String(process.env.BACKEND_PUBLIC_URL || 'http://localhost:5000').trim().replace(/\/+$/, '');
+const SSO_STATE_TTL_MIN = Math.max(5, Number(process.env.SSO_STATE_TTL_MIN || 10));
 const RESET_TOKEN_TTL_MIN = Number(process.env.PASSWORD_RESET_TOKEN_TTL_MIN || 30);
 const MFA_CODE_TTL_MIN = Number(process.env.MFA_CODE_TTL_MIN || 10);
 const MFA_REQUIRED_FOR_GOOGLE = String(process.env.MFA_REQUIRED_FOR_GOOGLE || 'false').toLowerCase() === 'true';
 const TOKEN_PEPPER = process.env.AUTH_TOKEN_PEPPER || ACCESS_SECRET;
 const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
-const googleClient = new google_auth_library_1.OAuth2Client(GOOGLE_CLIENT_ID || undefined);
 let authSchemaInit = null;
 function nowPlusMinutes(minutes) {
     return new Date(Date.now() + Math.max(1, minutes) * 60 * 1000);
@@ -46,6 +55,8 @@ async function ensureAuthSchema() {
             await (0, db_1.query)('CREATE EXTENSION IF NOT EXISTS pgcrypto');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleSub" VARCHAR(255)');
+            await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "zohoSub" VARCHAR(255)');
+            await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "microsoftSub" VARCHAR(255)');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "is_deleted" BOOLEAN DEFAULT FALSE');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)');
@@ -68,10 +79,244 @@ async function ensureAuthSchema() {
         )`);
             await (0, db_1.query)('CREATE INDEX IF NOT EXISTS idx_mfa_challenge_user_id ON "MfaChallenge"("userId")');
             await (0, db_1.query)('CREATE INDEX IF NOT EXISTS idx_user_google_sub ON "User"("googleSub")');
+            await (0, db_1.query)('CREATE INDEX IF NOT EXISTS idx_user_zoho_sub ON "User"("zohoSub")');
+            await (0, db_1.query)('CREATE INDEX IF NOT EXISTS idx_user_microsoft_sub ON "User"("microsoftSub")');
         })();
     }
     await authSchemaInit;
 }
+function ssoRedirectUri(provider) {
+    const envKey = provider === 'google' ? 'GOOGLE_REDIRECT_URI' : provider === 'zoho' ? 'ZOHO_REDIRECT_URI' : 'MS_REDIRECT_URI';
+    const fromEnv = String(process.env[envKey] || '').trim();
+    if (fromEnv)
+        return fromEnv;
+    return `${BACKEND_PUBLIC_URL}/api/auth/sso/${provider}/callback`;
+}
+function isSsoProviderEnabled(provider) {
+    if (provider === 'google')
+        return Boolean(GOOGLE_CLIENT_ID);
+    if (provider === 'zoho')
+        return Boolean(ZOHO_CLIENT_ID);
+    return Boolean(MS_CLIENT_ID);
+}
+function signSsoState(provider, rememberMe) {
+    return jsonwebtoken_1.default.sign({ type: 'sso-state', provider, rememberMe: Boolean(rememberMe) }, ACCESS_SECRET, { expiresIn: `${SSO_STATE_TTL_MIN}m` });
+}
+function verifySsoState(state) {
+    let payload;
+    try {
+        payload = jsonwebtoken_1.default.verify(state, ACCESS_SECRET);
+    }
+    catch (_err) {
+        throw new Error('Invalid or expired SSO state');
+    }
+    const provider = String(payload?.provider || '');
+    if (!payload || payload.type !== 'sso-state' || !['google', 'zoho', 'outlook'].includes(provider)) {
+        throw new Error('Invalid SSO state');
+    }
+    return { provider, rememberMe: Boolean(payload.rememberMe) };
+}
+function decodeJwtPayload(token) {
+    const parts = String(token || '').split('.');
+    if (parts.length < 2)
+        return {};
+    try {
+        const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
+    }
+    catch {
+        return {};
+    }
+}
+async function postForm(url, body) {
+    const encoded = new URLSearchParams(body);
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: encoded.toString(),
+    });
+    if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(txt || `SSO token exchange failed (${res.status})`);
+    }
+    return res.json();
+}
+async function getJson(url, bearerToken) {
+    const res = await fetch(url, {
+        headers: bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {},
+    });
+    if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(txt || `SSO profile fetch failed (${res.status})`);
+    }
+    return res.json();
+}
+function assertHostedDomain(provider, hd) {
+    const value = String(hd || '').trim().toLowerCase();
+    if (provider === 'google' && GOOGLE_HOSTED_DOMAIN && value !== GOOGLE_HOSTED_DOMAIN) {
+        throw new Error(`Google account must belong to ${GOOGLE_HOSTED_DOMAIN}`);
+    }
+    if (provider === 'zoho' && ZOHO_HOSTED_DOMAIN && value !== ZOHO_HOSTED_DOMAIN) {
+        throw new Error(`Zoho account must belong to ${ZOHO_HOSTED_DOMAIN}`);
+    }
+    if (provider === 'outlook' && MS_HOSTED_DOMAIN && value !== MS_HOSTED_DOMAIN) {
+        throw new Error(`Outlook account must belong to ${MS_HOSTED_DOMAIN}`);
+    }
+}
+async function exchangeCodeForIdentity(provider, code) {
+    const redirectUri = ssoRedirectUri(provider);
+    if (provider === 'google') {
+        if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET)
+            throw new Error('Google SSO is not configured');
+        const token = await postForm('https://oauth2.googleapis.com/token', {
+            code,
+            client_id: GOOGLE_CLIENT_ID,
+            client_secret: GOOGLE_CLIENT_SECRET,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code',
+        });
+        const profile = await getJson('https://openidconnect.googleapis.com/v1/userinfo', token.access_token);
+        const email = normalizeEmail(profile.email || '');
+        if (!email)
+            throw new Error('Google account email is missing');
+        if (String(profile.email_verified || '').toLowerCase() !== 'true')
+            throw new Error('Google account email is not verified');
+        assertHostedDomain('google', profile.hd);
+        return {
+            provider: 'google',
+            sub: String(profile.sub || ''),
+            email,
+            givenName: String(profile.given_name || ''),
+            familyName: String(profile.family_name || ''),
+            picture: String(profile.picture || ''),
+            emailVerified: true,
+            hostedDomain: String(profile.hd || ''),
+        };
+    }
+    if (provider === 'zoho') {
+        if (!ZOHO_CLIENT_ID || !ZOHO_CLIENT_SECRET)
+            throw new Error('Zoho SSO is not configured');
+        const token = await postForm(`${ZOHO_ACCOUNTS_BASE}/oauth/v2/token`, {
+            code,
+            client_id: ZOHO_CLIENT_ID,
+            client_secret: ZOHO_CLIENT_SECRET,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code',
+        });
+        let profile = {};
+        try {
+            profile = await getJson(`${ZOHO_ACCOUNTS_BASE}/oauth/user/info`, token.access_token);
+        }
+        catch {
+            profile = decodeJwtPayload(String(token.id_token || ''));
+        }
+        const email = normalizeEmail(profile.Email || profile.email || '');
+        if (!email)
+            throw new Error('Zoho account email is missing');
+        const domain = email.includes('@') ? email.split('@')[1] : '';
+        assertHostedDomain('zoho', domain);
+        return {
+            provider: 'zoho',
+            sub: String(profile.ZUID || profile.sub || email),
+            email,
+            givenName: String(profile.First_Name || profile.given_name || ''),
+            familyName: String(profile.Last_Name || profile.family_name || ''),
+            picture: String(profile.picture || ''),
+            emailVerified: true,
+            hostedDomain: domain,
+        };
+    }
+    if (!MS_CLIENT_ID || !MS_CLIENT_SECRET)
+        throw new Error('Outlook SSO is not configured');
+    const token = await postForm(`https://login.microsoftonline.com/${encodeURIComponent(MS_TENANT_ID)}/oauth2/v2.0/token`, {
+        code,
+        client_id: MS_CLIENT_ID,
+        client_secret: MS_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+    });
+    let profile = {};
+    try {
+        profile = await getJson('https://graph.microsoft.com/oidc/userinfo', token.access_token);
+    }
+    catch {
+        profile = decodeJwtPayload(String(token.id_token || ''));
+    }
+    const email = normalizeEmail(profile.email || profile.preferred_username || profile.upn || '');
+    if (!email)
+        throw new Error('Outlook account email is missing');
+    const domain = email.includes('@') ? email.split('@')[1] : '';
+    assertHostedDomain('outlook', profile.hd || profile.tid || domain);
+    return {
+        provider: 'outlook',
+        sub: String(profile.sub || profile.oid || email),
+        email,
+        givenName: String(profile.given_name || ''),
+        familyName: String(profile.family_name || ''),
+        picture: String(profile.picture || ''),
+        emailVerified: true,
+        hostedDomain: domain,
+    };
+}
+function buildSsoAuthorizationUrl(provider, rememberMe) {
+    if (!isSsoProviderEnabled(provider))
+        throw new Error(`${provider} SSO is not configured`);
+    const redirectUri = ssoRedirectUri(provider);
+    const state = signSsoState(provider, rememberMe);
+    if (provider === 'google') {
+        const params = new URLSearchParams({
+            client_id: GOOGLE_CLIENT_ID,
+            redirect_uri: redirectUri,
+            response_type: 'code',
+            scope: 'openid email profile',
+            state,
+            prompt: 'select_account',
+        });
+        if (GOOGLE_HOSTED_DOMAIN)
+            params.set('hd', GOOGLE_HOSTED_DOMAIN);
+        return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    }
+    if (provider === 'zoho') {
+        const params = new URLSearchParams({
+            client_id: ZOHO_CLIENT_ID,
+            redirect_uri: redirectUri,
+            response_type: 'code',
+            scope: 'openid profile email',
+            access_type: 'offline',
+            state,
+            prompt: 'consent',
+        });
+        return `${ZOHO_ACCOUNTS_BASE}/oauth/v2/auth?${params.toString()}`;
+    }
+    const params = new URLSearchParams({
+        client_id: MS_CLIENT_ID,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        response_mode: 'query',
+        scope: 'openid profile email User.Read',
+        state,
+        prompt: 'select_account',
+    });
+    return `https://login.microsoftonline.com/${encodeURIComponent(MS_TENANT_ID)}/oauth2/v2.0/authorize?${params.toString()}`;
+}
+function getSsoConfig() {
+    const providers = [
+        { provider: 'google', enabled: isSsoProviderEnabled('google'), label: 'Google' },
+        { provider: 'zoho', enabled: isSsoProviderEnabled('zoho'), label: 'Zoho' },
+        { provider: 'outlook', enabled: isSsoProviderEnabled('outlook'), label: 'Outlook' },
+    ];
+    return {
+        providers: providers.map((p) => ({
+            ...p,
+            loginUrl: p.enabled ? `/api/auth/sso/${p.provider}/start` : undefined,
+        })),
+    };
+}
+exports.getSsoConfig = getSsoConfig;
+function getSsoStartUrl(provider, rememberMe = true) {
+    return buildSsoAuthorizationUrl(provider, rememberMe);
+}
+exports.getSsoStartUrl = getSsoStartUrl;
 async function getPrimaryRole(user) {
     try {
         const roleRows = await (0, db_1.query)('SELECT r.role_name FROM roles r INNER JOIN user_roles ur ON r.role_id = ur.role_id WHERE ur.user_id = $1 ORDER BY r.role_id ASC', [user.id]);
@@ -159,21 +404,16 @@ async function verifyGoogleIdToken(idToken) {
         throw new Error('Google ID token is required');
     if (!GOOGLE_CLIENT_ID)
         throw new Error('Google SSO is not configured');
-    let payload;
-    try {
-        const ticket = await googleClient.verifyIdToken({
-            idToken,
-            audience: GOOGLE_CLIENT_ID,
-        });
-        payload = ticket.getPayload();
-    }
-    catch {
+    const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    const res = await fetch(url);
+    if (!res.ok)
         throw new Error('Invalid Google token');
-    }
-    if (!payload)
-        throw new Error('Invalid Google token');
+    const payload = await res.json();
+    const audience = String(payload.aud || '');
+    if (audience !== GOOGLE_CLIENT_ID)
+        throw new Error('Google client mismatch');
     const email = normalizeEmail(payload.email || '');
-    if (!email || payload.email_verified !== true)
+    if (!email || String(payload.email_verified || '').toLowerCase() !== 'true')
         throw new Error('Google account email is not verified');
     if (GOOGLE_HOSTED_DOMAIN) {
         const hd = String(payload.hd || '').trim().toLowerCase();
@@ -189,13 +429,16 @@ async function verifyGoogleIdToken(idToken) {
         picture: String(payload.picture || ''),
     };
 }
-async function createGoogleBackedUser(info) {
+async function createSsoBackedUser(info) {
     const randomPassword = (0, crypto_1.randomBytes)(32).toString('hex');
     const passwordHash = await bcrypt_1.default.hash(randomPassword, 12);
     const fullName = `${info.givenName || ''} ${info.familyName || ''}`.trim() || info.email;
-    const created = await (0, db_1.queryOne)(`INSERT INTO "User" ("email", "password", "name", "status", "role", "googleSub", "avatarUrl", "createdAt", "updatedAt")
-     VALUES ($1, $2, $3, 'ACTIVE', 'USER', $4, $5, NOW(), NOW())
-     RETURNING "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub"`, [info.email, passwordHash, fullName, info.sub, info.picture || null]);
+    const googleSub = info.provider === 'google' ? info.sub : null;
+    const zohoSub = info.provider === 'zoho' ? info.sub : null;
+    const microsoftSub = info.provider === 'outlook' ? info.sub : null;
+    const created = await (0, db_1.queryOne)(`INSERT INTO "User" ("email", "password", "name", "status", "role", "googleSub", "zohoSub", "microsoftSub", "avatarUrl", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, 'ACTIVE', 'USER', $4, $5, $6, $7, NOW(), NOW())
+     RETURNING "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"`, [info.email, passwordHash, fullName, googleSub, zohoSub, microsoftSub, info.picture || null]);
     if (!created)
         throw new Error('Unable to create account');
     await ensureDefaultUserRole(created.id);
@@ -219,7 +462,7 @@ async function loginWithGoogle(idToken) {
     const google = await verifyGoogleIdToken(idToken);
     let user = await (0, db_1.queryOne)(`SELECT
        u."id", u."email", u."password", u."name", u."role", u."status",
-       u."mfaEnabled", u."avatarUrl", u."googleSub"
+       u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub"
      FROM "User" u
      LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
      WHERE (LOWER(u."email") = LOWER($1) OR u."googleSub" = $2)
@@ -228,7 +471,7 @@ async function loginWithGoogle(idToken) {
      ORDER BY u."id" ASC
      LIMIT 1`, [google.email, google.sub]);
     if (!user) {
-        user = await createGoogleBackedUser(google);
+        user = await createSsoBackedUser({ ...google, provider: 'google' });
     }
     else {
         await (0, db_1.query)('UPDATE "User" SET "googleSub" = $1, "avatarUrl" = COALESCE(NULLIF($2, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $3', [
@@ -261,7 +504,7 @@ async function verifyMfa(challengeToken, code) {
     if (hashOpaqueToken(String(code || '')) !== row.codeHash)
         throw new Error('Invalid verification code');
     await (0, db_1.query)('UPDATE "MfaChallenge" SET "consumed" = TRUE WHERE "id" = $1', [row.id]);
-    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub"
+    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
      FROM "User" WHERE "id" = $1`, [payload.sub]);
     if (!user)
         throw new Error('User not found');
@@ -335,7 +578,7 @@ async function changePassword(userId, currentPassword, newPassword) {
         throw new Error('Current password is required');
     if (String(newPassword || '').length < 8)
         throw new Error('Password must be at least 8 characters');
-    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub"
+    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
      FROM "User"
      WHERE "id" = $1`, [userId]);
     if (!user)
@@ -359,7 +602,7 @@ async function refresh(refreshToken) {
         const record = await (0, db_1.queryOne)('SELECT * FROM "RefreshToken" WHERE "token" = $1 AND "revoked" = FALSE AND "expiresAt" > NOW()', [refreshToken]);
         if (!record)
             throw new Error('Invalid refresh token');
-        const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub"
+        const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
        FROM "User" WHERE "id" = $1`, [record.userId]);
         if (!user)
             throw new Error('User not found');
@@ -373,3 +616,43 @@ async function refresh(refreshToken) {
     }
 }
 exports.refresh = refresh;
+async function loginWithSsoCode(provider, code) {
+    await ensureAuthSchema();
+    const identity = await exchangeCodeForIdentity(provider, code);
+    const subField = provider === 'google' ? 'u."googleSub"' : provider === 'zoho' ? 'u."zohoSub"' : 'u."microsoftSub"';
+    let user = await (0, db_1.queryOne)(`SELECT
+       u."id", u."email", u."password", u."name", u."role", u."status",
+       u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub"
+     FROM "User" u
+     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+     WHERE (LOWER(u."email") = LOWER($1) OR ${subField} = $2)
+       AND COALESCE(u."is_deleted", FALSE) = FALSE
+       AND COALESCE(sa."enabled", TRUE) = TRUE
+     ORDER BY u."id" ASC
+     LIMIT 1`, [identity.email, identity.sub]);
+    if (!user) {
+        user = await createSsoBackedUser(identity);
+    }
+    else {
+        const googleSub = provider === 'google' ? identity.sub : user.googleSub;
+        const zohoSub = provider === 'zoho' ? identity.sub : (user.zohoSub || null);
+        const microsoftSub = provider === 'outlook' ? identity.sub : (user.microsoftSub || null);
+        await (0, db_1.query)('UPDATE "User" SET "googleSub" = $1, "zohoSub" = $2, "microsoftSub" = $3, "avatarUrl" = COALESCE(NULLIF($4, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $5', [googleSub || null, zohoSub || null, microsoftSub || null, identity.picture, user.id]);
+        user.googleSub = googleSub || null;
+        user.zohoSub = zohoSub || null;
+        user.microsoftSub = microsoftSub || null;
+        user.avatarUrl = identity.picture || user.avatarUrl;
+    }
+    if (user.mfaEnabled || (provider === 'google' && MFA_REQUIRED_FOR_GOOGLE))
+        return createMfaChallenge(user);
+    return issueTokens(user);
+}
+exports.loginWithSsoCode = loginWithSsoCode;
+async function completeSsoCallback(provider, code, state) {
+    const statePayload = verifySsoState(state);
+    if (statePayload.provider !== provider)
+        throw new Error('SSO provider mismatch');
+    const auth = await loginWithSsoCode(provider, code);
+    return { rememberMe: statePayload.rememberMe, auth };
+}
+exports.completeSsoCallback = completeSsoCallback;

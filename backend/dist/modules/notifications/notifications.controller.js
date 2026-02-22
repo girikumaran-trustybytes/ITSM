@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.list = void 0;
+exports.putState = exports.getState = exports.list = void 0;
 const svc = __importStar(require("./notifications.service"));
 async function list(req, res) {
     try {
@@ -36,3 +36,28 @@ async function list(req, res) {
     }
 }
 exports.list = list;
+async function getState(req, res) {
+    try {
+        const state = await svc.getNotificationState(req.user);
+        res.json(state);
+    }
+    catch (err) {
+        res.status(500).json({ error: err?.message || 'Failed to load notification state' });
+    }
+}
+exports.getState = getState;
+async function putState(req, res) {
+    try {
+        const body = req.body || {};
+        const state = await svc.saveNotificationState(req.user, {
+            readIds: Array.isArray(body.readIds) ? body.readIds : [],
+            deletedIds: Array.isArray(body.deletedIds) ? body.deletedIds : [],
+            clearedAt: body.clearedAt,
+        });
+        res.json(state);
+    }
+    catch (err) {
+        res.status(500).json({ error: err?.message || 'Failed to save notification state' });
+    }
+}
+exports.putState = putState;

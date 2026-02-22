@@ -807,3 +807,17 @@
 {"from":"girikumaran@trustybytes.in","level":"info","mailbox":"INBOX","message":"mail_ticket_updated","subject":"[ITSM] Ticket created: TB#00020","ticketId":"TB#00020","timestamp":"2026-02-22T08:35:21.130Z","uid":"438"}
 {"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-22T09:19:12.648Z"}
 {"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-22T09:19:12.655Z"}
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-22T09:19:22.147Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-22T09:19:22.153Z"}
+{"error":"IMAP command timeout","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-02-22T10:51:02.188Z"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <8f9ea027-4a60-be5d-ffce-566d53557f30@trustybytes.in>\nFrom: girikumaran@trustybytes.in\nDate: Sun, 22 Feb 2026 11:06:17 +0000","requesterId":5,"status":"New","subcategory":"Email","subject":"ITSM Mail Configuration Test","type":"Incident"}},"ticketId":"TB#00021","timestamp":"2026-02-22T11:06:29.494Z","user":"mail_ingest"}
+{"from":"girikumaran@trustybytes.in","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"ITSM Mail Configuration Test","ticketId":"TB#00021","timestamp":"2026-02-22T11:06:29.883Z","uid":"439"}
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Support Desk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <CAMJh7FXvc6hXD2gKV09GcxN7hgHV+2KwEd2F_UGsq_GsRu33sw@mail.gmail.com>\nFrom: girims9901@gmail.com\nDate: Sun, 22 Feb 2026 16:41:33 +0530","requesterId":9,"status":"New","subcategory":"Email","subject":"Testing1234","type":"Incident"}},"ticketId":"TB#00022","timestamp":"2026-02-22T11:11:49.594Z","user":"mail_ingest"}
+{"from":"girims9901@gmail.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Testing1234","ticketId":"TB#00022","timestamp":"2026-02-22T11:11:49.986Z","uid":"440"}
+{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Thanks"},"ticketId":"TB#00022","timestamp":"2026-02-22T11:14:45.878Z","user":5}
+{"action":"transition","level":"info","message":"audit","meta":{"from":"New","to":"In Progress"},"ticketId":"TB#00022","timestamp":"2026-02-22T11:14:49.167Z","user":5}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Critical"}},"ticketId":"TB#00021","timestamp":"2026-02-22T11:27:28.870Z","user":5}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"High"}},"ticketId":"TB#00021","timestamp":"2026-02-22T11:27:32.636Z","user":5}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Critical"}},"ticketId":"TB#00022","timestamp":"2026-02-22T12:03:20.162Z","user":5}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Critical"}},"ticketId":"TB#00022","timestamp":"2026-02-22T12:03:26.022Z","user":5}
+{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TKT-1771229673292","timestamp":"2026-02-22T12:14:28.686Z","user":5}

@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.googleConfig = exports.changePassword = exports.refresh = exports.verifyMfa = exports.resetPassword = exports.forgotPassword = exports.loginWithGoogle = exports.login = void 0;
+exports.ssoCallback = exports.ssoStart = exports.ssoConfig = exports.googleConfig = exports.changePassword = exports.refresh = exports.verifyMfa = exports.resetPassword = exports.forgotPassword = exports.loginWithGoogle = exports.login = void 0;
 const authService = __importStar(require("./auth.service"));
 function isDbError(err) {
     const name = err?.constructor?.name ?? '';
@@ -157,3 +157,73 @@ async function googleConfig(_req, res) {
     });
 }
 exports.googleConfig = googleConfig;
+function normalizeSsoProvider(value) {
+    const provider = String(value || '').trim().toLowerCase();
+    if (provider === 'google' || provider === 'zoho' || provider === 'outlook')
+        return provider;
+    return null;
+}
+async function ssoConfig(_req, res) {
+    try {
+        return res.json(authService.getSsoConfig());
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message || 'Unable to load SSO config' });
+    }
+}
+exports.ssoConfig = ssoConfig;
+async function ssoStart(req, res) {
+    const provider = normalizeSsoProvider(String(req.params?.provider || ''));
+    if (!provider)
+        return res.status(400).json({ error: 'Invalid SSO provider' });
+    const rememberMeRaw = String(req.query?.rememberMe || '1').trim().toLowerCase();
+    const rememberMe = ['1', 'true', 'yes', 'on'].includes(rememberMeRaw);
+    try {
+        const url = authService.getSsoStartUrl(provider, rememberMe);
+        return res.redirect(url);
+    }
+    catch (err) {
+        return res.status(400).json({ error: err.message || 'Unable to start SSO login' });
+    }
+}
+exports.ssoStart = ssoStart;
+async function ssoCallback(req, res) {
+    const provider = normalizeSsoProvider(String(req.params?.provider || ''));
+    if (!provider)
+        return res.status(400).send('Invalid SSO provider');
+    const code = String(req.query?.code || '').trim();
+    const state = String(req.query?.state || '').trim();
+    const error = String(req.query?.error || '').trim();
+    const errorDescription = String(req.query?.error_description || '').trim();
+    const frontendBase = String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+    if (error) {
+        const message = errorDescription || error;
+        return res.redirect(`${frontendBase}/login?ssoError=${encodeURIComponent(message)}`);
+    }
+    if (!code || !state) {
+        return res.redirect(`${frontendBase}/login?ssoError=${encodeURIComponent('Missing SSO callback parameters')}`);
+    }
+    try {
+        const { rememberMe, auth } = await authService.completeSsoCallback(provider, code, state);
+        if (auth?.mfaRequired && auth?.challengeToken) {
+            const params = new URLSearchParams({
+                mode: 'mfa',
+                challengeToken: String(auth.challengeToken || ''),
+                ...(auth?.mfaCodePreview ? { mfaCodePreview: String(auth.mfaCodePreview) } : {}),
+            });
+            return res.redirect(`${frontendBase}/login?${params.toString()}`);
+        }
+        const params = new URLSearchParams({
+            ssoSuccess: '1',
+            rememberMe: rememberMe ? '1' : '0',
+            accessToken: String(auth?.accessToken || ''),
+            refreshToken: String(auth?.refreshToken || ''),
+        });
+        return res.redirect(`${frontendBase}/login?${params.toString()}`);
+    }
+    catch (err) {
+        const message = err.message || 'SSO login failed';
+        return res.redirect(`${frontendBase}/login?ssoError=${encodeURIComponent(message)}`);
+    }
+}
+exports.ssoCallback = ssoCallback;

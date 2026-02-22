@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -13,7 +13,7 @@ import {
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
-import { listUsers } from '../services/user.service'
+import { listUsers } from '../modules/users/services/user.service'
 
 type PaginationMeta = {
   page: number
@@ -4451,5 +4451,6 @@ export default function AdminView(_props: AdminViewProps) {
     </>
   )
 }
+
 
 

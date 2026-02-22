@@ -40,9 +40,8 @@ exports.ticketsUpdateBodySchema = zod_1.z.object({
     assigneeId: common_1.zId.optional(),
     requesterId: common_1.zId.optional(),
 });
-const incidentStates = ['New', 'In Progress', 'Awaiting Approval', 'Closed', 'Rejected'];
 exports.ticketsTransitionBodySchema = zod_1.z.object({
-    to: zod_1.z.enum(incidentStates),
+    to: zod_1.z.string().min(1),
 }).refine((val) => val.to.trim().length > 0, {
     message: 'Missing "to" state',
     path: ['to'],

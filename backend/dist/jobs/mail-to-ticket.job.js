@@ -298,6 +298,8 @@ async function findRequesterIdByEmail(email) {
 async function createTicketFromMail(mailbox, mail) {
     const requesterId = await findRequesterIdByEmail(mail.fromEmail);
     const safeSubject = (mail.subject || '').trim() || `Email to ${mailbox}`;
+    const inboundRouting = (0, mail_integration_1.getInboundRoutingConfig)();
+    const inboundQueue = String(inboundRouting.defaultQueue || '').trim() || 'Helpdesk';
     const description = [
         'Auto-created from inbound email.',
         `Mailbox: ${mailbox}`,
@@ -309,7 +311,7 @@ async function createTicketFromMail(mailbox, mail) {
         subject: safeSubject,
         type: 'Incident',
         status: 'New',
-        category: 'Helpdesk',
+        category: inboundQueue,
         subcategory: 'Email',
         description,
         requesterId,

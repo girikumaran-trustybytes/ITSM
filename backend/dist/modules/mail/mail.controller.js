@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendTestMail = exports.testImap = exports.testSmtp = exports.getConfig = void 0;
+exports.updateInboundRouting = exports.sendTestMail = exports.testImap = exports.testSmtp = exports.getConfig = void 0;
 const mail_integration_1 = require("../../services/mail.integration");
 function pickOverride(body) {
     if (!body || typeof body !== 'object')
@@ -69,3 +69,16 @@ async function sendTestMail(req, res) {
     }
 }
 exports.sendTestMail = sendTestMail;
+async function updateInboundRouting(req, res) {
+    try {
+        const defaultQueue = String(req.body?.defaultQueue || '').trim();
+        if (!defaultQueue)
+            return res.status(400).json({ error: 'defaultQueue is required' });
+        const next = (0, mail_integration_1.setInboundRoutingConfig)({ defaultQueue });
+        return res.json(next);
+    }
+    catch (err) {
+        return res.status(err.status || 500).json({ error: err.message || 'Failed to update inbound routing' });
+    }
+}
+exports.updateInboundRouting = updateInboundRouting;

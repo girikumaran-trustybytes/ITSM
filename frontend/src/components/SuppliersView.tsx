@@ -1,6 +1,6 @@
-﻿import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import * as supplierService from '../services/supplier.service'
+import * as supplierService from '../modules/suppliers/services/supplier.service'
 import { getUserPermissions } from '../services/rbac.service'
 import { useAuth } from '../contexts/AuthContext'
 import { useColumnResize } from '../hooks/useColumnResize'
@@ -501,7 +501,7 @@ export default function SuppliersView({
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h2>{editingSupplier ? 'Edit Supplier' : 'New Supplier'}</h2>
-                <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+                <button className="modal-close" onClick={() => setShowModal(false)}>�</button>
               </div>
               <div className="modal-body">
                 <div className="form-section">
@@ -542,4 +542,5 @@ export default function SuppliersView({
     </>
   )
 }
+
 

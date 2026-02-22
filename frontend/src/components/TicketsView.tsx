@@ -1,10 +1,10 @@
-﻿import React, { useState } from 'react'
+import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
-import * as ticketService from '../services/ticket.service'
-import * as ticketSvc from '../services/ticket.service'
-import * as assetService from '../services/asset.service'
-import * as userService from '../services/user.service'
+import * as ticketService from '../modules/tickets/services/ticket.service'
+import * as ticketSvc from '../modules/tickets/services/ticket.service'
+import * as assetService from '../modules/assets/services/asset.service'
+import * as userService from '../modules/users/services/user.service'
 import { listSlaConfigs } from '../services/sla.service'
 import { useAuth } from '../contexts/AuthContext'
 import { getRowsPerPage } from '../utils/pagination'
@@ -807,7 +807,7 @@ export default function TicketsView() {
     navigate(`/tickets/${encodeURIComponent(ticket.id)}`)
 
     // fetch full ticket details (including requester/end-user) from backend if available
-    import('../services/ticket.service').then(svc => {
+    import('../modules/tickets/services/ticket.service').then(svc => {
       svc.getTicket(ticket.id).then((d: any) => {
         // backend returns ticket with requester included as `requester`
         setEndUser(inferInboundEndUser(d))
@@ -1294,12 +1294,12 @@ export default function TicketsView() {
     }).length,
   }
   const queueViews = [
-    { key: 'myLists', label: 'My Lists', icon: '☰' },
-    { key: 'staff', label: 'Tickets by Staff', icon: '♟' },
-    { key: 'team', label: 'Tickets by Team', icon: '👥' },
-    { key: 'type', label: 'Tickets by Ticket Type', icon: '🎟' },
-    { key: 'status', label: 'Tickets by Status', icon: 'ⓘ' },
-    { key: 'all', label: 'All Tickets', icon: '⌕' },
+    { key: 'myLists', label: 'My Lists', icon: '?' },
+    { key: 'staff', label: 'Tickets by Staff', icon: '?' },
+    { key: 'team', label: 'Tickets by Team', icon: '??' },
+    { key: 'type', label: 'Tickets by Ticket Type', icon: '??' },
+    { key: 'status', label: 'Tickets by Status', icon: '?' },
+    { key: 'all', label: 'All Tickets', icon: '?' },
   ] as const
   const queueViewTitle: Record<typeof queueView, string> = {
     all: 'All Tickets',
@@ -1750,7 +1750,7 @@ export default function TicketsView() {
     addTicketComment(selectedTicket.id, note)
     // try to persist to backend as a private note
     ticketService.privateNote(selectedTicket.id, { note }).catch(() => {
-      // ignore errors â€” kept in UI as demo
+      // ignore errors — kept in UI as demo
     })
   }
 
@@ -3019,7 +3019,7 @@ export default function TicketsView() {
                 onClick={() => setShowFilterMenu(!showFilterMenu)}
               >
                 {filterType}
-                <span className="dropdown-icon">▼</span>
+                <span className="dropdown-icon">?</span>
               </button>
               {showFilterMenu && (
                 <div className="filter-menu">
@@ -3209,7 +3209,7 @@ export default function TicketsView() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Incident Details</h2>
-              <button className="modal-close" onClick={() => setShowNewIncidentModal(false)}>âœ•</button>
+              <button className="modal-close" onClick={() => setShowNewIncidentModal(false)}>✕</button>
             </div>
 
             <div className="modal-body">
@@ -3259,7 +3259,7 @@ export default function TicketsView() {
                     onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
                   >
                     {newIncidentForm.category || 'Select Category'}
-                    <span className="dropdown-arrow">â–¼</span>
+                    <span className="dropdown-arrow">▼</span>
                   </div>
                   
                   {showCategoryDropdown && (
@@ -3276,7 +3276,7 @@ export default function TicketsView() {
                                     toggleCategoryExpand(category)
                                   }}
                                 >
-                                  {expandedCategories.includes(category) ? 'â–¼' : 'â–¶'}
+                                  {expandedCategories.includes(category) ? '▼' : '▶'}
                                 </button>
                               ) : (
                                 <span className="expand-placeholder"></span>
@@ -3302,7 +3302,7 @@ export default function TicketsView() {
                                             toggleCategoryExpand(`${category}>${subcat}`)
                                           }}
                                         >
-                                          {expandedCategories.includes(`${category}>${subcat}`) ? 'â–¼' : 'â–¶'}
+                                          {expandedCategories.includes(`${category}>${subcat}`) ? '▼' : '▶'}
                                         </button>
                                       ) : (
                                         <span className="expand-placeholder"></span>
@@ -3366,6 +3366,7 @@ export default function TicketsView() {
     </div>
   )
 }
+
 
 
 

@@ -10,7 +10,7 @@ import {
   sendUserInvite,
   type RbacUserRow,
 } from '../services/rbac.service'
-import { updateUser } from '../services/user.service'
+import { updateUser } from '../modules/users/services/user.service'
 import { primarySidebarModules } from './PrimarySidebar'
 import { loadLeftPanelConfig } from '../utils/leftPanelConfig'
 
@@ -1176,3 +1176,4 @@ export default function RbacModule({ isAdmin }: Props) {
     </>
   )
 }
+

@@ -1,12 +1,8 @@
 import { Router } from 'express'
-import ticketsRoutes from '../modules/tickets/routes'
-import assetsRoutes from '../modules/assets/routes'
 import authRoutes from '../modules/auth/auth.routes'
 import approvalsRoutes from '../modules/approvals/routes'
 import tasksRoutes from '../modules/tasks/routes'
 import webhooksRoutes from '../modules/webhooks/routes'
-import suppliersRoutes from '../modules/suppliers/routes'
-import usersRoutes from '../modules/users/routes'
 import slaRoutes from '../modules/sla/sla.routes'
 import changesRoutes from '../modules/changes/changes.routes'
 import problemsRoutes from '../modules/problems/problems.routes'
@@ -16,18 +12,28 @@ import mailRoutes from '../modules/mail/mail.routes'
 import eventsRoutes from '../modules/events/routes'
 import notificationsRoutes from '../modules/notifications/notifications.routes'
 import systemRoutes from '../modules/system/system.routes'
+import microservicesRouter from '../microservices'
+import ticketServiceRouter from '../microservices/tickets/router'
+import assetServiceRouter from '../microservices/assets/router'
+import userServiceRouter from '../microservices/users/router'
+import supplierServiceRouter from '../microservices/suppliers/router'
 
 const router = Router()
 
 router.use('/auth', authRoutes)
-router.use('/tickets', ticketsRoutes)
-router.use('/assets', assetsRoutes)
+router.use('/microservices', microservicesRouter)
+router.use('/tickets', ticketServiceRouter)
+router.use('/ticket', ticketServiceRouter)
+router.use('/assets', assetServiceRouter)
+router.use('/asset', assetServiceRouter)
 // approvals and tasks use ticket-scoped paths under /tickets/:ticketId
 router.use('/', approvalsRoutes)
 router.use('/', tasksRoutes)
 router.use('/webhooks', webhooksRoutes)
-router.use('/suppliers', suppliersRoutes)
-router.use('/users', usersRoutes)
+router.use('/suppliers', supplierServiceRouter)
+router.use('/supplier', supplierServiceRouter)
+router.use('/users', userServiceRouter)
+router.use('/user', userServiceRouter)
 router.use('/sla', slaRoutes)
 router.use('/changes', changesRoutes)
 router.use('/problems', problemsRoutes)

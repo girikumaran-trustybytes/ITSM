@@ -1,9 +1,9 @@
-﻿import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
-import * as assetService from '../services/asset.service'
-import * as userService from '../services/user.service'
-import * as ticketService from '../services/ticket.service'
+import * as assetService from '../modules/assets/services/asset.service'
+import * as userService from '../modules/users/services/user.service'
+import * as ticketService from '../modules/tickets/services/ticket.service'
 import * as changeService from '../services/change.service'
 import * as problemService from '../services/problem.service'
 import * as serviceService from '../services/service.service'
@@ -845,7 +845,7 @@ export default function AssetsView({
           <div className="modal-content asset-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editing ? 'Edit Asset' : 'New Asset'}</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
+              <button className="modal-close" onClick={() => setShowModal(false)}>�</button>
             </div>
             <div className="modal-body">
               <div className="asset-tabs">
@@ -1178,6 +1178,7 @@ export default function AssetsView({
     </>
   )
 }
+
 
 
 
