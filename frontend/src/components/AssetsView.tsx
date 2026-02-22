@@ -163,8 +163,6 @@ export default function AssetsView({
     assigned: '',
     purchase: '',
   })
-  const [assetStatusFilter, setAssetStatusFilter] = useState('All')
-  const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null)
   const [internalPage, setInternalPage] = useState(1)
   const rowsPerPage = getRowsPerPage()
   const [total, setTotal] = useState(0)
@@ -564,7 +562,6 @@ export default function AssetsView({
       await assetService.deleteAsset(asset.id)
       setAssets((prev) => prev.filter((a) => a.id !== asset.id))
       setAssetsAll((prev) => prev.filter((a) => a.id !== asset.id))
-      setSelectedAssetId((prev) => (prev === asset.id ? null : prev))
     } catch (e: any) {
       alert(e?.response?.data?.error || e?.message || 'Failed to delete asset')
     }
@@ -647,33 +644,7 @@ export default function AssetsView({
     )
   }
 
-  const cardRows = useMemo(() => {
-    if (assetStatusFilter === 'All') return filtered
-    return filtered.filter((a) => String(a.status || '').toLowerCase() === assetStatusFilter.toLowerCase())
-  }, [filtered, assetStatusFilter])
-
-  const selectedAsset = useMemo(() => {
-    if (!cardRows.length) return null
-    if (!selectedAssetId) return cardRows[0]
-    return cardRows.find((a) => a.id === selectedAssetId) || cardRows[0]
-  }, [cardRows, selectedAssetId])
-
-  useEffect(() => {
-    if (!cardRows.length) {
-      setSelectedAssetId(null)
-      return
-    }
-    if (!selectedAssetId || !cardRows.some((a) => a.id === selectedAssetId)) {
-      setSelectedAssetId(cardRows[0].id)
-    }
-  }, [cardRows, selectedAssetId])
-
-  const formatDate = (value?: string | null) => {
-    if (!value) return '-'
-    const d = new Date(value)
-    if (Number.isNaN(d.getTime())) return '-'
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-  }
+  const cardRows = filtered
   const assetQueueViews = [
     { key: 'assetType', label: 'Assets by Asset Type', icon: 'AT' },
     { key: 'assetGroup', label: 'Assets by Asset Group', icon: 'AG' },
@@ -836,106 +807,35 @@ export default function AssetsView({
           <button className="assets-primary-btn" onClick={openCreate}>+ New Asset</button>
         </div>
       </div>
-      <div className="asset-cards-toolbar">
-        <select value="All Assets" onChange={() => undefined}>
-          <option>All Assets</option>
-        </select>
-        <label className="asset-cards-status-filter">
-          <span>Status:</span>
-          <select value={assetStatusFilter} onChange={(e) => setAssetStatusFilter(e.target.value)}>
-            <option value="All">All</option>
-            <option value="Active">Active</option>
-            <option value="In Use">In Use</option>
-            <option value="Available">Available</option>
-            <option value="In Repair">In Repair</option>
-            <option value="Retired">Retired</option>
-          </select>
-        </label>
-        <div className="asset-cards-search">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="7" />
-            <line x1="16.5" y1="16.5" x2="21" y2="21" />
-          </svg>
-          <input
-            placeholder="Search"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setPage(1)
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="asset-cards-grid">
-        {cardRows.map((asset) => {
-          const selected = selectedAsset?.id === asset.id
-          return (
-            <article key={asset.id} className={`asset-card-tile${selected ? ' selected' : ''}`} onClick={() => setSelectedAssetId(asset.id)}>
-              <div className="asset-card-head">
-                <div className="asset-card-icon">{renderAssetTypeIcon(asset.assetType || asset.category)}</div>
-                <div className="asset-card-head-main">
-                  <div className="asset-card-title-row">
-                    <h4>{asset.name}</h4>
+      {cardRows.length ? (
+        <div className="assets-list-detail-layout">
+          <section className="asset-table-panel">
+            <div className="asset-table-header-row">
+              <div>Asset ID</div>
+              <div>Name</div>
+              <div>Category</div>
+              <div>Status</div>
+            </div>
+            {cardRows.map((asset) => {
+              return (
+                <button
+                  key={asset.id}
+                  type="button"
+                  className="asset-table-row"
+                  onClick={() => openDetail(asset)}
+                >
+                  <div className="asset-table-cell">{asset.assetId || `AST-${asset.id}`}</div>
+                  <div className="asset-table-cell">{asset.name}</div>
+                  <div className="asset-table-cell">{asset.category || '-'}</div>
+                  <div className="asset-table-cell">
                     <span className={`asset-status ${String(asset.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{asset.status || 'Active'}</span>
                   </div>
-                  <div className="asset-card-divider" />
-                </div>
-              </div>
-              <div className="asset-card-facts">
-                <div><span>Asset ID:</span><strong>{asset.assetId || `AST-${asset.id}`}</strong></div>
-                <div><span>Category:</span><strong>{asset.category || '-'}</strong></div>
-                <div><span>Serial No:</span><strong>{asset.serial || '-'}</strong></div>
-                <div><span>Location:</span><strong>{asset.location || '-'}</strong></div>
-                <div><span>Assigned To:</span><strong>{asset.assignedTo ? (asset.assignedTo.name || asset.assignedTo.email) : 'Unassigned'}</strong></div>
-                <div><span>Warranty:</span><strong>{formatDate(asset.warrantyUntil)}</strong></div>
-              </div>
-              <div className="asset-card-actions">
-                <button className="asset-btn assign" onClick={(e) => { e.stopPropagation(); alert('Assign flow will be wired next.') }}>Assign</button>
-                <button className="asset-btn edit" onClick={(e) => { e.stopPropagation(); openEdit(asset) }}>Edit</button>
-                {user?.role === 'ADMIN' ? (
-                  <button className="asset-btn delete" onClick={(e) => { e.stopPropagation(); handleDelete(asset) }}>Delete</button>
-                ) : null}
-                <button className="asset-btn view" onClick={(e) => { e.stopPropagation(); openDetail(asset) }}>View</button>
-              </div>
-            </article>
-          )
-        })}
-      </div>
+                </button>
+              )
+            })}
+          </section>
 
-      {selectedAsset ? (
-        <section className="asset-detail-surface">
-          <div className="asset-detail-head">
-            <div className="asset-card-icon">{renderAssetTypeIcon(selectedAsset.assetType || selectedAsset.category)}</div>
-            <div className="asset-detail-head-main">
-              <div className="asset-card-title-row">
-                <h3>{selectedAsset.name}</h3>
-                <span className={`asset-status ${String(selectedAsset.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{selectedAsset.status || 'Active'}</span>
-              </div>
-              <div className="asset-card-divider" />
-            </div>
-          </div>
-          <div className="asset-detail-grid">
-            <div className="asset-detail-col">
-              <div><span>Asset ID:</span><strong>{selectedAsset.assetId || `AST-${selectedAsset.id}`}</strong></div>
-              <div><span>Serial No:</span><strong>{selectedAsset.serial || '-'}</strong></div>
-              <div><span>Location:</span><strong>{selectedAsset.location || '-'}</strong></div>
-              <div><span>Assigned To:</span><strong>{selectedAsset.assignedTo ? (selectedAsset.assignedTo.name || selectedAsset.assignedTo.email) : 'Unassigned'}</strong></div>
-            </div>
-            <div className="asset-detail-col">
-              <div><span>Category:</span><strong>{selectedAsset.category || '-'}</strong></div>
-              <div><span>Model:</span><strong>{selectedAsset.model || '-'}</strong></div>
-              <div><span>Purchase Date:</span><strong>{formatDate(selectedAsset.purchaseDate)}</strong></div>
-              <div><span>Warranty Expiry:</span><strong>{formatDate(selectedAsset.warrantyUntil)}</strong></div>
-            </div>
-          </div>
-          <div className="asset-card-actions detail">
-            <button className="asset-btn assign" onClick={() => alert('Assign flow will be wired next.')}>Reassign</button>
-            <button className="asset-btn edit" onClick={() => openEdit(selectedAsset)}>Edit</button>
-            <button className="asset-btn delete" onClick={() => handleDelete(selectedAsset)}>Delete</button>
-            <button className="asset-btn view" onClick={() => openDetail(selectedAsset)}>View</button>
-          </div>
-        </section>
+        </div>
       ) : (
         <div className="assets-empty">No assets found.</div>
       )}
