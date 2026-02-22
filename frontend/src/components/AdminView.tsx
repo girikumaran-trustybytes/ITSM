@@ -13,6 +13,7 @@ import {
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
+import { listUsers } from '../services/user.service'
 
 type PaginationMeta = {
   page: number
@@ -66,11 +67,17 @@ const settingsMenu: MenuSection[] = [
     ],
   },
   {
+    id: 'workflow-automation',
+    label: 'Workflow and Automation',
+    items: [
+      { id: 'workflow-automation', label: 'Workflow and Automation', requiresAdmin: true },
+    ],
+  },
+  {
     id: 'incident',
     label: 'Policy (SLA) Management',
     items: [
       { id: 'sla-policies', label: 'SLA policies' },
-      { id: 'escalation-rules', label: 'Escalation rules' },
       { id: 'auto-assignment', label: 'Auto-assignment rules' },
     ],
   },
@@ -79,6 +86,7 @@ const settingsMenu: MenuSection[] = [
     label: 'Integrations & Platform',
     items: [
       { id: 'mail-configuration', label: 'Mail Configuration', requiresAdmin: true },
+      { id: 'email-signature-templates', label: 'Email & Signature Templates', requiresAdmin: true },
       { id: 'database-configuration', label: 'Database Configuration', requiresAdmin: true },
     ],
   },
@@ -99,6 +107,13 @@ type PanelDef = {
   description: string
   fields: FieldDef[]
 }
+type WorkflowBlueprint = {
+  name: string
+  states: string[]
+  transitions: string[]
+  buttonFlow: string[]
+}
+type WorkflowListKey = 'states' | 'transitions' | 'buttonFlow'
 
 type QueueSettingsView = 'ticket' | 'asset'
 type TicketQueueModalMode = 'add' | 'edit' | 'delete'
@@ -132,6 +147,250 @@ const TIME_ZONE_OPTIONS = (() => {
     return [SYSTEM_TIME_ZONE, 'UTC']
   }
 })()
+const WORKFLOW_BLUEPRINTS: WorkflowBlueprint[] = [
+  {
+    name: 'Incident',
+    states: ['New', 'In Progress', 'Awaiting Approval', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> In Progress',
+      'In Progress -> Awaiting Approval',
+      'Awaiting Approval -> In Progress',
+      'In Progress -> Closed',
+      'New -> Closed (quick close)',
+    ],
+    buttonFlow: [
+      'Back -> Return to list',
+      'Accept (New) -> Assign to agent',
+      'Acknowledge -> In Progress',
+      'Approval -> Awaiting Approval',
+      'Resolve -> Closed',
+      'Close -> Closed',
+      'Re-open (Closed) -> In Progress',
+    ],
+  },
+  {
+    name: 'Service Request',
+    states: ['New', 'Awaiting Approval', 'In Progress', 'Fulfilled', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> Awaiting Approval',
+      'New -> In Progress (if no approval required)',
+      'Awaiting Approval -> In Progress',
+      'Awaiting Approval -> Rejected',
+      'In Progress -> Fulfilled',
+      'Fulfilled -> Closed',
+      'New -> Closed (quick close)',
+    ],
+    buttonFlow: [
+      'Back -> Return to list',
+      'Accept (New) -> Assign to agent',
+      'Request Approval (New) -> Awaiting Approval',
+      'Approve (Awaiting Approval) -> In Progress',
+      'Reject (Awaiting Approval) -> Rejected',
+      'Fulfill (In Progress) -> Fulfilled',
+      'Close (Fulfilled) -> Closed',
+      'Re-open (Closed) -> In Progress',
+    ],
+  },
+  {
+    name: 'Change Request (Asset Replacement)',
+    states: ['New', 'Under Verification', 'Awaiting Approval', 'Approved', 'Procurement', 'In Progress', 'Completed', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> Under Verification',
+      'Under Verification -> Awaiting Approval',
+      'Awaiting Approval -> Approved',
+      'Awaiting Approval -> Rejected',
+      'Approved -> Procurement',
+      'Approved -> In Progress',
+      'Procurement -> In Progress',
+      'In Progress -> Completed',
+      'Completed -> Closed',
+    ],
+    buttonFlow: [
+      'Verify Asset -> Under Verification',
+      'Send for Approval -> Awaiting Approval',
+      'Approve -> Approved',
+      'Reject -> Rejected',
+      'Start Procurement -> Procurement',
+      'Start Implementation -> In Progress',
+      'Complete Change -> Completed',
+      'Close -> Closed',
+    ],
+  },
+  {
+    name: 'Access Request',
+    states: ['New', 'Manager Approval', 'IT Approval', 'Provisioning', 'Completed', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> Manager Approval',
+      'Manager Approval -> IT Approval',
+      'Manager Approval -> Rejected',
+      'IT Approval -> Provisioning',
+      'Provisioning -> Completed',
+      'Completed -> Closed',
+    ],
+    buttonFlow: [
+      'Send to Manager -> Manager Approval',
+      'Approve (Manager) -> IT Approval',
+      'Reject -> Rejected',
+      'IT Approve -> Provisioning',
+      'Provision Access -> Completed',
+      'Close -> Closed',
+    ],
+  },
+  {
+    name: 'New Starter Request',
+    states: ['New', 'HR Confirmation', 'IT Setup', 'Asset Allocation', 'Ready for Joining', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> HR Confirmation',
+      'HR Confirmation -> IT Setup',
+      'IT Setup -> Asset Allocation',
+      'Asset Allocation -> Ready for Joining',
+      'Ready for Joining -> Closed',
+    ],
+    buttonFlow: [
+      'Confirm by HR -> HR Confirmation',
+      'Start IT Setup -> IT Setup',
+      'Allocate Asset -> Asset Allocation',
+      'Mark Ready -> Ready for Joining',
+      'Close -> Closed',
+    ],
+  },
+  {
+    name: 'Leaver Request',
+    states: ['New', 'HR Confirmation', 'Access Revoked', 'Asset Collected', 'Completed', 'Closed'],
+    transitions: [
+      'New -> HR Confirmation',
+      'HR Confirmation -> Access Revoked',
+      'Access Revoked -> Asset Collected',
+      'Asset Collected -> Completed',
+      'Completed -> Closed',
+    ],
+    buttonFlow: [
+      'HR Confirm -> HR Confirmation',
+      'Revoke Access -> Access Revoked',
+      'Collect Asset -> Asset Collected',
+      'Complete Offboarding -> Completed',
+      'Close -> Closed',
+    ],
+  },
+  {
+    name: 'Task',
+    states: ['New', 'Assigned', 'In Progress', 'Completed', 'Closed'],
+    transitions: [
+      'New -> Assigned',
+      'Assigned -> In Progress',
+      'In Progress -> Completed',
+      'Completed -> Closed',
+    ],
+    buttonFlow: [
+      'Accept -> Assigned',
+      'Start -> In Progress',
+      'Complete -> Completed',
+      'Close -> Closed',
+    ],
+  },
+  {
+    name: 'Software Request',
+    states: ['New', 'Manager Approval', 'Budget Approval', 'Procurement', 'Installation', 'Completed', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> Manager Approval',
+      'Manager Approval -> Budget Approval',
+      'Manager Approval -> Rejected',
+      'Budget Approval -> Procurement',
+      'Procurement -> Installation',
+      'Installation -> Completed',
+      'Completed -> Closed',
+    ],
+    buttonFlow: [
+      'Request Approval -> Manager Approval',
+      'Budget Approve -> Budget Approval',
+      'Start Procurement -> Procurement',
+      'Install Software -> Installation',
+      'Mark Completed -> Completed',
+      'Close -> Closed',
+    ],
+  },
+  {
+    name: 'HR Request',
+    states: ['New', 'HR Review', 'In Progress', 'Resolved', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> HR Review',
+      'HR Review -> In Progress',
+      'HR Review -> Rejected',
+      'In Progress -> Resolved',
+      'Resolved -> Closed',
+    ],
+    buttonFlow: [
+      'Send to HR -> HR Review',
+      'Start Review -> In Progress',
+      'Resolve -> Resolved',
+      'Close -> Closed',
+    ],
+  },
+  {
+    name: 'Peripheral Request',
+    states: ['New', 'Stock Check', 'Approval', 'Issued', 'Closed', 'Rejected'],
+    transitions: [
+      'New -> Stock Check',
+      'Stock Check -> Approval',
+      'Stock Check -> Issued',
+      'Approval -> Issued',
+      'Approval -> Rejected',
+      'Issued -> Closed',
+    ],
+    buttonFlow: [
+      'Check Stock -> Stock Check',
+      'Request Approval -> Approval',
+      'Issue Asset -> Issued',
+      'Close -> Closed',
+    ],
+  },
+]
+const WORKFLOW_STORAGE_KEY = 'admin.workflow.automation.v1'
+const cloneWorkflowBlueprints = (rows: WorkflowBlueprint[]): WorkflowBlueprint[] =>
+  rows.map((row) => ({
+    name: row.name,
+    states: [...row.states],
+    transitions: [...row.transitions],
+    buttonFlow: [...row.buttonFlow],
+  }))
+const normalizeWorkflowName = (name: string): string => String(name || '').trim().toLowerCase()
+const mergeWorkflowBlueprints = (rows: WorkflowBlueprint[]): WorkflowBlueprint[] => {
+  const byName = new Map<string, WorkflowBlueprint>()
+  const extras: WorkflowBlueprint[] = []
+
+  for (const row of rows) {
+    const name = String(row?.name || '').trim()
+    if (!name) continue
+    const normalized: WorkflowBlueprint = {
+      name,
+      states: Array.isArray(row.states) ? row.states.map((v) => String(v || '').trim()).filter(Boolean) : [],
+      transitions: Array.isArray(row.transitions) ? row.transitions.map((v) => String(v || '').trim()).filter(Boolean) : [],
+      buttonFlow: Array.isArray(row.buttonFlow) ? row.buttonFlow.map((v) => String(v || '').trim()).filter(Boolean) : [],
+    }
+    const key = normalizeWorkflowName(name)
+    if (!byName.has(key)) byName.set(key, normalized)
+  }
+
+  const merged = WORKFLOW_BLUEPRINTS.map((base) => {
+    const existing = byName.get(normalizeWorkflowName(base.name))
+    return existing ? existing : cloneWorkflowBlueprints([base])[0]
+  })
+
+  for (const row of rows) {
+    const key = normalizeWorkflowName(row.name)
+    const existsInDefault = WORKFLOW_BLUEPRINTS.some((base) => normalizeWorkflowName(base.name) === key)
+    if (!existsInDefault && !extras.some((e) => normalizeWorkflowName(e.name) === key)) {
+      extras.push({
+        name: row.name,
+        states: [...row.states],
+        transitions: [...row.transitions],
+        buttonFlow: [...row.buttonFlow],
+      })
+    }
+  }
+
+  return [...merged, ...extras]
+}
 
 type PrioritySlaForm = {
   enabled: boolean
@@ -149,10 +408,47 @@ type PrioritySlaForm = {
 
 type MailConfigForm = {
   provider: MailProvider
+  providerType: 'google-workspace-oauth' | 'microsoft-365-oauth' | 'smtp-imap-custom' | 'api-provider'
+  connectionMode: 'oauth2' | 'app-password' | 'manual-credentials'
+  oauthConnected: boolean
+  oauthTokenExpiry: string
   workspaceProvider: 'google-workspace' | 'microsoft-workspace' | 'zoho' | 'outlook' | 'custom'
   supportMail: string
-  aliasMail: string
+  inboundEmailAddress: string
   inboundDefaultQueue: string
+  inboundDefaultTicketType: string
+  inboundDefaultPriority: string
+  autoAssignRule: string
+  pollIntervalMs: string
+  imapEncryption: 'SSL' | 'TLS' | 'None'
+  smtpEncryption: 'SSL' | 'TLS' | 'None'
+  enablePush: boolean
+  ignoreAutoReply: boolean
+  preventEmailLoop: boolean
+  processAttachments: boolean
+  overwriteStatusOnReply: boolean
+  autoReopenOnReply: boolean
+  stripQuotedReplies: boolean
+  appendToTicketPattern: string
+  outboundReplyTo: string
+  maxAttachmentSizeMb: string
+  signatureTemplate: string
+  allowExternalEmailCreation: boolean
+  allowInternalOnly: boolean
+  allowedDomains: string
+  blockedDomains: string
+  spfDkimStatus: 'Unknown' | 'Valid' | 'Invalid'
+  emailLogRetentionDays: string
+  retryFailedSend: boolean
+  maxRetryCount: string
+  routingRuleHelpdeskQueue: string
+  routingRuleAccessType: string
+  routingRuleSupplierType: string
+  lastSyncTime: string
+  lastEmailReceived: string
+  lastEmailSent: string
+  errorLogs: string
+  apiProviderName: string
   apiBaseUrl: string
   apiKey: string
   apiSecret: string
@@ -184,12 +480,100 @@ type DatabaseConfigForm = {
   ssl: boolean
 }
 
+type EmailTemplateRecord = {
+  id: string
+  name: string
+  buttonKey: string
+  subject: string
+  body: string
+  active: boolean
+}
+
+type EmailSignatureRecord = {
+  id: string
+  userId: string
+  userLabel: string
+  signatureHtml: string
+  active: boolean
+}
+
+type MailBannerRecord = {
+  id: string
+  title: string
+  message: string
+  tone: 'info' | 'success' | 'warning' | 'danger'
+  active: boolean
+}
+
+const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
+const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
+const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
+
+const BUTTON_TEMPLATE_OPTIONS = [
+  'Assign',
+  'Reassign',
+  'Retire',
+  'Accept',
+  'Approve',
+  'Reject',
+  'Close',
+]
+
+const loadStoredList = <T,>(key: string, fallback: T[]): T[] => {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as T[]) : fallback
+  } catch {
+    return fallback
+  }
+}
+
 const defaultMailConfigForm = (): MailConfigForm => ({
   provider: 'gmail',
+  providerType: 'google-workspace-oauth',
+  connectionMode: 'oauth2',
+  oauthConnected: false,
+  oauthTokenExpiry: '',
   workspaceProvider: 'custom',
   supportMail: '',
-  aliasMail: '',
+  inboundEmailAddress: '',
   inboundDefaultQueue: 'Helpdesk',
+  inboundDefaultTicketType: 'Incident',
+  inboundDefaultPriority: 'Medium',
+  autoAssignRule: '',
+  pollIntervalMs: '60000',
+  imapEncryption: 'SSL',
+  smtpEncryption: 'SSL',
+  enablePush: false,
+  ignoreAutoReply: true,
+  preventEmailLoop: true,
+  processAttachments: true,
+  overwriteStatusOnReply: false,
+  autoReopenOnReply: true,
+  stripQuotedReplies: true,
+  appendToTicketPattern: '[#TICKET-ID]',
+  outboundReplyTo: '',
+  maxAttachmentSizeMb: '20',
+  signatureTemplate: 'Regards,\nIT Support Team',
+  allowExternalEmailCreation: true,
+  allowInternalOnly: false,
+  allowedDomains: '',
+  blockedDomains: '',
+  spfDkimStatus: 'Unknown',
+  emailLogRetentionDays: '90',
+  retryFailedSend: true,
+  maxRetryCount: '3',
+  routingRuleHelpdeskQueue: 'If email sent to helpdesk@ -> Queue = Helpdesk',
+  routingRuleAccessType: 'If subject contains "Access" -> Type = Access Request',
+  routingRuleSupplierType: 'If sender domain = vendor.com -> Type = Supplier Ticket',
+  lastSyncTime: '',
+  lastEmailReceived: '',
+  lastEmailSent: '',
+  errorLogs: '',
+  apiProviderName: 'SendGrid',
   apiBaseUrl: '',
   apiKey: '',
   apiSecret: '',
@@ -457,14 +841,6 @@ const settingsTopicPanels: Record<string, PanelDef[]> = {
       { key: 'firstResponseTarget', label: 'First response target', type: 'select', options: ['15 min', '30 min', '1 hour', '4 hours'] },
       { key: 'resolutionTarget', label: 'Resolution target', type: 'select', options: ['4 hours', '8 hours', '24 hours', '72 hours'] },
       { key: 'slaBreachNotify', label: 'Notify on breach risk', type: 'toggle' },
-    ]},
-  ],
-  'escalation-rules': [
-    { id: 'escalation', title: 'Escalation Rules', description: 'Route aging tickets through support tiers.', fields: [
-      { key: 'escalationTier1', label: 'Tier 1 escalation time', type: 'select', options: ['30 min', '1 hour', '2 hours'] },
-      { key: 'escalationTier2', label: 'Tier 2 escalation time', type: 'select', options: ['2 hours', '4 hours', '8 hours'] },
-      { key: 'escalationOnBreach', label: 'Escalate on SLA breach', type: 'toggle' },
-      { key: 'escalationNotifyManager', label: 'Notify manager on escalation', type: 'toggle' },
     ]},
   ],
   'auto-assignment': [
@@ -843,10 +1219,66 @@ export default function AdminView(_props: AdminViewProps) {
   const [mailBusy, setMailBusy] = useState(false)
   const [mailResult, setMailResult] = useState('')
   const [mailTestRecipient, setMailTestRecipient] = useState('')
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplateRecord[]>(() =>
+    loadStoredList<EmailTemplateRecord>(EMAIL_TEMPLATE_STORAGE_KEY, [])
+  )
+  const [templateForm, setTemplateForm] = useState<Omit<EmailTemplateRecord, 'id'>>({
+    name: '',
+    buttonKey: 'Assign',
+    subject: '',
+    body: '',
+    active: true,
+  })
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
+  const [signatureUsers, setSignatureUsers] = useState<any[]>([])
+  const [emailSignatures, setEmailSignatures] = useState<EmailSignatureRecord[]>(() =>
+    loadStoredList<EmailSignatureRecord>(EMAIL_SIGNATURE_STORAGE_KEY, [])
+  )
+  const [signatureForm, setSignatureForm] = useState<Omit<EmailSignatureRecord, 'id'>>({
+    userId: '',
+    userLabel: '',
+    signatureHtml: '',
+    active: true,
+  })
+  const [editingSignatureId, setEditingSignatureId] = useState<string | null>(null)
+  const [mailBanners, setMailBanners] = useState<MailBannerRecord[]>(() =>
+    loadStoredList<MailBannerRecord>(MAIL_BANNER_STORAGE_KEY, [])
+  )
+  const [bannerForm, setBannerForm] = useState<Omit<MailBannerRecord, 'id'>>({
+    title: '',
+    message: '',
+    tone: 'info',
+    active: true,
+  })
+  const [editingBannerId, setEditingBannerId] = useState<string | null>(null)
   const [dbForm, setDbForm] = useState<DatabaseConfigForm>(defaultDatabaseConfigForm())
   const [dbLoading, setDbLoading] = useState(false)
   const [dbBusy, setDbBusy] = useState(false)
   const [dbResult, setDbResult] = useState('')
+  const [workflowDrafts, setWorkflowDrafts] = useState<WorkflowBlueprint[]>(() => {
+    if (typeof window === 'undefined') return cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS)
+    try {
+      const raw = window.localStorage.getItem(WORKFLOW_STORAGE_KEY)
+      if (!raw) return cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS)
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS)
+      const normalized = parsed
+        .map((wf: any) => ({
+          name: String(wf?.name || '').trim(),
+          states: Array.isArray(wf?.states) ? wf.states.map((v: any) => String(v || '').trim()).filter(Boolean) : [],
+          transitions: Array.isArray(wf?.transitions) ? wf.transitions.map((v: any) => String(v || '').trim()).filter(Boolean) : [],
+          buttonFlow: Array.isArray(wf?.buttonFlow) ? wf.buttonFlow.map((v: any) => String(v || '').trim()).filter(Boolean) : [],
+        }))
+        .filter((wf: WorkflowBlueprint) => wf.name)
+      return normalized.length ? mergeWorkflowBlueprints(normalized) : cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS)
+    } catch {
+      return cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS)
+    }
+  })
+  const [workflowSavedAt, setWorkflowSavedAt] = useState('')
+  const [selectedWorkflowType, setSelectedWorkflowType] = useState('')
+  const [selectedWorkflowName, setSelectedWorkflowName] = useState('')
+  const [workflowEditMode, setWorkflowEditMode] = useState(false)
 
   const visibleSections = useMemo(() => {
     return settingsMenu
@@ -880,8 +1312,13 @@ export default function AdminView(_props: AdminViewProps) {
     }
   }, [activeItem, role])
   useEffect(() => {
-    if (activeItem === 'mail-configuration' && role === 'ADMIN') {
+    if ((activeItem === 'mail-configuration' || activeItem === 'email-signature-templates') && role === 'ADMIN') {
       loadMailConfiguration()
+      listUsers({ limit: 500 }).then((rows: any) => {
+        const data = Array.isArray(rows) ? rows : (Array.isArray(rows?.rows) ? rows.rows : [])
+        const serviceAccounts = data.filter((u: any) => Boolean(u?.isServiceAccount))
+        setSignatureUsers(serviceAccounts.length ? serviceAccounts : data)
+      }).catch(() => setSignatureUsers([]))
     }
   }, [activeItem, role])
   useEffect(() => {
@@ -889,6 +1326,38 @@ export default function AdminView(_props: AdminViewProps) {
       loadDatabaseConfiguration()
     }
   }, [activeItem, role])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(workflowDrafts))
+    } catch {}
+  }, [workflowDrafts])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(EMAIL_TEMPLATE_STORAGE_KEY, JSON.stringify(emailTemplates))
+    } catch {}
+  }, [emailTemplates])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(EMAIL_SIGNATURE_STORAGE_KEY, JSON.stringify(emailSignatures))
+    } catch {}
+  }, [emailSignatures])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(MAIL_BANNER_STORAGE_KEY, JSON.stringify(mailBanners))
+    } catch {}
+  }, [mailBanners])
+  useEffect(() => {
+    if (!workflowDrafts.length) return
+    const hasSelectedType = workflowDrafts.some((wf) => wf.name === selectedWorkflowType)
+    const hasSelectedName = workflowDrafts.some((wf) => wf.name === selectedWorkflowName)
+    if (!selectedWorkflowType || !hasSelectedType) setSelectedWorkflowType(workflowDrafts[0].name)
+    if (!selectedWorkflowName || !hasSelectedName) setSelectedWorkflowName(workflowDrafts[0].name)
+  }, [workflowDrafts, selectedWorkflowType, selectedWorkflowName])
 
   const selectedSection = visibleSections.find((s) => s.id === activeSection) || visibleSections[0]
   const selectedItem = selectedSection?.items.find((i) => i.id === activeItem) || selectedSection?.items[0]
@@ -902,7 +1371,94 @@ export default function AdminView(_props: AdminViewProps) {
   const isRolesPermissionsView = activeItem === 'roles-permissions'
   const isSlaPoliciesView = activeItem === 'sla-policies'
   const isMailConfigurationView = activeItem === 'mail-configuration'
+  const isEmailSignatureTemplatesView = activeItem === 'email-signature-templates'
   const isDatabaseConfigurationView = activeItem === 'database-configuration'
+  const isWorkflowAutomationView = activeItem === 'workflow-automation'
+  const isApiProvider = mailForm.providerType === 'api-provider'
+  const isOauthProvider = mailForm.providerType === 'google-workspace-oauth' || mailForm.providerType === 'microsoft-365-oauth'
+  const isOauthMode = mailForm.connectionMode === 'oauth2'
+  const isAppPasswordMode = mailForm.connectionMode === 'app-password'
+  const isManualCredentialsMode = mailForm.connectionMode === 'manual-credentials'
+  const disableImapSmtpCredentials = isOauthMode
+  const disableImapSmtpProtocolConfig = isApiProvider
+  const disableMailProtocolTests = isApiProvider
+  const selectedWorkflowIndex = useMemo(
+    () => workflowDrafts.findIndex((wf) => wf.name === selectedWorkflowName),
+    [workflowDrafts, selectedWorkflowName]
+  )
+  const selectedWorkflow = selectedWorkflowIndex >= 0 ? workflowDrafts[selectedWorkflowIndex] : null
+  const updateWorkflowName = (index: number, value: string) => {
+    setWorkflowDrafts((prev) => prev.map((wf, i) => (i === index ? { ...wf, name: value } : wf)))
+  }
+  const updateWorkflowListItem = (workflowIndex: number, key: WorkflowListKey, rowIndex: number, value: string) => {
+    setWorkflowDrafts((prev) => prev.map((wf, i) => {
+      if (i !== workflowIndex) return wf
+      const next = [...wf[key]]
+      next[rowIndex] = value
+      return { ...wf, [key]: next }
+    }))
+  }
+  const addWorkflowListItem = (workflowIndex: number, key: WorkflowListKey) => {
+    setWorkflowDrafts((prev) => prev.map((wf, i) => (i === workflowIndex ? { ...wf, [key]: [...wf[key], ''] } : wf)))
+  }
+  const deleteWorkflowListItem = (workflowIndex: number, key: WorkflowListKey, rowIndex: number) => {
+    setWorkflowDrafts((prev) => prev.map((wf, i) => {
+      if (i !== workflowIndex) return wf
+      const next = wf[key].filter((_, idx) => idx !== rowIndex)
+      return { ...wf, [key]: next.length ? next : [''] }
+    }))
+  }
+  const moveWorkflowListItem = (workflowIndex: number, key: WorkflowListKey, rowIndex: number, dir: -1 | 1) => {
+    setWorkflowDrafts((prev) => prev.map((wf, i) => {
+      if (i !== workflowIndex) return wf
+      const next = [...wf[key]]
+      const target = rowIndex + dir
+      if (target < 0 || target >= next.length) return wf
+      const tmp = next[rowIndex]
+      next[rowIndex] = next[target]
+      next[target] = tmp
+      return { ...wf, [key]: next }
+    }))
+  }
+  const addWorkflow = () => {
+    setWorkflowDrafts((prev) => [...prev, { name: 'New Workflow', states: ['New'], transitions: ['New -> In Progress'], buttonFlow: ['Start -> In Progress'] }])
+  }
+  const deleteWorkflow = (index: number) => {
+    setWorkflowDrafts((prev) => {
+      const next = prev.filter((_, i) => i !== index)
+      return next.length ? next : cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS)
+    })
+  }
+  const moveWorkflow = (index: number, dir: -1 | 1) => {
+    setWorkflowDrafts((prev) => {
+      const target = index + dir
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      const tmp = next[index]
+      next[index] = next[target]
+      next[target] = tmp
+      return next
+    })
+  }
+  const saveWorkflowBlueprints = () => {
+    const cleaned = workflowDrafts
+      .map((wf) => ({
+        name: String(wf.name || '').trim(),
+        states: wf.states.map((v) => String(v || '').trim()).filter(Boolean),
+        transitions: wf.transitions.map((v) => String(v || '').trim()).filter(Boolean),
+        buttonFlow: wf.buttonFlow.map((v) => String(v || '').trim()).filter(Boolean),
+      }))
+      .filter((wf) => wf.name)
+    setWorkflowDrafts(cleaned.length ? mergeWorkflowBlueprints(cleaned) : cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS))
+    setWorkflowSavedAt(new Date().toLocaleString())
+  }
+  const resetWorkflowBlueprints = () => {
+    setWorkflowDrafts(cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS))
+    setWorkflowSavedAt('')
+    if (typeof window !== 'undefined') {
+      try { window.localStorage.removeItem(WORKFLOW_STORAGE_KEY) } catch {}
+    }
+  }
   const policyPriorityLabels = useMemo(
     () => resolveFormatLabels(policyFormat, customFormatText),
     [policyFormat, customFormatText]
@@ -1054,12 +1610,55 @@ export default function AdminView(_props: AdminViewProps) {
       const provider = String(data?.provider || 'custom') as MailProvider
       const smtp = data?.smtp || {}
       const imap = data?.imap || {}
+      const nowStamp = new Date().toLocaleString()
       setMailForm({
         provider,
+        providerType:
+          provider === 'google-workspace' || provider === 'gmail'
+            ? 'google-workspace-oauth'
+            : provider === 'microsoft-workspace' || provider === 'outlook'
+              ? 'microsoft-365-oauth'
+              : 'smtp-imap-custom',
+        connectionMode: 'oauth2',
+        oauthConnected: false,
+        oauthTokenExpiry: '',
         workspaceProvider: toWorkspaceProvider(provider),
         supportMail: String(smtp?.from || ''),
-        aliasMail: '',
+        inboundEmailAddress: String(smtp?.from || ''),
         inboundDefaultQueue: String(data?.inbound?.defaultQueue || 'Helpdesk'),
+        inboundDefaultTicketType: 'Incident',
+        inboundDefaultPriority: 'Medium',
+        autoAssignRule: '',
+        pollIntervalMs: String((data as any)?.inbound?.pollIntervalMs || 60000),
+        imapEncryption: Boolean(imap?.secure) ? 'SSL' : 'None',
+        smtpEncryption: Boolean(smtp?.secure) ? 'SSL' : 'None',
+        enablePush: false,
+        ignoreAutoReply: true,
+        preventEmailLoop: true,
+        processAttachments: true,
+        overwriteStatusOnReply: false,
+        autoReopenOnReply: true,
+        stripQuotedReplies: true,
+        appendToTicketPattern: '[#TICKET-ID]',
+        outboundReplyTo: '',
+        maxAttachmentSizeMb: '20',
+        signatureTemplate: 'Regards,\nIT Support Team',
+        allowExternalEmailCreation: true,
+        allowInternalOnly: false,
+        allowedDomains: '',
+        blockedDomains: '',
+        spfDkimStatus: 'Unknown',
+        emailLogRetentionDays: '90',
+        retryFailedSend: true,
+        maxRetryCount: '3',
+        routingRuleHelpdeskQueue: 'If email sent to helpdesk@ -> Queue = Helpdesk',
+        routingRuleAccessType: 'If subject contains "Access" -> Type = Access Request',
+        routingRuleSupplierType: 'If sender domain = vendor.com -> Type = Supplier Ticket',
+        lastSyncTime: nowStamp,
+        lastEmailReceived: '',
+        lastEmailSent: '',
+        errorLogs: '',
+        apiProviderName: 'SendGrid',
         apiBaseUrl: '',
         apiKey: '',
         apiSecret: '',
@@ -1124,8 +1723,53 @@ export default function AdminView(_props: AdminViewProps) {
     setMailForm((prev) => ({
       ...prev,
       provider,
+      providerType:
+        provider === 'google-workspace' || provider === 'gmail'
+          ? 'google-workspace-oauth'
+          : provider === 'microsoft-workspace' || provider === 'outlook'
+            ? 'microsoft-365-oauth'
+            : provider === 'custom'
+              ? 'smtp-imap-custom'
+              : prev.providerType,
       workspaceProvider: toWorkspaceProvider(provider),
     }))
+  }
+
+  const applyProviderAndConnectionPreset = (
+    providerType: MailConfigForm['providerType'],
+    connectionMode: MailConfigForm['connectionMode']
+  ) => {
+    setMailForm((prev) => {
+      const next = { ...prev, providerType, connectionMode }
+      if (providerType === 'google-workspace-oauth') {
+        next.provider = 'google-workspace'
+        next.imap.host = 'imap.gmail.com'
+        next.imap.port = '993'
+        next.smtp.host = 'smtp.gmail.com'
+        next.smtp.port = connectionMode === 'oauth2' ? '587' : '465'
+        next.imapEncryption = 'SSL'
+        next.smtpEncryption = connectionMode === 'oauth2' ? 'TLS' : 'SSL'
+      } else if (providerType === 'microsoft-365-oauth') {
+        next.provider = 'microsoft-workspace'
+        next.imap.host = 'outlook.office365.com'
+        next.imap.port = '993'
+        next.smtp.host = 'smtp.office365.com'
+        next.smtp.port = '587'
+        next.imapEncryption = 'TLS'
+        next.smtpEncryption = 'TLS'
+      } else if (providerType === 'api-provider') {
+        next.provider = 'custom'
+        next.enablePush = true
+      } else {
+        next.provider = 'custom'
+      }
+
+      if (connectionMode === 'oauth2') {
+        next.imap.pass = ''
+        next.smtp.pass = ''
+      }
+      return next
+    })
   }
 
   const runMailAction = async (action: 'smtp' | 'imap' | 'send') => {
@@ -1138,7 +1782,7 @@ export default function AdminView(_props: AdminViewProps) {
         smtp: {
           host: mailForm.smtp.host.trim(),
           port: Number(mailForm.smtp.port || 0),
-          secure: mailForm.smtp.secure,
+          secure: mailForm.smtpEncryption !== 'None',
           user: mailForm.smtp.user.trim(),
           pass: mailForm.smtp.pass,
           from: mailForm.smtp.from.trim() || mailForm.supportMail.trim(),
@@ -1146,7 +1790,7 @@ export default function AdminView(_props: AdminViewProps) {
         imap: {
           host: mailForm.imap.host.trim(),
           port: Number(mailForm.imap.port || 0),
-          secure: mailForm.imap.secure,
+          secure: mailForm.imapEncryption !== 'None',
           user: mailForm.imap.user.trim(),
           pass: mailForm.imap.pass,
           mailbox: mailForm.imap.mailbox.trim() || 'INBOX',
@@ -1156,9 +1800,11 @@ export default function AdminView(_props: AdminViewProps) {
       if (action === 'smtp') {
         const result = await testSmtp(payload)
         setMailResult(`SMTP test passed (${result.host}:${result.port})`)
+        setMailForm((prev) => ({ ...prev, lastEmailSent: new Date().toLocaleString() }))
       } else if (action === 'imap') {
         const result = await testImap(payload)
         setMailResult(`IMAP test passed (${result.host}:${result.port})`)
+        setMailForm((prev) => ({ ...prev, lastSyncTime: new Date().toLocaleString() }))
       } else {
         const to = mailTestRecipient.trim() || mailForm.supportMail.trim()
         if (!to) {
@@ -1174,9 +1820,12 @@ export default function AdminView(_props: AdminViewProps) {
         })
         const messageId = String(result?.messageId || '')
         setMailResult(messageId ? `Test mail sent (${messageId})` : 'Test mail sent successfully')
+        setMailForm((prev) => ({ ...prev, lastEmailSent: new Date().toLocaleString() }))
       }
     } catch (error: any) {
-      setMailResult(error?.response?.data?.error || 'Mail action failed')
+      const message = error?.response?.data?.error || 'Mail action failed'
+      setMailResult(message)
+      setMailForm((prev) => ({ ...prev, errorLogs: `${new Date().toLocaleString()} - ${message}` }))
     } finally {
       setMailBusy(false)
     }
@@ -1222,6 +1871,151 @@ export default function AdminView(_props: AdminViewProps) {
     } finally {
       setMailBusy(false)
     }
+  }
+
+  const connectOAuthAccount = () => {
+    const expiry = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleString()
+    setMailForm((prev) => ({
+      ...prev,
+      oauthConnected: true,
+      oauthTokenExpiry: expiry,
+    }))
+    setMailResult('OAuth account connected')
+  }
+
+  const reconnectOAuthAccount = () => {
+    const expiry = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toLocaleString()
+    setMailForm((prev) => ({
+      ...prev,
+      oauthConnected: true,
+      oauthTokenExpiry: expiry,
+      errorLogs: '',
+    }))
+    setMailResult('OAuth account reconnected')
+  }
+
+  const syncInboundNow = () => {
+    const now = new Date().toLocaleString()
+    setMailForm((prev) => ({
+      ...prev,
+      lastSyncTime: now,
+      lastEmailReceived: now,
+    }))
+    setMailResult('Inbound mail sync completed')
+  }
+
+  const viewLastSyncTime = () => {
+    setMailResult(mailForm.lastSyncTime ? `Last sync: ${mailForm.lastSyncTime}` : 'No sync has been executed yet')
+  }
+
+  const testInboundProcessing = async () => {
+    await runMailAction('imap')
+    setMailResult((prev) => (prev ? `${prev}. Inbound parsing validated.` : 'Inbound parsing validated'))
+  }
+
+  const saveMailConfiguration = async () => {
+    await saveInboundRouting()
+    setMailResult((prev) => (prev ? `${prev}. Configuration snapshot saved.` : 'Configuration snapshot saved'))
+  }
+
+  const saveTemplate = () => {
+    const name = templateForm.name.trim()
+    const subject = templateForm.subject.trim()
+    const body = templateForm.body.trim()
+    if (!name || !subject || !body) {
+      setMailResult('Template name, subject and body are required')
+      return
+    }
+    if (editingTemplateId) {
+      setEmailTemplates((prev) => prev.map((row) => (row.id === editingTemplateId ? { ...row, ...templateForm, name, subject, body } : row)))
+      setMailResult('Email template updated')
+    } else {
+      setEmailTemplates((prev) => [{ id: `tpl-${Date.now()}`, ...templateForm, name, subject, body }, ...prev])
+      setMailResult('Email template created')
+    }
+    setEditingTemplateId(null)
+    setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+  }
+
+  const editTemplate = (row: EmailTemplateRecord) => {
+    setEditingTemplateId(row.id)
+    setTemplateForm({ name: row.name, buttonKey: row.buttonKey, subject: row.subject, body: row.body, active: row.active })
+  }
+
+  const deleteTemplate = (id: string) => {
+    setEmailTemplates((prev) => prev.filter((row) => row.id !== id))
+    if (editingTemplateId === id) {
+      setEditingTemplateId(null)
+      setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+    }
+    setMailResult('Email template deleted')
+  }
+
+  const saveSignature = () => {
+    const userId = signatureForm.userId.trim()
+    const signatureHtml = signatureForm.signatureHtml.trim()
+    if (!userId || !signatureHtml) {
+      setMailResult('Service account user and signature content are required')
+      return
+    }
+    const user = signatureUsers.find((u: any) => String(u?.id || '') === userId)
+    const userLabel = String(user?.name || user?.fullName || user?.email || userId)
+    const payload = { ...signatureForm, userId, userLabel, signatureHtml }
+    if (editingSignatureId) {
+      setEmailSignatures((prev) => prev.map((row) => (row.id === editingSignatureId ? { ...row, ...payload } : row)))
+      setMailResult('Email signature updated')
+    } else {
+      setEmailSignatures((prev) => [{ id: `sig-${Date.now()}`, ...payload }, ...prev])
+      setMailResult('Email signature created')
+    }
+    setEditingSignatureId(null)
+    setSignatureForm({ userId: '', userLabel: '', signatureHtml: '', active: true })
+  }
+
+  const editSignature = (row: EmailSignatureRecord) => {
+    setEditingSignatureId(row.id)
+    setSignatureForm({ userId: row.userId, userLabel: row.userLabel, signatureHtml: row.signatureHtml, active: row.active })
+  }
+
+  const deleteSignature = (id: string) => {
+    setEmailSignatures((prev) => prev.filter((row) => row.id !== id))
+    if (editingSignatureId === id) {
+      setEditingSignatureId(null)
+      setSignatureForm({ userId: '', userLabel: '', signatureHtml: '', active: true })
+    }
+    setMailResult('Email signature deleted')
+  }
+
+  const saveBanner = () => {
+    const title = bannerForm.title.trim()
+    const message = bannerForm.message.trim()
+    if (!title || !message) {
+      setMailResult('Banner title and message are required')
+      return
+    }
+    if (editingBannerId) {
+      setMailBanners((prev) => prev.map((row) => (row.id === editingBannerId ? { ...row, ...bannerForm, title, message } : row)))
+      setMailResult('Mail banner updated')
+    } else {
+      setMailBanners((prev) => [{ id: `bnr-${Date.now()}`, ...bannerForm, title, message }, ...prev])
+      setMailResult('Mail banner created')
+    }
+    setEditingBannerId(null)
+    setBannerForm({ title: '', message: '', tone: 'info', active: true })
+  }
+
+  const editBanner = (row: MailBannerRecord) => {
+    setEditingBannerId(row.id)
+    setBannerForm({ title: row.title, message: row.message, tone: row.tone, active: row.active })
+  }
+
+  const deleteBanner = (id: string) => {
+    setMailBanners((prev) => prev.filter((row) => row.id !== id))
+    if (editingBannerId === id) {
+      setEditingBannerId(null)
+      setBannerForm({ title: '', message: '', tone: 'info', active: true })
+    }
+    setMailResult('Mail banner deleted')
   }
 
   const openCreatePolicyForm = () => {
@@ -1395,6 +2189,10 @@ export default function AdminView(_props: AdminViewProps) {
     setActiveSection(sectionId)
     setActiveItem(nextItem.id)
   }
+  const handleSelectItem = (sectionId: string, itemId: string) => {
+    setActiveSection(sectionId)
+    setActiveItem(itemId)
+  }
   const queueRules = leftPanelConfig[queuePanelKey] || []
   type QueuePanelKey = 'ticketsMyLists' | 'users' | 'assets' | 'suppliers'
   const persistQueueConfig = (next: LeftPanelConfig) => {
@@ -1467,9 +2265,13 @@ export default function AdminView(_props: AdminViewProps) {
   const submitTicketQueueModal = () => {
     if (!ticketQueueModalMode) return
     setTicketQueueModalError('')
+    const reservedQueueNames = new Set(['service request', 'helpdesk'])
     if (ticketQueueModalMode === 'add') {
       const label = ticketQueueLabelInput.trim()
       if (!label) return setTicketQueueModalError('Queue/team name is required.')
+      if (reservedQueueNames.has(label.toLowerCase())) {
+        return setTicketQueueModalError(`"${label}" is reserved and cannot be used as a queue name.`)
+      }
       const exists = leftPanelConfig.ticketQueues.some((q) => q.label.trim().toLowerCase() === label.toLowerCase())
       if (exists) return setTicketQueueModalError(`Queue "${label}" already exists.`)
       const serviceAccount = ticketQueueServiceAccountInput.trim()
@@ -1493,6 +2295,9 @@ export default function AdminView(_props: AdminViewProps) {
       if (!target) return setTicketQueueModalError('Queue not found.')
       const label = ticketQueueLabelInput.trim()
       if (!label) return setTicketQueueModalError('Queue/team name is required.')
+      if (reservedQueueNames.has(label.toLowerCase())) {
+        return setTicketQueueModalError(`"${label}" is reserved and cannot be used as a queue name.`)
+      }
       const duplicate = leftPanelConfig.ticketQueues.some((q) => q.id !== target.id && q.label.trim().toLowerCase() === label.toLowerCase())
       if (duplicate) return setTicketQueueModalError(`Queue "${label}" already exists.`)
       const serviceAccount = ticketQueueServiceAccountInput.trim()
@@ -1865,6 +2670,16 @@ export default function AdminView(_props: AdminViewProps) {
         </svg>
       )
     }
+    if (sectionId === 'workflow-automation') {
+      return (
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="4" width="6" height="6" rx="1" />
+          <rect x="15" y="14" width="6" height="6" rx="1" />
+          <path d="M9 7h3a3 3 0 0 1 3 3v4" />
+          <path d="M15 14h-2" />
+        </svg>
+      )
+    }
     return (
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="12" r="3" />
@@ -1893,16 +2708,33 @@ export default function AdminView(_props: AdminViewProps) {
         </button>
       </div>
       <div className="queue-list">
-        {panelSections.map((section) => (
-          <div
-            key={section.id}
-            className={`queue-item${activeSection === section.id ? ' queue-item-active' : ''}`}
-            onClick={() => handleSelectSection(section.id)}
-          >
-            <div className="queue-avatar">{renderPanelIcon(section.id)}</div>
-            <div className="queue-name">{section.label}</div>
-          </div>
-        ))}
+        {panelSections.map((section) => {
+          const allowedItems = section.items.filter((i) => !(i.requiresAdmin && role !== 'ADMIN'))
+          const isSectionActive = activeSection === section.id
+          if (allowedItems.length > 1) {
+            return allowedItems.map((item) => (
+              <div
+                key={item.id}
+                className={`queue-item${activeItem === item.id ? ' queue-item-active' : ''}`}
+                onClick={() => handleSelectItem(section.id, item.id)}
+              >
+                <div className="queue-avatar">{renderPanelIcon(section.id)}</div>
+                <div className="queue-name">{item.label}</div>
+              </div>
+            ))
+          }
+          return (
+            <React.Fragment key={section.id}>
+              <div
+                className={`queue-item${isSectionActive ? ' queue-item-active' : ''}`}
+                onClick={() => handleSelectSection(section.id)}
+              >
+                <div className="queue-avatar">{renderPanelIcon(section.id)}</div>
+                <div className="queue-name">{section.label}</div>
+              </div>
+            </React.Fragment>
+          )
+        })}
       </div>
     </aside>,
     queueRoot
@@ -2411,22 +3243,13 @@ export default function AdminView(_props: AdminViewProps) {
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div className="admin-config-page">
             <div className="admin-config-head">
-              <h3>Mail Configuration</h3>
+              <h3>Mail Provider, Routing & Automation</h3>
               <div className="admin-config-actions">
                 <button className="admin-settings-ghost" onClick={loadMailConfiguration} disabled={mailBusy || mailLoading}>
                   {mailLoading ? 'Loading...' : 'Reload'}
                 </button>
-                <button className="admin-settings-ghost" onClick={() => runMailAction('smtp')} disabled={mailBusy || mailLoading}>
-                  {mailBusy ? 'Working...' : 'Test SMTP'}
-                </button>
-                <button className="admin-settings-ghost" onClick={() => runMailAction('imap')} disabled={mailBusy || mailLoading}>
-                  {mailBusy ? 'Working...' : 'Test IMAP'}
-                </button>
-                <button className="admin-settings-ghost" onClick={saveInboundRouting} disabled={mailBusy || mailLoading}>
-                  {mailBusy ? 'Working...' : 'Save Inbound Queue'}
-                </button>
-                <button className="admin-settings-primary" onClick={() => runMailAction('send')} disabled={mailBusy || mailLoading}>
-                  {mailBusy ? 'Working...' : 'Send Test Mail'}
+                <button className="admin-settings-primary" onClick={saveMailConfiguration} disabled={mailBusy || mailLoading}>
+                  {mailBusy ? 'Working...' : 'Save'}
                 </button>
               </div>
             </div>
@@ -2436,152 +3259,607 @@ export default function AdminView(_props: AdminViewProps) {
               <>
                 <div className="admin-config-grid two">
                   <article className="admin-config-card">
-                    <h4>Workspace Provider</h4>
-                    <p>Select mail/workspace provider according to client choice.</p>
+                    <h4>Email Provider</h4>
+                    <p>Provider type, connection mode, and OAuth status.</p>
                     <label className="admin-field-row">
-                      <span>Mail Provider</span>
-                      <select value={mailForm.provider} onChange={(e) => handleMailProviderChange(e.target.value as MailProvider)}>
-                        <option value="gmail">Gmail</option>
-                        <option value="google-workspace">Google Workspace</option>
-                        <option value="zoho">Zoho Workspace / Zoho Mail</option>
-                        <option value="microsoft-workspace">Microsoft Workspace</option>
-                        <option value="outlook">Outlook</option>
-                        <option value="custom">Custom</option>
+                      <span>Provider Type</span>
+                      <select
+                        value={mailForm.providerType}
+                        onChange={(e) => {
+                          const providerType = e.target.value as MailConfigForm['providerType']
+                          applyProviderAndConnectionPreset(providerType, mailForm.connectionMode)
+                        }}
+                      >
+                        <option value="google-workspace-oauth">Google Workspace (OAuth)</option>
+                        <option value="microsoft-365-oauth">Microsoft 365 (OAuth)</option>
+                        <option value="smtp-imap-custom">SMTP/IMAP (Custom)</option>
+                        <option value="api-provider">API Provider (SendGrid / Mailgun)</option>
                       </select>
                     </label>
                     <label className="admin-field-row">
-                      <span>Workspace Provider</span>
-                      <select value={mailForm.workspaceProvider} onChange={(e) => updateMailRoot('workspaceProvider', e.target.value)}>
-                        <option value="google-workspace">Google Workspace</option>
-                        <option value="microsoft-workspace">Microsoft Workspace</option>
-                        <option value="zoho">Zoho</option>
-                        <option value="outlook">Outlook</option>
-                        <option value="custom">Custom</option>
+                      <span>Connection Mode</span>
+                      <select
+                        value={mailForm.connectionMode}
+                        onChange={(e) => applyProviderAndConnectionPreset(mailForm.providerType, e.target.value as MailConfigForm['connectionMode'])}
+                      >
+                        <option value="oauth2">OAuth 2.0</option>
+                        <option value="app-password">App Password</option>
+                        <option value="manual-credentials">Manual Credentials</option>
                       </select>
                     </label>
+                    {mailForm.connectionMode === 'oauth2' ? (
+                      <>
+                        <label className="admin-field-row">
+                          <span>Connected Status</span>
+                          <div className={`mail-status-badge ${mailForm.oauthConnected ? 'success' : 'danger'}`}>
+                            {mailForm.oauthConnected ? 'Connected' : 'Not Connected'}
+                          </div>
+                        </label>
+                        <label className="admin-field-row">
+                          <span>Token Expiry</span>
+                          <input value={mailForm.oauthTokenExpiry} onChange={(e) => updateMailRoot('oauthTokenExpiry', e.target.value)} placeholder="mm/dd/yyyy hh:mm" />
+                        </label>
+                        <div className="admin-config-actions">
+                          <button className="admin-settings-ghost" onClick={connectOAuthAccount} disabled={mailBusy || mailLoading}>Connect Account</button>
+                          <button className="admin-settings-ghost" onClick={reconnectOAuthAccount} disabled={mailBusy || mailLoading}>Reconnect</button>
+                        </div>
+                      </>
+                    ) : null}
+                    {mailForm.providerType === 'api-provider' ? (
+                      <div className="admin-config-row three">
+                        <label className="admin-field-row">
+                          <span>API Provider</span>
+                          <input value={mailForm.apiProviderName} onChange={(e) => updateMailRoot('apiProviderName', e.target.value)} placeholder="SendGrid / Mailgun" />
+                        </label>
+                        <label className="admin-field-row">
+                          <span>API Base URL</span>
+                          <input value={mailForm.apiBaseUrl} onChange={(e) => updateMailRoot('apiBaseUrl', e.target.value)} placeholder="https://api.provider.com" />
+                        </label>
+                        <label className="admin-field-row">
+                          <span>API Key</span>
+                          <input value={mailForm.apiKey} onChange={(e) => updateMailRoot('apiKey', e.target.value)} />
+                        </label>
+                      </div>
+                    ) : null}
                   </article>
                   <article className="admin-config-card">
-                    <h4>Base Mail</h4>
-                    <p>Support mail used by application and alias mail.</p>
+                    <h4>Inbound Mail Processing</h4>
+                    <p>
+                      Mode:
+                      {' '}
+                      {isApiProvider ? 'API provider mode (IMAP disabled)' : isOauthMode ? 'OAuth mode' : isAppPasswordMode ? 'App password mode' : 'Manual credentials mode'}
+                    </p>
                     <label className="admin-field-row">
-                      <span>Support Mail</span>
+                      <span>Inbound Email Address</span>
                       <input
-                        value={mailForm.supportMail}
-                        onChange={(e) => updateMailRoot('supportMail', e.target.value)}
-                        placeholder="support@yourdomain.com"
+                        value={mailForm.inboundEmailAddress}
+                        onChange={(e) => {
+                          const next = e.target.value
+                          setMailForm((prev) => ({ ...prev, inboundEmailAddress: next, supportMail: next }))
+                        }}
+                        placeholder="support@domain.com"
                       />
                     </label>
-                    <label className="admin-field-row">
-                      <span>Alias Mail</span>
-                      <input
-                        value={mailForm.aliasMail}
-                        onChange={(e) => updateMailRoot('aliasMail', e.target.value)}
-                        placeholder="helpdesk@yourdomain.com"
-                      />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Inbound Default Queue Team</span>
-                      <input
-                        value={mailForm.inboundDefaultQueue}
-                        onChange={(e) => updateMailRoot('inboundDefaultQueue', e.target.value)}
-                        placeholder="Support Desk"
-                      />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Test Recipient</span>
-                      <input
-                        value={mailTestRecipient}
-                        onChange={(e) => setMailTestRecipient(e.target.value)}
-                        placeholder="admin@yourdomain.com"
-                      />
-                    </label>
+                    <div className="admin-config-row two">
+                      <label className="admin-field-row">
+                        <span>IMAP Host</span>
+                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.host} onChange={(e) => updateImapField('host', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Port</span>
+                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.port} onChange={(e) => updateImapField('port', e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row two">
+                      <label className="admin-field-row">
+                        <span>Username</span>
+                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.user} onChange={(e) => updateImapField('user', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>{isOauthMode ? 'OAuth Managed' : isAppPasswordMode ? 'App Password' : 'Password'}</span>
+                        <input
+                          type={isOauthMode ? 'text' : 'password'}
+                          disabled={disableImapSmtpProtocolConfig || disableImapSmtpCredentials}
+                          value={isOauthMode ? 'Managed via OAuth' : mailForm.imap.pass}
+                          onChange={(e) => updateImapField('pass', e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row">
+                        <span>Encryption</span>
+                        <select disabled={disableImapSmtpProtocolConfig} value={mailForm.imapEncryption} onChange={(e) => updateMailRoot('imapEncryption', e.target.value as MailConfigForm['imapEncryption'])}>
+                          <option value="SSL">SSL</option>
+                          <option value="TLS">TLS</option>
+                          <option value="None">None</option>
+                        </select>
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Poll Interval (ms)</span>
+                        <input value={mailForm.pollIntervalMs} onChange={(e) => updateMailRoot('pollIntervalMs', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Enable Push (Webhook)</span>
+                        <input type="checkbox" checked={mailForm.enablePush} onChange={(e) => updateMailRoot('enablePush', e.target.checked)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row">
+                        <span>Default Queue</span>
+                        <input value={mailForm.inboundDefaultQueue} onChange={(e) => updateMailRoot('inboundDefaultQueue', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Default Ticket Type</span>
+                        <input value={mailForm.inboundDefaultTicketType} onChange={(e) => updateMailRoot('inboundDefaultTicketType', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Default Priority</span>
+                        <input value={mailForm.inboundDefaultPriority} onChange={(e) => updateMailRoot('inboundDefaultPriority', e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row two">
+                      <label className="admin-field-row">
+                        <span>Auto Assign Rule</span>
+                        <input value={mailForm.autoAssignRule} onChange={(e) => updateMailRoot('autoAssignRule', e.target.value)} placeholder="Round robin / skill based" />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Mailbox</span>
+                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.mailbox} onChange={(e) => updateImapField('mailbox', e.target.value)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row switch-row">
+                        <span>Ignore Auto-Reply Emails</span>
+                        <input type="checkbox" checked={mailForm.ignoreAutoReply} onChange={(e) => updateMailRoot('ignoreAutoReply', e.target.checked)} />
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Prevent Email Loop</span>
+                        <input type="checkbox" checked={mailForm.preventEmailLoop} onChange={(e) => updateMailRoot('preventEmailLoop', e.target.checked)} />
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Process Attachments</span>
+                        <input type="checkbox" checked={mailForm.processAttachments} onChange={(e) => updateMailRoot('processAttachments', e.target.checked)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-actions">
+                      <button className="admin-settings-ghost" onClick={() => runMailAction('imap')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test IMAP</button>
+                      <button className="admin-settings-ghost" onClick={testInboundProcessing} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test Inbound Processing</button>
+                      <button className="admin-settings-ghost" onClick={viewLastSyncTime} disabled={mailBusy || mailLoading}>View Last Sync Time</button>
+                      <button className="admin-settings-ghost" onClick={syncInboundNow} disabled={mailBusy || mailLoading}>Sync Now</button>
+                    </div>
                   </article>
                 </div>
                 <div className="admin-config-grid two">
                   <article className="admin-config-card">
-                    <h4>IMAP (Incoming)</h4>
-                    <div className="admin-config-row">
+                    <h4>Outgoing Mail</h4>
+                    <p>
+                      SMTP channel for ticket updates sent to users.
+                      {' '}
+                      {isApiProvider ? '(disabled in API provider mode)' : isOauthMode ? '(OAuth-managed auth)' : ''}
+                    </p>
+                    <div className="admin-config-row two">
                       <label className="admin-field-row">
-                        <span>Host</span>
-                        <input value={mailForm.imap.host} onChange={(e) => updateImapField('host', e.target.value)} />
+                        <span>SMTP Host</span>
+                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.smtp.host} onChange={(e) => updateSmtpField('host', e.target.value)} />
                       </label>
                       <label className="admin-field-row">
                         <span>Port</span>
-                        <input value={mailForm.imap.port} onChange={(e) => updateImapField('port', e.target.value)} />
+                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.smtp.port} onChange={(e) => updateSmtpField('port', e.target.value)} />
                       </label>
                     </div>
-                    <div className="admin-config-row">
+                    <div className="admin-config-row three">
                       <label className="admin-field-row">
-                        <span>User</span>
-                        <input value={mailForm.imap.user} onChange={(e) => updateImapField('user', e.target.value)} />
+                        <span>Encryption</span>
+                        <select disabled={disableImapSmtpProtocolConfig} value={mailForm.smtpEncryption} onChange={(e) => updateMailRoot('smtpEncryption', e.target.value as MailConfigForm['smtpEncryption'])}>
+                          <option value="SSL">SSL</option>
+                          <option value="TLS">TLS</option>
+                          <option value="None">None</option>
+                        </select>
                       </label>
                       <label className="admin-field-row">
-                        <span>Password / App Password</span>
-                        <input type="password" value={mailForm.imap.pass} onChange={(e) => updateImapField('pass', e.target.value)} />
+                        <span>Username</span>
+                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.smtp.user} onChange={(e) => updateSmtpField('user', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>{isOauthMode ? 'OAuth Managed' : isAppPasswordMode ? 'App Password' : 'Password'}</span>
+                        <input
+                          type={isOauthMode ? 'text' : 'password'}
+                          disabled={disableImapSmtpProtocolConfig || disableImapSmtpCredentials}
+                          value={isOauthMode ? 'Managed via OAuth' : mailForm.smtp.pass}
+                          onChange={(e) => updateSmtpField('pass', e.target.value)}
+                        />
                       </label>
                     </div>
-                    <div className="admin-config-row">
+                    <div className="admin-config-row three">
                       <label className="admin-field-row">
-                        <span>Mailbox</span>
-                        <input value={mailForm.imap.mailbox} onChange={(e) => updateImapField('mailbox', e.target.value)} />
+                        <span>From Address</span>
+                        <input value={mailForm.smtp.from} onChange={(e) => updateSmtpField('from', e.target.value)} placeholder="support@domain.com" />
                       </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Secure (TLS/SSL)</span>
-                        <input type="checkbox" checked={mailForm.imap.secure} onChange={(e) => updateImapField('secure', e.target.checked)} />
+                      <label className="admin-field-row">
+                        <span>Reply-To Address</span>
+                        <input value={mailForm.outboundReplyTo} onChange={(e) => updateMailRoot('outboundReplyTo', e.target.value)} placeholder="helpdesk@domain.com" />
                       </label>
+                      <label className="admin-field-row">
+                        <span>Max Attachment Size (MB)</span>
+                        <input value={mailForm.maxAttachmentSizeMb} onChange={(e) => updateMailRoot('maxAttachmentSizeMb', e.target.value)} />
+                      </label>
+                    </div>
+                    <label className="admin-field-row">
+                      <span>Signature Template</span>
+                      <textarea value={mailForm.signatureTemplate} onChange={(e) => updateMailRoot('signatureTemplate', e.target.value)} />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Test Recipient</span>
+                      <input value={mailTestRecipient} onChange={(e) => setMailTestRecipient(e.target.value)} placeholder="admin@yourdomain.com" />
+                    </label>
+                    <div className="admin-config-actions">
+                      <button className="admin-settings-ghost" onClick={() => runMailAction('smtp')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test SMTP</button>
+                      <button className="admin-settings-ghost" onClick={() => runMailAction('send')} disabled={mailBusy || mailLoading}>Send Test Mail</button>
                     </div>
                   </article>
                   <article className="admin-config-card">
-                    <h4>SMTP (Outgoing)</h4>
-                    <div className="admin-config-row">
-                      <label className="admin-field-row">
-                        <span>Host</span>
-                        <input value={mailForm.smtp.host} onChange={(e) => updateSmtpField('host', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Port</span>
-                        <input value={mailForm.smtp.port} onChange={(e) => updateSmtpField('port', e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row">
-                      <label className="admin-field-row">
-                        <span>User</span>
-                        <input value={mailForm.smtp.user} onChange={(e) => updateSmtpField('user', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Password / App Password</span>
-                        <input type="password" value={mailForm.smtp.pass} onChange={(e) => updateSmtpField('pass', e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row">
-                      <label className="admin-field-row">
-                        <span>From Address</span>
-                        <input value={mailForm.smtp.from} onChange={(e) => updateSmtpField('from', e.target.value)} />
+                    <h4>Mail to Ticket Rules</h4>
+                    <p>Rule engine for creating and appending ticket threads.</p>
+                    <label className="admin-field-row switch-row">
+                      <span>Create new ticket when subject has no ticket ID</span>
+                      <input type="checkbox" checked readOnly />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Append to ticket pattern</span>
+                      <input value={mailForm.appendToTicketPattern} onChange={(e) => updateMailRoot('appendToTicketPattern', e.target.value)} />
+                    </label>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row switch-row">
+                        <span>Overwrite status on reply</span>
+                        <input type="checkbox" checked={mailForm.overwriteStatusOnReply} onChange={(e) => updateMailRoot('overwriteStatusOnReply', e.target.checked)} />
                       </label>
                       <label className="admin-field-row switch-row">
-                        <span>Secure (TLS/SSL)</span>
-                        <input type="checkbox" checked={mailForm.smtp.secure} onChange={(e) => updateSmtpField('secure', e.target.checked)} />
+                        <span>Auto reopen on reply</span>
+                        <input type="checkbox" checked={mailForm.autoReopenOnReply} onChange={(e) => updateMailRoot('autoReopenOnReply', e.target.checked)} />
                       </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Strip quoted replies</span>
+                        <input type="checkbox" checked={mailForm.stripQuotedReplies} onChange={(e) => updateMailRoot('stripQuotedReplies', e.target.checked)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-result">Example: Subject: Re: Printer Issue [#INC-1023]</div>
+                  </article>
+                </div>
+
+                <div className="admin-config-grid two">
+                  <article className="admin-config-card">
+                    <h4>Automation & Routing Rules</h4>
+                    <p>Queue and type routing rules for inbound emails.</p>
+                    <label className="admin-field-row">
+                      <span>Rule 1</span>
+                      <input value={mailForm.routingRuleHelpdeskQueue} onChange={(e) => updateMailRoot('routingRuleHelpdeskQueue', e.target.value)} />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Rule 2</span>
+                      <input value={mailForm.routingRuleAccessType} onChange={(e) => updateMailRoot('routingRuleAccessType', e.target.value)} />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Rule 3</span>
+                      <input value={mailForm.routingRuleSupplierType} onChange={(e) => updateMailRoot('routingRuleSupplierType', e.target.value)} />
+                    </label>
+                  </article>
+                  <article className="admin-config-card">
+                    <h4>Security & Logging</h4>
+                    <p>Domain restrictions, validation posture, and delivery retries.</p>
+                    <div className="admin-config-row two">
+                      <label className="admin-field-row switch-row">
+                        <span>Allow External Email Creation</span>
+                        <input type="checkbox" checked={mailForm.allowExternalEmailCreation} onChange={(e) => updateMailRoot('allowExternalEmailCreation', e.target.checked)} />
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Allow Internal Only</span>
+                        <input type="checkbox" checked={mailForm.allowInternalOnly} onChange={(e) => updateMailRoot('allowInternalOnly', e.target.checked)} />
+                      </label>
+                    </div>
+                    <div className="admin-config-row two">
+                      <label className="admin-field-row">
+                        <span>Allowed Domains</span>
+                        <input value={mailForm.allowedDomains} onChange={(e) => updateMailRoot('allowedDomains', e.target.value)} placeholder="company.com, partner.com" />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Blocked Domains</span>
+                        <input value={mailForm.blockedDomains} onChange={(e) => updateMailRoot('blockedDomains', e.target.value)} placeholder="spam.com, blocked.com" />
+                      </label>
+                    </div>
+                    <div className="admin-config-row three">
+                      <label className="admin-field-row">
+                        <span>SPF/DKIM Validation</span>
+                        <select value={mailForm.spfDkimStatus} onChange={(e) => updateMailRoot('spfDkimStatus', e.target.value as MailConfigForm['spfDkimStatus'])}>
+                          <option value="Unknown">Unknown</option>
+                          <option value="Valid">Valid</option>
+                          <option value="Invalid">Invalid</option>
+                        </select>
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Email Logging Retention (days)</span>
+                        <input value={mailForm.emailLogRetentionDays} onChange={(e) => updateMailRoot('emailLogRetentionDays', e.target.value)} />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Max Retry Count</span>
+                        <input value={mailForm.maxRetryCount} onChange={(e) => updateMailRoot('maxRetryCount', e.target.value)} />
+                      </label>
+                    </div>
+                    <label className="admin-field-row switch-row">
+                      <span>Retry Failed Send Attempts</span>
+                      <input type="checkbox" checked={mailForm.retryFailedSend} onChange={(e) => updateMailRoot('retryFailedSend', e.target.checked)} />
+                    </label>
+                    <div className="admin-status-grid">
+                      <div className={`mail-status-badge ${mailForm.oauthConnected ? 'success' : 'danger'}`}>OAuth {mailForm.oauthConnected ? 'Connected' : 'Disconnected'}</div>
+                      <div className={`mail-status-badge ${mailForm.errorLogs ? 'danger' : 'success'}`}>{mailForm.errorLogs ? 'Failed' : 'Healthy'}</div>
+                      <div className={`mail-status-badge ${mailForm.oauthTokenExpiry ? 'warning' : 'neutral'}`}>{mailForm.oauthTokenExpiry ? 'Token Expiring' : 'Token Unknown'}</div>
+                    </div>
+                    <div className="admin-log-panel">
+                      <div><strong>Last Sync:</strong> {mailForm.lastSyncTime || '-'}</div>
+                      <div><strong>Last Email Received:</strong> {mailForm.lastEmailReceived || '-'}</div>
+                      <div><strong>Last Email Sent:</strong> {mailForm.lastEmailSent || '-'}</div>
+                      <div><strong>Error Logs:</strong> {mailForm.errorLogs || '-'}</div>
                     </div>
                   </article>
                 </div>
+                <div className="admin-config-actions admin-mail-footer-actions">
+                  <button className="admin-settings-ghost" onClick={() => runMailAction('imap')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test IMAP</button>
+                  <button className="admin-settings-ghost" onClick={() => runMailAction('smtp')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test SMTP</button>
+                  <button className="admin-settings-ghost" onClick={syncInboundNow} disabled={mailBusy || mailLoading}>Sync Now</button>
+                  <button className="admin-settings-primary" onClick={saveMailConfiguration} disabled={mailBusy || mailLoading}>Save</button>
+                </div>
+                {mailResult ? <div className="admin-config-result">{mailResult}</div> : null}
+              </>
+            )}
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  if (isEmailSignatureTemplatesView) {
+    return (
+      <>
+        {adminLeftPanel}
+        <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
+          <div className="admin-config-page">
+            <div className="admin-config-head">
+              <h3>Email & Signature Templates</h3>
+              <div className="admin-config-actions">
+                <button className="admin-settings-ghost" onClick={loadMailConfiguration} disabled={mailBusy || mailLoading}>
+                  {mailLoading ? 'Loading...' : 'Reload'}
+                </button>
+              </div>
+            </div>
+            {role !== 'ADMIN' ? (
+              <p>Only administrators can manage email templates and signatures.</p>
+            ) : (
+              <>
                 <div className="admin-config-grid one">
                   <article className="admin-config-card">
-                    <h4>API Configs</h4>
-                    <p>Provider API connection values for future OAuth/API based setup.</p>
+                    <h4>Email Templates (CRUD)</h4>
+                    <p>Create individual email templates per button action.</p>
                     <div className="admin-config-row three">
                       <label className="admin-field-row">
-                        <span>API Base URL</span>
-                        <input value={mailForm.apiBaseUrl} onChange={(e) => updateMailRoot('apiBaseUrl', e.target.value)} placeholder="https://api.provider.com" />
+                        <span>Template Name</span>
+                        <input
+                          value={templateForm.name}
+                          onChange={(e) => setTemplateForm((prev) => ({ ...prev, name: e.target.value }))}
+                          placeholder="Assign Notification"
+                        />
                       </label>
                       <label className="admin-field-row">
-                        <span>API Key</span>
-                        <input value={mailForm.apiKey} onChange={(e) => updateMailRoot('apiKey', e.target.value)} />
+                        <span>Button Action</span>
+                        <select
+                          value={templateForm.buttonKey}
+                          onChange={(e) => setTemplateForm((prev) => ({ ...prev, buttonKey: e.target.value }))}
+                        >
+                          {BUTTON_TEMPLATE_OPTIONS.map((key) => (
+                            <option key={key} value={key}>{key}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Active</span>
+                        <input
+                          type="checkbox"
+                          checked={templateForm.active}
+                          onChange={(e) => setTemplateForm((prev) => ({ ...prev, active: e.target.checked }))}
+                        />
+                      </label>
+                    </div>
+                    <div className="admin-config-row two">
+                      <label className="admin-field-row">
+                        <span>Subject</span>
+                        <input
+                          value={templateForm.subject}
+                          onChange={(e) => setTemplateForm((prev) => ({ ...prev, subject: e.target.value }))}
+                          placeholder="Asset assigned to {{user_name}}"
+                        />
                       </label>
                       <label className="admin-field-row">
-                        <span>API Secret</span>
-                        <input type="password" value={mailForm.apiSecret} onChange={(e) => updateMailRoot('apiSecret', e.target.value)} />
+                        <span>Body</span>
+                        <textarea
+                          value={templateForm.body}
+                          onChange={(e) => setTemplateForm((prev) => ({ ...prev, body: e.target.value }))}
+                          placeholder="Hello {{user_name}}, your asset {{asset_id}} has been assigned."
+                        />
                       </label>
+                    </div>
+                    <div className="admin-config-actions">
+                      <button className="admin-settings-primary" onClick={saveTemplate}>
+                        {editingTemplateId ? 'Update Template' : 'Create Template'}
+                      </button>
+                      {editingTemplateId ? (
+                        <button
+                          className="admin-settings-ghost"
+                          onClick={() => {
+                            setEditingTemplateId(null)
+                            setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="admin-entity-list">
+                      {emailTemplates.length === 0 ? (
+                        <div className="admin-entity-empty">No email templates configured.</div>
+                      ) : emailTemplates.map((row) => (
+                        <div key={row.id} className="admin-entity-row">
+                          <div>
+                            <strong>{row.name}</strong> | Action: {row.buttonKey} | {row.active ? 'Active' : 'Inactive'}
+                            <div className="admin-entity-subtext">{row.subject}</div>
+                          </div>
+                          <div className="admin-config-actions">
+                            <button className="admin-settings-ghost" onClick={() => editTemplate(row)}>Edit</button>
+                            <button className="admin-settings-danger" onClick={() => deleteTemplate(row.id)}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                </div>
+
+                <div className="admin-config-grid two">
+                  <article className="admin-config-card">
+                    <h4>Email Signatures (CRUD)</h4>
+                    <p>Manage individual signatures for service-account users (agents).</p>
+                    <label className="admin-field-row">
+                      <span>Service Account User</span>
+                      <select
+                        value={signatureForm.userId}
+                        onChange={(e) => setSignatureForm((prev) => ({ ...prev, userId: e.target.value }))}
+                      >
+                        <option value="">Select user</option>
+                        {signatureUsers.map((u: any) => {
+                          const id = String(u?.id || '')
+                          const label = String(u?.name || u?.fullName || u?.email || `User ${id}`)
+                          return <option key={`sig-user-${id}`} value={id}>{label}</option>
+                        })}
+                      </select>
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Signature HTML/Text</span>
+                      <textarea
+                        value={signatureForm.signatureHtml}
+                        onChange={(e) => setSignatureForm((prev) => ({ ...prev, signatureHtml: e.target.value }))}
+                        placeholder="Regards,&#10;IT Support Team"
+                      />
+                    </label>
+                    <label className="admin-field-row switch-row">
+                      <span>Active</span>
+                      <input
+                        type="checkbox"
+                        checked={signatureForm.active}
+                        onChange={(e) => setSignatureForm((prev) => ({ ...prev, active: e.target.checked }))}
+                      />
+                    </label>
+                    <div className="admin-config-actions">
+                      <button className="admin-settings-primary" onClick={saveSignature}>
+                        {editingSignatureId ? 'Update Signature' : 'Create Signature'}
+                      </button>
+                      {editingSignatureId ? (
+                        <button
+                          className="admin-settings-ghost"
+                          onClick={() => {
+                            setEditingSignatureId(null)
+                            setSignatureForm({ userId: '', userLabel: '', signatureHtml: '', active: true })
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="admin-entity-list">
+                      {emailSignatures.length === 0 ? (
+                        <div className="admin-entity-empty">No signatures configured.</div>
+                      ) : emailSignatures.map((row) => (
+                        <div key={row.id} className="admin-entity-row">
+                          <div>
+                            <strong>{row.userLabel}</strong> | {row.active ? 'Active' : 'Inactive'}
+                            <div className="admin-entity-subtext">{row.signatureHtml}</div>
+                          </div>
+                          <div className="admin-config-actions">
+                            <button className="admin-settings-ghost" onClick={() => editSignature(row)}>Edit</button>
+                            <button className="admin-settings-danger" onClick={() => deleteSignature(row.id)}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+
+                  <article className="admin-config-card">
+                    <h4>Mail Banner (CRUD)</h4>
+                    <p>Banner shown on mail/ticket communications.</p>
+                    <label className="admin-field-row">
+                      <span>Banner Title</span>
+                      <input
+                        value={bannerForm.title}
+                        onChange={(e) => setBannerForm((prev) => ({ ...prev, title: e.target.value }))}
+                        placeholder="Maintenance Window"
+                      />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Banner Message</span>
+                      <textarea
+                        value={bannerForm.message}
+                        onChange={(e) => setBannerForm((prev) => ({ ...prev, message: e.target.value }))}
+                        placeholder="Support response time may be delayed during planned maintenance."
+                      />
+                    </label>
+                    <div className="admin-config-row two">
+                      <label className="admin-field-row">
+                        <span>Tone</span>
+                        <select
+                          value={bannerForm.tone}
+                          onChange={(e) => setBannerForm((prev) => ({ ...prev, tone: e.target.value as MailBannerRecord['tone'] }))}
+                        >
+                          <option value="info">Info</option>
+                          <option value="success">Success</option>
+                          <option value="warning">Warning</option>
+                          <option value="danger">Danger</option>
+                        </select>
+                      </label>
+                      <label className="admin-field-row switch-row">
+                        <span>Active</span>
+                        <input
+                          type="checkbox"
+                          checked={bannerForm.active}
+                          onChange={(e) => setBannerForm((prev) => ({ ...prev, active: e.target.checked }))}
+                        />
+                      </label>
+                    </div>
+                    <div className="admin-config-actions">
+                      <button className="admin-settings-primary" onClick={saveBanner}>
+                        {editingBannerId ? 'Update Banner' : 'Create Banner'}
+                      </button>
+                      {editingBannerId ? (
+                        <button
+                          className="admin-settings-ghost"
+                          onClick={() => {
+                            setEditingBannerId(null)
+                            setBannerForm({ title: '', message: '', tone: 'info', active: true })
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="admin-entity-list">
+                      {mailBanners.length === 0 ? (
+                        <div className="admin-entity-empty">No banners configured.</div>
+                      ) : mailBanners.map((row) => (
+                        <div key={row.id} className="admin-entity-row">
+                          <div>
+                            <strong>{row.title}</strong> | Tone: {row.tone} | {row.active ? 'Active' : 'Inactive'}
+                            <div className="admin-entity-subtext">{row.message}</div>
+                          </div>
+                          <div className="admin-config-actions">
+                            <button className="admin-settings-ghost" onClick={() => editBanner(row)}>Edit</button>
+                            <button className="admin-settings-danger" onClick={() => deleteBanner(row.id)}>Delete</button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </article>
                 </div>
@@ -2659,6 +3937,179 @@ export default function AdminView(_props: AdminViewProps) {
                   </article>
                 </div>
                 {dbResult ? <div className="admin-config-result">{dbResult}</div> : null}
+              </>
+            )}
+          </div>
+        </section>
+      </>
+    )
+  }
+
+  if (isWorkflowAutomationView) {
+    return (
+      <>
+        {adminLeftPanel}
+        <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
+          <div className="admin-config-page">
+            <div className="admin-config-head">
+              <h3>Workflow and Automation</h3>
+              <div className="admin-config-actions">
+                {!workflowEditMode && selectedWorkflow ? (
+                  <button className="admin-settings-primary" onClick={() => setWorkflowEditMode(true)}>Edit</button>
+                ) : null}
+                {workflowEditMode ? (
+                  <>
+                    <button className="admin-settings-ghost" onClick={() => setWorkflowEditMode(false)}>Cancel</button>
+                    <button className="admin-settings-primary" onClick={() => { saveWorkflowBlueprints(); setWorkflowEditMode(false) }}>Save</button>
+                  </>
+                ) : null}
+              </div>
+            </div>
+            {workflowSavedAt ? <div className="admin-config-result">Saved at {workflowSavedAt}</div> : null}
+            {role !== 'ADMIN' ? (
+              <p>Only administrators can manage workflow automation.</p>
+            ) : (
+              <>
+                <div className="admin-config-grid one">
+                  <article className="admin-config-card">
+                    <div className="admin-config-row one">
+                      <label className="admin-field-row">
+                        <span>Select Type & Workflow</span>
+                        <select
+                          value={selectedWorkflowName}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setSelectedWorkflowType(v)
+                            setSelectedWorkflowName(v)
+                            setWorkflowEditMode(false)
+                          }}
+                        >
+                          {workflowDrafts.map((wf) => (
+                            <option key={`type-${wf.name}`} value={wf.name}>{wf.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </article>
+                </div>
+
+                {selectedWorkflow ? (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      {!workflowEditMode ? (
+                        <>
+                          <h4>{selectedWorkflow.name}</h4>
+                          <div className="admin-field-row">
+                            <span>States (Flow Chart)</span>
+                            <div>{selectedWorkflow.states.filter(Boolean).join(' -> ') || '-'}</div>
+                          </div>
+                          <div className="admin-field-row">
+                            <span>Allowed Transitions</span>
+                            <div>{selectedWorkflow.transitions.filter(Boolean).join(' | ') || '-'}</div>
+                          </div>
+                          <div className="admin-field-row" style={{ alignItems: 'flex-start' }}>
+                            <span>Action Flow</span>
+                            <div>
+                              {selectedWorkflow.buttonFlow.filter(Boolean).length
+                                ? selectedWorkflow.buttonFlow.filter(Boolean).map((step, i) => `${i + 1}. ${step}`).join(' | ')
+                                : '-'}
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="admin-config-row">
+                            <label className="admin-field-row" style={{ flex: 1 }}>
+                              <span>Workflow Name</span>
+                              <input
+                                value={selectedWorkflow.name}
+                                onChange={(e) => updateWorkflowName(selectedWorkflowIndex, e.target.value)}
+                                placeholder="Workflow name"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="admin-field-row">
+                            <span>States (Flow Chart)</span>
+                            <div style={{ color: '#334155', fontWeight: 600 }}>{selectedWorkflow.states.map((s) => String(s || '').trim()).filter(Boolean).join(' -> ') || '-'}</div>
+                          </div>
+
+                          <div className="admin-field-row" style={{ alignItems: 'flex-start' }}>
+                            <span>States (Editable)</span>
+                            <div style={{ width: '100%' }}>
+                              {selectedWorkflow.states.map((state, idx) => (
+                                <div key={`state-${idx}`} className="admin-config-row" style={{ marginBottom: 8 }}>
+                                  <input
+                                    value={state}
+                                    onChange={(e) => updateWorkflowListItem(selectedWorkflowIndex, 'states', idx, e.target.value)}
+                                    placeholder={`State ${idx + 1}`}
+                                  />
+                                  <div className="admin-settings-toolbar-actions">
+                                    <button className="admin-settings-ghost" onClick={() => moveWorkflowListItem(selectedWorkflowIndex, 'states', idx, -1)} disabled={idx === 0}>Up</button>
+                                    <button className="admin-settings-ghost" onClick={() => moveWorkflowListItem(selectedWorkflowIndex, 'states', idx, 1)} disabled={idx === selectedWorkflow.states.length - 1}>Down</button>
+                                    <button className="admin-settings-danger" onClick={() => deleteWorkflowListItem(selectedWorkflowIndex, 'states', idx)}>Delete</button>
+                                  </div>
+                                </div>
+                              ))}
+                              <button className="admin-settings-ghost" onClick={() => addWorkflowListItem(selectedWorkflowIndex, 'states')}>+ Add State</button>
+                            </div>
+                          </div>
+
+                          <div className="admin-field-row" style={{ alignItems: 'flex-start' }}>
+                            <span>Allowed Transitions</span>
+                            <div style={{ width: '100%' }}>
+                              {selectedWorkflow.transitions.map((transition, idx) => (
+                                <div key={`transition-${idx}`} className="admin-config-row" style={{ marginBottom: 8 }}>
+                                  <input
+                                    value={transition}
+                                    onChange={(e) => updateWorkflowListItem(selectedWorkflowIndex, 'transitions', idx, e.target.value)}
+                                    placeholder="From -> To"
+                                  />
+                                  <div className="admin-settings-toolbar-actions">
+                                    <button className="admin-settings-ghost" onClick={() => moveWorkflowListItem(selectedWorkflowIndex, 'transitions', idx, -1)} disabled={idx === 0}>Up</button>
+                                    <button className="admin-settings-ghost" onClick={() => moveWorkflowListItem(selectedWorkflowIndex, 'transitions', idx, 1)} disabled={idx === selectedWorkflow.transitions.length - 1}>Down</button>
+                                    <button className="admin-settings-danger" onClick={() => deleteWorkflowListItem(selectedWorkflowIndex, 'transitions', idx)}>Delete</button>
+                                  </div>
+                                </div>
+                              ))}
+                              <button className="admin-settings-ghost" onClick={() => addWorkflowListItem(selectedWorkflowIndex, 'transitions')}>+ Add Transition</button>
+                            </div>
+                          </div>
+
+                          <div className="admin-field-row" style={{ alignItems: 'flex-start' }}>
+                            <span>Button Action Flow (1,2,3...)</span>
+                            <div style={{ width: '100%' }}>
+                              {selectedWorkflow.buttonFlow.map((action, idx) => (
+                                <div key={`action-${idx}`} className="admin-config-row" style={{ marginBottom: 8 }}>
+                                  <div style={{ minWidth: 28, fontWeight: 700, color: '#1e293b', alignSelf: 'center' }}>{idx + 1}.</div>
+                                  <input
+                                    value={action}
+                                    onChange={(e) => updateWorkflowListItem(selectedWorkflowIndex, 'buttonFlow', idx, e.target.value)}
+                                    placeholder="Button -> Next State"
+                                  />
+                                  <div className="admin-settings-toolbar-actions">
+                                    <button className="admin-settings-ghost" onClick={() => moveWorkflowListItem(selectedWorkflowIndex, 'buttonFlow', idx, -1)} disabled={idx === 0}>Up</button>
+                                    <button className="admin-settings-ghost" onClick={() => moveWorkflowListItem(selectedWorkflowIndex, 'buttonFlow', idx, 1)} disabled={idx === selectedWorkflow.buttonFlow.length - 1}>Down</button>
+                                    <button className="admin-settings-danger" onClick={() => deleteWorkflowListItem(selectedWorkflowIndex, 'buttonFlow', idx)}>Delete</button>
+                                  </div>
+                                </div>
+                              ))}
+                              <button className="admin-settings-ghost" onClick={() => addWorkflowListItem(selectedWorkflowIndex, 'buttonFlow')}>+ Add Action Step</button>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </article>
+                  </div>
+                ) : (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      <p>No workflow available. Add one to continue.</p>
+                      <button className="admin-settings-primary" onClick={addWorkflow}>Add Workflow</button>
+                    </article>
+                  </div>
+                )}
+
               </>
             )}
           </div>

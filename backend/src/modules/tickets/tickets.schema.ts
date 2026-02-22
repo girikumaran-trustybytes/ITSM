@@ -42,10 +42,8 @@ export const ticketsUpdateBodySchema = z.object({
   requesterId: zId.optional(),
 })
 
-const incidentStates = ['New', 'In Progress', 'Awaiting Approval', 'Closed', 'Rejected'] as const
-
 export const ticketsTransitionBodySchema = z.object({
-  to: z.enum(incidentStates),
+  to: z.string().min(1),
 }).refine((val) => val.to.trim().length > 0, {
   message: 'Missing "to" state',
   path: ['to'],

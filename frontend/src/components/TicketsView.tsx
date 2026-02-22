@@ -33,6 +33,10 @@ export type Incident = {
   lastActionTime: string
   assignedAgentId?: string
   assignedAgentName?: string
+  createdAt?: string
+  updatedAt?: string
+  closedAt?: string
+  closedByName?: string
 }
 
 export default function TicketsView() {
@@ -62,7 +66,13 @@ export default function TicketsView() {
   const [assetList, setAssetList] = useState<any[]>([])
   const [assetQuery, setAssetQuery] = useState('')
   const [assetAssignId, setAssetAssignId] = useState<number | ''>('')
+  const [slaNowMs, setSlaNowMs] = useState(() => Date.now())
   const [activeDetailTab, setActiveDetailTab] = useState('Progress')
+  const [isCompactDetailLayout, setIsCompactDetailLayout] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth
+    return viewportWidth <= 1360
+  })
   const [showActionComposer, setShowActionComposer] = useState(false)
   const [showInternalNoteEditor, setShowInternalNoteEditor] = useState(false)
   const [slaPolicies, setSlaPolicies] = useState<any[]>([])
@@ -158,6 +168,47 @@ export default function TicketsView() {
     return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
   }
 
+  const toTimestamp = (raw: any): number | null => {
+    if (!raw) return null
+    const d = new Date(raw)
+    const ms = d.getTime()
+    return Number.isNaN(ms) ? null : ms
+  }
+
+  const formatSlaClock = (remainingMs: number) => {
+    const negative = remainingMs < 0
+    const abs = Math.abs(Math.floor(remainingMs / 1000))
+    const hh = Math.floor(abs / 3600)
+    const mm = Math.floor((abs % 3600) / 60)
+    const ss = abs % 60
+    const core = hh > 0
+      ? `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+      : `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+    return negative ? `-${core}` : core
+  }
+
+  const formatElapsedClock = (elapsedMs: number) => {
+    const totalMinutes = Math.max(0, Math.floor(elapsedMs / 60_000))
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  }
+
+  const getSlaElapsedColor = (elapsedPercent: number) => {
+    const p = Math.max(0, Math.min(100, Math.round(elapsedPercent / 10) * 10))
+    if (p <= 0) return '#006400'
+    if (p <= 10) return '#008000'
+    if (p <= 20) return '#32CD32'
+    if (p <= 30) return '#9ACD32'
+    if (p <= 40) return '#FFD700'
+    if (p <= 50) return '#FFA500'
+    if (p <= 60) return '#FF8C00'
+    if (p <= 70) return '#FF6A00'
+    if (p <= 80) return '#FF4500'
+    if (p <= 90) return '#FF0000'
+    return '#8B0000'
+  }
+
   const applySlaPriority = async (priority: 'Critical' | 'High' | 'Medium' | 'Low') => {
     if (!selectedTicket) return
     try {
@@ -227,6 +278,11 @@ export default function TicketsView() {
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setSlaNowMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
   }, [])
 
   React.useEffect(() => {
@@ -320,7 +376,11 @@ export default function TicketsView() {
         lastAction: '',
         lastActionTime: '',
         assignedAgentId: t.assignedTo?.id || t.assignee?.id,
-        assignedAgentName: t.assignedTo?.name || t.assignee?.name
+        assignedAgentName: t.assignedTo?.name || t.assignee?.name,
+        createdAt: t.createdAt || undefined,
+        updatedAt: t.updatedAt || undefined,
+        closedAt: t.closedAt || undefined,
+        closedByName: t.closedBy?.name || t.closedByName || undefined,
       }))
       setIncidents(mapped)
     } catch (err) {
@@ -382,6 +442,10 @@ export default function TicketsView() {
         lastActionTime: '',
         assignedAgentId: d.assignedTo?.id || d.assignee?.id,
         assignedAgentName: d.assignedTo?.name || d.assignee?.name,
+        createdAt: d.createdAt || undefined,
+        updatedAt: d.updatedAt || undefined,
+        closedAt: d.closedAt || undefined,
+        closedByName: d.closedBy?.name || d.closedByName || undefined,
       }
       setSelectedTicket(mapped)
       setEndUser(inferInboundEndUser(d))
@@ -565,6 +629,7 @@ export default function TicketsView() {
     id: 80,
     summary: 200,
     category: 120,
+    sla: 140,
     priority: 80,
     type: 100,
     endUser: 140,
@@ -579,6 +644,7 @@ export default function TicketsView() {
     id: 100,
     subject: 400,
     category: 200,
+    sla: 160,
     priority: 100,
     type: 100,
     endUser: 160,
@@ -599,6 +665,7 @@ export default function TicketsView() {
     id: baseColWidths.id,
     summary: (baseColWidths as any).subject ?? 400,
     category: baseColWidths.category,
+    sla: baseColWidths.sla,
     priority: baseColWidths.priority,
     type: baseColWidths.type,
     endUser: baseColWidths.endUser,
@@ -748,7 +815,15 @@ export default function TicketsView() {
         setAssetAssignId(d.asset?.id || '')
         hydrateTimelineFromTicket(d)
         // merge any additional ticket fields (e.g., updated status)
-        setSelectedTicket(prev => prev ? { ...prev, status: d.status || prev.status, dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : prev.dateReported } : prev)
+        setSelectedTicket(prev => prev ? {
+          ...prev,
+          status: d.status || prev.status,
+          dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : prev.dateReported,
+          createdAt: d.createdAt || prev.createdAt,
+          updatedAt: d.updatedAt || prev.updatedAt,
+          closedAt: d.closedAt || prev.closedAt,
+          closedByName: d.closedBy?.name || d.closedByName || prev.closedByName,
+        } : prev)
       }).catch(() => {
         // ignore failures; keep demo state
       })
@@ -875,6 +950,113 @@ export default function TicketsView() {
     const v = (t || '').toLowerCase()
     return v === 'incident' || v === 'fault'
   }
+  const normalizeTicketTypeKey = (value?: string) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+  const getNonIncidentWorkflowButtons = () => {
+    if (!selectedTicket) return []
+    const typeKey = normalizeTicketTypeKey(selectedTicket.type)
+    const status = String(selectedTicket.status || '')
+    const statusKey = status.toLowerCase()
+    const buttons: { label: string; onClick: () => void; className?: string }[] = [{ label: 'Back', onClick: closeDetail }]
+    const go = (to: string, note?: string) => () => applyStatus(to, note || `Status updated to ${to}`)
+
+    if (typeKey === 'servicerequest') {
+      if (statusKey === 'new') {
+        buttons.push({ label: 'Accept', onClick: handleAccept })
+        buttons.push({ label: 'Request Approval', onClick: go('Awaiting Approval') })
+        buttons.push({ label: 'Start', onClick: go('In Progress') })
+        buttons.push({ label: 'Quick Close', onClick: go('Closed') })
+      } else if (statusKey === 'awaiting approval') {
+        buttons.push({ label: 'Approve', onClick: go('In Progress') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'in progress') {
+        buttons.push({ label: 'Fulfill', onClick: go('Fulfilled') })
+      } else if (statusKey === 'fulfilled') {
+        buttons.push({ label: 'Close', onClick: go('Closed') })
+      } else if (statusKey === 'closed') {
+        buttons.push({ label: 'Re-open', onClick: go('In Progress', 'Re-opened') })
+      }
+      return buttons
+    }
+    if (typeKey === 'changerequestassetreplacement' || typeKey === 'changerequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Verify Asset', onClick: go('Under Verification') })
+      else if (statusKey === 'under verification') buttons.push({ label: 'Send for Approval', onClick: go('Awaiting Approval') })
+      else if (statusKey === 'awaiting approval') {
+        buttons.push({ label: 'Approve', onClick: go('Approved') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'approved') {
+        buttons.push({ label: 'Start Procurement', onClick: go('Procurement') })
+        buttons.push({ label: 'Start Implementation', onClick: go('In Progress') })
+      } else if (statusKey === 'procurement') buttons.push({ label: 'Start Implementation', onClick: go('In Progress') })
+      else if (statusKey === 'in progress') buttons.push({ label: 'Complete Change', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    if (typeKey === 'accessrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Send to Manager', onClick: go('Manager Approval') })
+      else if (statusKey === 'manager approval') {
+        buttons.push({ label: 'Approve', onClick: go('IT Approval') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'it approval') buttons.push({ label: 'IT Approve', onClick: go('Provisioning') })
+      else if (statusKey === 'provisioning') buttons.push({ label: 'Provision Access', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    if (typeKey === 'newstarterrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Confirm by HR', onClick: go('HR Confirmation') })
+      else if (statusKey === 'hr confirmation') buttons.push({ label: 'Start IT Setup', onClick: go('IT Setup') })
+      else if (statusKey === 'it setup') buttons.push({ label: 'Allocate Asset', onClick: go('Asset Allocation') })
+      else if (statusKey === 'asset allocation') buttons.push({ label: 'Mark Ready', onClick: go('Ready for Joining') })
+      else if (statusKey === 'ready for joining') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    if (typeKey === 'leaverrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'HR Confirm', onClick: go('HR Confirmation') })
+      else if (statusKey === 'hr confirmation') buttons.push({ label: 'Revoke Access', onClick: go('Access Revoked') })
+      else if (statusKey === 'access revoked') buttons.push({ label: 'Collect Asset', onClick: go('Asset Collected') })
+      else if (statusKey === 'asset collected') buttons.push({ label: 'Complete Offboarding', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    if (typeKey === 'task') {
+      if (statusKey === 'new') buttons.push({ label: 'Accept', onClick: go('Assigned') })
+      else if (statusKey === 'assigned') buttons.push({ label: 'Start', onClick: go('In Progress') })
+      else if (statusKey === 'in progress') buttons.push({ label: 'Complete', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    if (typeKey === 'softwarerequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Request Approval', onClick: go('Manager Approval') })
+      else if (statusKey === 'manager approval') {
+        buttons.push({ label: 'Budget Approve', onClick: go('Budget Approval') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'budget approval') buttons.push({ label: 'Start Procurement', onClick: go('Procurement') })
+      else if (statusKey === 'procurement') buttons.push({ label: 'Install Software', onClick: go('Installation') })
+      else if (statusKey === 'installation') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    if (typeKey === 'hrrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Send to HR', onClick: go('HR Review') })
+      else if (statusKey === 'hr review') {
+        buttons.push({ label: 'Start Review', onClick: go('In Progress') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'in progress') buttons.push({ label: 'Resolve', onClick: go('Resolved') })
+      else if (statusKey === 'resolved') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    if (typeKey === 'peripheralrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Check Stock', onClick: go('Stock Check') })
+      else if (statusKey === 'stock check') {
+        buttons.push({ label: 'Request Approval', onClick: go('Approval') })
+        buttons.push({ label: 'Issue Asset', onClick: go('Issued') })
+      } else if (statusKey === 'approval') {
+        buttons.push({ label: 'Issue Asset', onClick: go('Issued') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'issued') buttons.push({ label: 'Close', onClick: go('Closed') })
+      return buttons
+    }
+    return buttons
+  }
 
   const closeDetail = () => {
     setShowDetailView(false)
@@ -969,7 +1151,7 @@ export default function TicketsView() {
 
   const getActionButtons = () => {
     if (!selectedTicket) return []
-    if (!isIncidentOrFault(selectedTicket.type)) return []
+    if (!isIncidentOrFault(selectedTicket.type)) return getNonIncidentWorkflowButtons()
     if (user?.role === 'USER') {
       return [{ label: 'Back', onClick: closeDetail }]
     }
@@ -1038,14 +1220,19 @@ export default function TicketsView() {
   const visibleTicketQueues = ticketQueues.filter((q) => {
     if (!Array.isArray(q.visibilityRoles) || q.visibilityRoles.length === 0) return true
     return q.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+  }).filter((q) => {
+    const label = String(q.label || '').trim().toLowerCase()
+    // Remove legacy/dev pseudo-queues from rendering.
+    return label !== 'helpdesk' && label !== 'service request'
   })
-  const mapTeam = (incident: Incident) => {
+  const mapTeam = (incident: Incident): { team: string; forcedUnassigned: boolean } => {
     const category = String(incident.category || '').trim()
     const matchedQueue = visibleTicketQueues.find(
       (queue) => queue.label.trim().toLowerCase() === category.toLowerCase()
     )
-    if (matchedQueue) return matchedQueue.label
-    return category || 'General'
+    if (matchedQueue) return { team: matchedQueue.label, forcedUnassigned: false }
+    // Unknown/new categories are routed to Support Desk as unassigned.
+    return { team: 'Support Desk', forcedUnassigned: true }
   }
   const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
   const countWithSupplier = openIncidents.filter((i) => {
@@ -1053,7 +1240,7 @@ export default function TicketsView() {
     return s.includes('supplier')
   }).length
   const teamBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
-    const t = mapTeam(i)
+    const t = mapTeam(i).team
     acc[t] = (acc[t] || 0) + 1
     return acc
   }, {})
@@ -1066,13 +1253,15 @@ export default function TicketsView() {
       if (!key || groups[key]) return
       groups[key] = { total: 0, unassigned: 0, agents: {} }
     })
+    if (!groups['Support Desk']) groups['Support Desk'] = { total: 0, unassigned: 0, agents: {} }
 
     openIncidents.forEach((incident) => {
-      const team = mapTeam(incident)
+      const mapped = mapTeam(incident)
+      const team = mapped.team
       if (!groups[team]) groups[team] = { total: 0, unassigned: 0, agents: {} }
       groups[team].total += 1
       const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
-      if (!agentKey) {
+      if (mapped.forcedUnassigned || !agentKey) {
         groups[team].unassigned += 1
         return
       }
@@ -1799,6 +1988,7 @@ export default function TicketsView() {
           incident.id.toLowerCase().includes(searchLower) ||
           incident.subject.toLowerCase().includes(searchLower) ||
           incident.category.toLowerCase().includes(searchLower) ||
+          String(incident.slaTimeLeft || '').toLowerCase().includes(searchLower) ||
           incident.priority.toLowerCase().includes(searchLower) ||
           incident.status.toLowerCase().includes(searchLower) ||
           incident.type.toLowerCase().includes(searchLower) ||
@@ -1811,6 +2001,7 @@ export default function TicketsView() {
     if (searchValues.id && !incident.id.toLowerCase().includes(searchValues.id.toLowerCase())) return false
     if (searchValues.subject && !incident.subject.toLowerCase().includes(searchValues.subject.toLowerCase())) return false
       if (searchValues.category && !incident.category.toLowerCase().includes(searchValues.category.toLowerCase())) return false
+      if (searchValues.slaTimeLeft && !String(incident.slaTimeLeft || '').toLowerCase().includes(searchValues.slaTimeLeft.toLowerCase())) return false
       if (searchValues.priority && !incident.priority.toLowerCase().includes(searchValues.priority.toLowerCase())) return false
       if (searchValues.status && !incident.status.toLowerCase().includes(searchValues.status.toLowerCase())) return false
       if (searchValues.type && !incident.type.toLowerCase().includes(searchValues.type.toLowerCase())) return false
@@ -1829,12 +2020,15 @@ export default function TicketsView() {
       const byName = queueFilter.agentName && incident.assignedAgentName && incident.assignedAgentName === queueFilter.agentName
       if (!byId && !byName) return false
     } else if (queueFilter.type === 'team') {
-      if (mapTeam(incident) !== queueFilter.value) return false
+      if (mapTeam(incident).team !== queueFilter.value) return false
     } else if (queueFilter.type === 'teamUnassigned') {
-      if (mapTeam(incident) !== queueFilter.team) return false
-      if (incident.assignedAgentId || incident.assignedAgentName) return false
+      const mapped = mapTeam(incident)
+      if (mapped.team !== queueFilter.team) return false
+      if (!mapped.forcedUnassigned && (incident.assignedAgentId || incident.assignedAgentName)) return false
     } else if (queueFilter.type === 'teamAgent') {
-      if (mapTeam(incident) !== queueFilter.team) return false
+      const mapped = mapTeam(incident)
+      if (mapped.team !== queueFilter.team) return false
+      if (mapped.forcedUnassigned) return false
       const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
       if (!agentKey || agentKey !== String(queueFilter.value || '')) return false
     } else if (queueFilter.type === 'ticketType') {
@@ -2038,7 +2232,7 @@ export default function TicketsView() {
     return { width, height, points }
   }, [ticketVisuals])
 
-  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px 1fr`
+  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.sla}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px 1fr`
   const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
   const activeSlaPriorityRank = Number(selectedTicket?.sla?.priorityRank || rankFromPriorityLabel(selectedTicket?.sla?.priority || selectedTicket?.priority))
   const activeSlaPolicyName = String(selectedTicket?.sla?.policyName || 'Select Policy')
@@ -2066,12 +2260,150 @@ export default function TicketsView() {
     if (matched?.priority) return String(matched.priority)
     return String(selectedTicket?.sla?.priority || selectedTicket?.priority || 'P3')
   })()
+  const slaToneClass = (() => {
+    const rank = Number.isFinite(activeSlaPriorityRank) ? activeSlaPriorityRank : 3
+    if (rank <= 1) return 'sla-tone-p1'
+    if (rank === 2) return 'sla-tone-p2'
+    if (rank === 3) return 'sla-tone-p3'
+    return 'sla-tone-p4'
+  })()
+  const policyRowForActivePriority = activePolicyRows.find((row) => Number(row?.priorityRank || rankFromPriorityLabel(row?.priority)) === activeSlaPriorityRank) || activePolicyRows[0]
+  const getPolicyMinutes = (kind: 'response' | 'resolution'): number => {
+    const keyPrimary = kind === 'response' ? 'responseTimeMin' : 'resolutionTimeMin'
+    const keyAlt = kind === 'response' ? 'responseMinutes' : 'resolutionMinutes'
+    const raw = Number(policyRowForActivePriority?.[keyPrimary] ?? policyRowForActivePriority?.[keyAlt] ?? 0)
+    return Number.isFinite(raw) && raw > 0 ? raw : 0
+  }
+  const computeSlaProgress = (kind: 'response' | 'resolution') => {
+    const branch = selectedTicket?.sla?.[kind] || {}
+    const policyMinutes = getPolicyMinutes(kind)
+    const fallbackStart = toTimestamp(selectedTicket?.dateReported) ?? slaNowMs
+    const targetAtMs = toTimestamp(branch?.targetAt)
+    let startAtMs = toTimestamp(branch?.startedAt) ?? toTimestamp(selectedTicket?.sla?.startedAt) ?? fallbackStart
+    let effectiveTargetMs = targetAtMs
+    if (!effectiveTargetMs && policyMinutes > 0) {
+      effectiveTargetMs = startAtMs + policyMinutes * 60_000
+    }
+    if (effectiveTargetMs && !startAtMs && policyMinutes > 0) {
+      startAtMs = effectiveTargetMs - policyMinutes * 60_000
+    }
+    const totalMs = Math.max(0, (effectiveTargetMs ?? startAtMs) - startAtMs)
+    const remainingMsRaw = (effectiveTargetMs ?? slaNowMs) - slaNowMs
+    const balancePercent = totalMs > 0 ? Math.max(0, Math.min(100, (remainingMsRaw / totalMs) * 100)) : 0
+    const percent = Math.max(0, 100 - balancePercent)
+    const remainingMs = remainingMsRaw
+    return {
+      percent,
+      balancePercent,
+      remainingLabel: formatSlaClock(remainingMs),
+      targetLabel: toLocalDateTime(effectiveTargetMs),
+      breached: !!branch?.breached || (effectiveTargetMs ? slaNowMs > effectiveTargetMs : false),
+      color: getSlaElapsedColor(percent),
+    }
+  }
+  const responseSla = computeSlaProgress('response')
+  const resolutionSla = computeSlaProgress('resolution')
+  const parseSlaClockToSeconds = (raw: string) => {
+    const txt = String(raw || '').trim()
+    if (!txt) return null
+    const negative = txt.startsWith('-')
+    const normalized = negative ? txt.slice(1) : txt
+    const parts = normalized.split(':').map((p) => Number(p))
+    if (parts.some((p) => !Number.isFinite(p))) return null
+    let seconds = 0
+    if (parts.length === 2) {
+      seconds = parts[0] * 60 + parts[1]
+    } else if (parts.length === 3) {
+      seconds = parts[0] * 3600 + parts[1] * 60 + parts[2]
+    } else {
+      return null
+    }
+    return negative ? -seconds : seconds
+  }
+  const getDefaultResolutionWindowMinutes = (priority: string) => {
+    const p = String(priority || '').toLowerCase()
+    if (p === 'critical' || p === 'p1') return 4 * 60
+    if (p === 'high' || p === 'p2') return 8 * 60
+    if (p === 'medium' || p === 'p3') return 24 * 60
+    return 72 * 60
+  }
+  const getTableSlaVisual = (incident: Incident) => {
+    const now = slaNowMs
+    const startMs = toTimestamp((incident as any)?.sla?.resolution?.startedAt) ?? toTimestamp((incident as any)?.createdAt) ?? toTimestamp(incident.dateReported)
+    const targetMs = toTimestamp((incident as any)?.sla?.resolution?.targetAt)
+    let balancePercent = 0
+    let breached = false
+    let label = String(incident.slaTimeLeft || '--:--')
+
+    if (startMs && targetMs && targetMs > startMs) {
+      const total = targetMs - startMs
+      const remaining = targetMs - now
+      breached = remaining < 0
+      balancePercent = breached ? 0 : Math.max(0, Math.min(100, (remaining / total) * 100))
+      label = formatSlaClock(remaining)
+    } else {
+      const parsedSeconds = parseSlaClockToSeconds(String(incident.slaTimeLeft || ''))
+      if (parsedSeconds !== null) {
+        breached = parsedSeconds < 0
+        const defaultWindowSeconds = getDefaultResolutionWindowMinutes(String(incident.priority || 'Low')) * 60
+        balancePercent = breached ? 0 : Math.max(0, Math.min(100, (parsedSeconds / Math.max(1, defaultWindowSeconds)) * 100))
+      } else {
+        breached = String(incident.slaTimeLeft || '').trim().startsWith('-')
+        balancePercent = breached ? 0 : 50
+      }
+    }
+
+    const elapsedPercent = Math.max(0, 100 - balancePercent)
+    return { balancePercent, elapsedPercent, breached, label, color: getSlaElapsedColor(elapsedPercent) }
+  }
+  const isTicketClosed = String(selectedTicket?.status || '').trim().toLowerCase() === 'closed'
+  const closingEntry = React.useMemo(() => {
+    if (!selectedTicket) return null
+    const timeline = ticketComments[selectedTicket.id] || []
+    return timeline
+      .slice()
+      .sort((a, b) => (toTimestamp(b.time) || 0) - (toTimestamp(a.time) || 0))
+      .find((entry) => {
+        const text = String(entry?.text || '').toLowerCase()
+        return text.startsWith('closed:') || text.includes('status updated to closed') || text.includes('ticket resolved/closed')
+      }) || null
+  }, [selectedTicket, ticketComments])
+  const closedAtMs =
+    toTimestamp((selectedTicket as any)?.closedAt) ??
+    toTimestamp(closingEntry?.time) ??
+    (isTicketClosed ? (toTimestamp((selectedTicket as any)?.updatedAt) ?? slaNowMs) : null)
+  const closedByName =
+    String((selectedTicket as any)?.closedByName || '').trim() ||
+    String(closingEntry?.author || '').trim() ||
+    String(selectedTicket?.assignedAgentName || '').trim() ||
+    'System'
+  const createdAtMs = toTimestamp((selectedTicket as any)?.createdAt) ?? toTimestamp(selectedTicket?.dateReported)
+  const timeToCloseLabel =
+    closedAtMs && createdAtMs
+      ? formatElapsedClock(Math.max(0, closedAtMs - createdAtMs))
+      : '--:--'
 
   React.useEffect(() => {
     setSlaPolicyMenuOpen(false)
     setSlaPriorityMenuOpen(false)
     setSelectedSlaPolicyName('')
+    setActiveDetailTab('Progress')
   }, [selectedTicket?.id])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const updateCompactLayout = () => {
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth
+      setIsCompactDetailLayout(viewportWidth <= 1360)
+    }
+    updateCompactLayout()
+    window.addEventListener('resize', updateCompactLayout)
+    window.visualViewport?.addEventListener('resize', updateCompactLayout)
+    return () => {
+      window.removeEventListener('resize', updateCompactLayout)
+      window.visualViewport?.removeEventListener('resize', updateCompactLayout)
+    }
+  }, [])
 
   const mainContent = showDetailView && selectedTicket ? (
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
@@ -2079,6 +2411,18 @@ export default function TicketsView() {
         <div className="detail-view-container">
       <div className="detail-action-bar">
         <div className="action-toolbar">
+          <button
+            className="pill-icon-btn"
+            title={queueCollapsed ? 'Show side panel' : 'Hide side panel'}
+            aria-label={queueCollapsed ? 'Show side panel' : 'Hide side panel'}
+            onClick={() => setQueueCollapsed((prev) => !prev)}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+          </button>
           {getActionButtons().map((btn, idx) => (
             btn.label === 'Back' ? (
               <button key={idx} className="pill-icon-btn back-icon-btn" onClick={btn.onClick} title="Back" aria-label="Back">
@@ -2093,7 +2437,24 @@ export default function TicketsView() {
           ))}
         </div>
       </div>
-            <div className="detail-view-card">
+            {isCompactDetailLayout && (
+              <div className="detail-tabs compact">
+                <button
+                  className={`tab-btn${activeDetailTab === 'Progress' ? ' active' : ''}`}
+                  onClick={() => setActiveDetailTab('Progress')}
+                >
+                  Progress
+                </button>
+                <button
+                  className={`tab-btn${activeDetailTab === 'Details' ? ' active' : ''}`}
+                  onClick={() => setActiveDetailTab('Details')}
+                >
+                  Details
+                </button>
+              </div>
+            )}
+            <div className={`detail-view-card${isCompactDetailLayout ? ' compact' : ''}`}>
+        {(!isCompactDetailLayout || activeDetailTab === 'Progress') && (
         <div className="progress-card">
           <div className="progress-card-header">
             <span className="progress-title">Progress</span>
@@ -2417,6 +2778,8 @@ export default function TicketsView() {
             )}
           </div>
         </div>
+        )}
+        {(!isCompactDetailLayout || activeDetailTab === 'Details') && (
         <div className="detail-sidebar-wrap">
           <div className="detail-sidebar">
             <div className="sidebar-stack">
@@ -2468,7 +2831,7 @@ export default function TicketsView() {
                   <span>{ticketAsset ? `${ticketAsset.name} (${ticketAsset.serial || 'no-serial'})` : 'None'}</span>
                 </div>
               </div>
-              <div className="sla-card">
+              <div className={`sla-card ${slaToneClass}`}>
                 <h3 className="sidebar-title">Service Level Agreement</h3>
                 <div className="sla-pill">
                   <div
@@ -2482,7 +2845,6 @@ export default function TicketsView() {
                       disabled={slaApplying}
                     >
                       <span>{currentSlaPolicyName}</span>
-                      <span className="sla-pill-chevron">v</span>
                     </button>
                     {slaPolicyMenuOpen && (
                       <div className="sla-pill-dropdown">
@@ -2510,7 +2872,6 @@ export default function TicketsView() {
                       disabled={slaApplying}
                     >
                       <span>{activeSlaPriorityLabel}</span>
-                      <span className="sla-pill-chevron">v</span>
                     </button>
                     {slaPriorityMenuOpen && (
                       <div className="sla-pill-dropdown">
@@ -2536,19 +2897,60 @@ export default function TicketsView() {
                     )}
                   </div>
                 </div>
-                <div className="sla-bar">
-                  <span>{selectedTicket.sla?.resolution?.remainingLabel || selectedTicket.slaTimeLeft || '--:--'}</span>
+                <div className="sla-metric">
+                  <div className="sla-row">
+                    <span>Response Target</span>
+                    <span>{responseSla.targetLabel}</span>
+                    <span className="sla-x">{responseSla.breached ? 'x' : 'ok'}</span>
+                  </div>
+                  <div className="sla-progress-track" role="progressbar" aria-label="Response SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(responseSla.percent)}>
+                    <div
+                      className="sla-progress-fill"
+                      style={{
+                        width: `${responseSla.breached ? 100 : responseSla.percent}%`,
+                        background: responseSla.breached ? '#8B0000' : responseSla.color,
+                      }}
+                    />
+                    <span className="sla-progress-time">{responseSla.remainingLabel}</span>
+                  </div>
                 </div>
-                <div className="sla-row">
-                  <span>Response Target</span>
-                  <span>{toLocalDateTime(selectedTicket.sla?.response?.targetAt)}</span>
-                  <span className="sla-x">{selectedTicket.sla?.response?.breached ? 'x' : 'ok'}</span>
+                <div className="sla-metric">
+                  <div className="sla-row">
+                    <span>Resolution Target</span>
+                    <span>{resolutionSla.targetLabel}</span>
+                    <span className="sla-x">{resolutionSla.breached ? 'x' : 'ok'}</span>
+                  </div>
+                  <div className="sla-progress-track" role="progressbar" aria-label="Resolution SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(resolutionSla.percent)}>
+                    <div
+                      className="sla-progress-fill"
+                      style={{
+                        width: `${resolutionSla.breached ? 100 : resolutionSla.percent}%`,
+                        background: resolutionSla.breached ? '#8B0000' : resolutionSla.color,
+                      }}
+                    />
+                    <span className="sla-progress-time">{resolutionSla.remainingLabel}</span>
+                  </div>
                 </div>
-                <div className="sla-row">
-                  <span>Resolution Target</span>
-                  <span>{toLocalDateTime(selectedTicket.sla?.resolution?.targetAt)}</span>
-                  <span className="sla-x">{selectedTicket.sla?.resolution?.breached ? 'x' : 'ok'}</span>
-                </div>
+                {isTicketClosed && (
+                  <div className="closure-section">
+                    <div className="closure-title-row">
+                      <h4 className="closure-title">Closure details</h4>
+                      <span className="closure-chevron">^</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Date Closed</label>
+                      <span>{closedAtMs ? new Date(closedAtMs).toLocaleString() : '-'}</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Closed by</label>
+                      <span>{closedByName}</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Time to Close</label>
+                      <span>{timeToCloseLabel}</span>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="enduser-card">
                 <h3 className="sidebar-title" style={{ marginTop: 0, marginBottom: 8 }}>End-User details</h3>
@@ -2586,6 +2988,7 @@ export default function TicketsView() {
             </div>
           </div>
         </div>
+        )}
         </div>
       </div>
       </div>
@@ -2715,6 +3118,7 @@ export default function TicketsView() {
             <div className="col-id col-header">Ticket ID<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')} /></div>
             <div className="col-summary col-header">Summary<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')} /></div>
             <div className="col-category col-header">Category<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')} /></div>
+            <div className="col-sla col-header">SLA Time Left<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'sla')} onDoubleClick={() => handleAutoFit('sla')} /></div>
             <div className="col-priority col-header">Priority<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')} /></div>
             <div className="col-type col-header">Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
             <div className="col-endUser col-header">End User<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
@@ -2735,6 +3139,7 @@ export default function TicketsView() {
               <div className="col-id"><input className="table-filter-input" value={searchValues.id} onChange={(e) => handleSearchChange('id', e.target.value)} /></div>
               <div className="col-summary"><input className="table-filter-input" value={searchValues.subject} onChange={(e) => handleSearchChange('subject', e.target.value)} /></div>
               <div className="col-category"><input className="table-filter-input" value={searchValues.category} onChange={(e) => handleSearchChange('category', e.target.value)} /></div>
+              <div className="col-sla"><input className="table-filter-input" value={searchValues.slaTimeLeft} onChange={(e) => handleSearchChange('slaTimeLeft', e.target.value)} /></div>
               <div className="col-priority"><input className="table-filter-input" value={searchValues.priority} onChange={(e) => handleSearchChange('priority', e.target.value)} /></div>
               <div className="col-type"><input className="table-filter-input" value={searchValues.type} onChange={(e) => handleSearchChange('type', e.target.value)} /></div>
               <div className="col-endUser"><input className="table-filter-input" value={searchValues.endUser} onChange={(e) => handleSearchChange('endUser', e.target.value)} /></div>
@@ -2761,6 +3166,23 @@ export default function TicketsView() {
                 <a href="#" onClick={(e) => { e.preventDefault(); handleTicketClick(incident) }}>{incident.subject || '-'}</a>
               </div>
               <div className="col-category">{incident.category || '-'}</div>
+              <div className="col-sla">
+                {(() => {
+                  const slaVisual = getTableSlaVisual(incident)
+                  return (
+                    <div className={`sla-table-track${slaVisual.breached ? ' is-breached' : ''}`}>
+                      <div
+                        className="sla-table-fill"
+                        style={{
+                          width: `${slaVisual.breached ? 100 : slaVisual.elapsedPercent}%`,
+                          background: slaVisual.breached ? '#8B0000' : slaVisual.color,
+                        }}
+                      />
+                      <span className="sla-table-text">{slaVisual.label}</span>
+                    </div>
+                  )
+                })()}
+              </div>
               <div className="col-priority">{incident.priority || '-'}</div>
               <div className="col-type">{incident.type || '-'}</div>
               <div className="col-endUser">{incident.endUser || '-'}</div>

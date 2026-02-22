@@ -3,8 +3,11 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import { deleteAsset, getAsset, updateAsset } from '../services/asset.service'
 import { listUsers } from '../services/user.service'
+import { createTicket } from '../services/ticket.service'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function AssetDetailView() {
+  const { user } = useAuth()
   const { assetId } = useParams()
   const navigate = useNavigate()
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
@@ -17,6 +20,10 @@ export default function AssetDetailView() {
   const [userSearch, setUserSearch] = React.useState('')
   const [users, setUsers] = React.useState<Array<{ id: number; name?: string | null; email: string }>>([])
   const [selectedAssigneeId, setSelectedAssigneeId] = React.useState('')
+  const [showRetireModal, setShowRetireModal] = React.useState(false)
+  const [retireBusy, setRetireBusy] = React.useState(false)
+  const [retireCondition, setRetireCondition] = React.useState<'ok' | 'not_ok'>('ok')
+  const [retireStatus, setRetireStatus] = React.useState<'Unassigned' | 'In Store' | 'Faulty' | 'Retire'>('Unassigned')
   const [leftPanelCollapsed, setLeftPanelCollapsed] = React.useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1100
@@ -129,6 +136,8 @@ export default function AssetDetailView() {
     if (!asset?.id) return
     const nextId = selectedAssigneeId ? Number(selectedAssigneeId) : null
     const selectedUser = users.find((u) => u.id === nextId)
+    const wasAssigned = Boolean(asset?.assignedTo || asset?.assignedToId)
+    const actionLabel = nextId ? (wasAssigned ? 'Reassign' : 'Assign') : 'Reassign'
     try {
       setAssignBusy(true)
       setError('')
@@ -139,10 +148,61 @@ export default function AssetDetailView() {
       const refreshed = await getAsset(Number(asset.id))
       setAsset(refreshed)
       setShowAssignModal(false)
+      try {
+        await createTicket({
+          type: 'Service Request',
+          priority: 'Medium',
+          category: 'Service Request',
+          subcategory: actionLabel,
+          subject: `${actionLabel} asset ${refreshed?.assetId || refreshed?.name || asset?.assetId || asset?.name || asset?.id}`,
+          description: `${actionLabel} action executed for asset ${refreshed?.assetId || refreshed?.name || asset?.id}. Assigned user: ${nextId ? (selectedUser?.email || `User #${nextId}`) : 'Unassigned'}.`,
+          requesterId: user?.id ? Number(user.id) : undefined,
+          requesterEmail: user?.email || undefined,
+        })
+      } catch (ticketErr) {
+        console.warn('Failed to create service request ticket for assign/reassign action', ticketErr)
+      }
     } catch (err: any) {
       setError(err?.response?.data?.error || err?.message || 'Failed to assign asset')
     } finally {
       setAssignBusy(false)
+    }
+  }
+  const openRetireModal = () => {
+    setRetireCondition('ok')
+    setRetireStatus('Unassigned')
+    setShowRetireModal(true)
+  }
+  const handleRetire = async () => {
+    if (!asset?.id) return
+    try {
+      setRetireBusy(true)
+      setError('')
+      await updateAsset(Number(asset.id), {
+        status: retireStatus,
+        condition: retireCondition === 'ok' ? 'Good' : 'Faulty',
+      })
+      const refreshed = await getAsset(Number(asset.id))
+      setAsset(refreshed)
+      setShowRetireModal(false)
+      try {
+        await createTicket({
+          type: 'Service Request',
+          priority: 'Medium',
+          category: 'Service Request',
+          subcategory: 'Retire',
+          subject: `Retire asset ${refreshed?.assetId || refreshed?.name || asset?.id}`,
+          description: `Retire action executed for asset ${refreshed?.assetId || refreshed?.name || asset?.id}. Condition: ${retireCondition === 'ok' ? 'OK' : 'Not OK'}. Status set to: ${retireStatus}.`,
+          requesterId: user?.id ? Number(user.id) : undefined,
+          requesterEmail: user?.email || undefined,
+        })
+      } catch (ticketErr) {
+        console.warn('Failed to create service request ticket for retire action', ticketErr)
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || 'Failed to retire asset')
+    } finally {
+      setRetireBusy(false)
     }
   }
 
@@ -166,6 +226,14 @@ export default function AssetDetailView() {
     const list = Array.isArray(asset?.installedSoftware) ? asset.installedSoftware : []
     if (list.length) return list.filter(Boolean).join(', ')
     return formatText(asset?.installedSoftwareText)
+  }
+  const formatOwnershipType = () => {
+    const raw = String(asset?.ownershipType || '').trim().toLowerCase()
+    if (raw === 'rental' || raw === 'rent' || raw === 'leased' || raw === 'lease') return 'Rental'
+    if (raw === 'own' || raw === 'owned') return 'Own'
+    const hint = `${asset?.supplier || ''} ${asset?.amcSupport || ''}`.toLowerCase()
+    if (hint.includes('rent') || hint.includes('lease')) return 'Rental'
+    return 'Own'
   }
 
   const renderAssetTypeIcon = (type: string) => {
@@ -243,10 +311,6 @@ export default function AssetDetailView() {
     <>
       {assetLeftPanel}
       <div className="asset-detail-shell">
-        <div className="asset-detail-top-actions">
-          <button className="simple-detail-back" onClick={() => navigate('/assets')}>Back</button>
-        </div>
-
         {loading ? <div className="asset-detail-feedback">Loading asset details...</div> : null}
         {error ? <div className="asset-detail-feedback error">{error}</div> : null}
 
@@ -279,7 +343,7 @@ export default function AssetDetailView() {
             </div>
           </div>
 
-          <div className="asset-detail-section-title">Ownership</div>
+          <div className="asset-detail-section-title">Assigned</div>
           <div className="asset-detail-grid">
             <div className="asset-detail-col">
               <div><span>Assigned User:</span><strong>{formatAssignedUser()}</strong></div>
@@ -289,9 +353,18 @@ export default function AssetDetailView() {
             </div>
             <div className="asset-detail-col">
               <div><span>Site:</span><strong>{formatText(asset.site)}</strong></div>
-              <div><span>Cost Centre:</span><strong>{formatText(asset.costCentre)}</strong></div>
               <div><span>Manager:</span><strong>{formatText(asset.manager)}</strong></div>
+            </div>
+          </div>
+
+          <div className="asset-detail-section-title">Ownership</div>
+          <div className="asset-detail-grid">
+            <div className="asset-detail-col">
+              <div><span>Ownership Type:</span><strong>{formatOwnershipType()}</strong></div>
               <div><span>Asset Owner:</span><strong>{formatText(asset.assetOwner)}</strong></div>
+            </div>
+            <div className="asset-detail-col">
+              <div><span>Cost Centre:</span><strong>{formatText(asset.costCentre)}</strong></div>
             </div>
           </div>
 
@@ -347,6 +420,7 @@ export default function AssetDetailView() {
             <button className="asset-btn assign" onClick={openAssignModal} disabled={busy || assignBusy}>
               {asset?.assignedTo || asset?.assignedToId ? 'Reassign' : 'Assign'}
             </button>
+            <button className="asset-btn edit" onClick={openRetireModal} disabled={busy || assignBusy || retireBusy}>Retire</button>
             <button className="asset-btn edit" onClick={handleEdit} disabled={busy}>Edit</button>
             <button className="asset-btn delete" onClick={handleDelete} disabled={busy}>Delete</button>
             <button className="asset-btn view" onClick={() => navigate(`/assets/${asset.id}`)} disabled={busy}>View</button>
@@ -393,6 +467,62 @@ export default function AssetDetailView() {
                 <button className="btn-cancel" onClick={() => setShowAssignModal(false)} disabled={assignBusy}>Cancel</button>
                 <button className="btn-submit" onClick={handleAssign} disabled={assignBusy}>
                   {assignBusy ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showRetireModal ? (
+          <div className="modal-overlay" onClick={() => !retireBusy && setShowRetireModal(false)}>
+            <div className="modal-content asset-assign-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>Retire Asset</h2>
+                <button className="modal-close" onClick={() => setShowRetireModal(false)} disabled={retireBusy}>×</button>
+              </div>
+              <div className="modal-body">
+                <div className="form-section">
+                  <label className="form-label">Condition</label>
+                  <select
+                    className="form-select"
+                    value={retireCondition}
+                    onChange={(e) => {
+                      const next = e.target.value === 'not_ok' ? 'not_ok' : 'ok'
+                      setRetireCondition(next)
+                      setRetireStatus(next === 'ok' ? 'Unassigned' : 'Faulty')
+                    }}
+                    disabled={retireBusy}
+                  >
+                    <option value="ok">OK</option>
+                    <option value="not_ok">Not OK</option>
+                  </select>
+                </div>
+                <div className="form-section">
+                  <label className="form-label">Status</label>
+                  <select
+                    className="form-select"
+                    value={retireStatus}
+                    onChange={(e) => setRetireStatus(e.target.value as 'Unassigned' | 'In Store' | 'Faulty' | 'Retire')}
+                    disabled={retireBusy}
+                  >
+                    {retireCondition === 'ok' ? (
+                      <>
+                        <option value="Unassigned">Unassigned</option>
+                        <option value="In Store">In Store</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Faulty">Faulty</option>
+                        <option value="Retire">Retire</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn-cancel" onClick={() => setShowRetireModal(false)} disabled={retireBusy}>Cancel</button>
+                <button className="btn-submit" onClick={handleRetire} disabled={retireBusy}>
+                  {retireBusy ? 'Saving...' : 'Save'}
                 </button>
               </div>
             </div>

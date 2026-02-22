@@ -381,6 +381,7 @@ function MainShell() {
   const isUsersListRoute = location.pathname === '/users'
   const isAccountsListRoute = location.pathname === '/accounts'
   const isAssetsListRoute = location.pathname === '/assets'
+  const isAssetDetailRoute = location.pathname.startsWith('/assets/')
   const isSuppliersListRoute = location.pathname === '/supplier'
   const isAdminListRoute = location.pathname === '/admin'
   const isSecurityRoute = location.pathname.startsWith('/security')
@@ -694,6 +695,18 @@ function MainShell() {
         {showSharedToolbar && (
           <div className={sharedToolbarClass}>
             <div className="tool-bar-left">
+              {isAssetDetailRoute && (
+                <button
+                  className="table-icon-btn"
+                  title="Back to Assets"
+                  aria-label="Back to Assets"
+                  onClick={() => navigate('/assets')}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              )}
               <button
                 className="table-icon-btn toolbar-left-panel-toggle"
                 title="Toggle Left Panel"
