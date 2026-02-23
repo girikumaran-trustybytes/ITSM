@@ -96,7 +96,10 @@ export async function list(_req: Request, res: Response) {
   const q = _req.query.q ? String(_req.query.q) : undefined
   const status = _req.query.status ? String(_req.query.status) : undefined
   const category = _req.query.category ? String(_req.query.category) : undefined
-  const assignedToId = _req.query.assignedToId ? Number(_req.query.assignedToId) : undefined
+  const viewer = (_req as any).user
+  const assignedToId = viewer?.role === 'USER'
+    ? Number(viewer?.id || 0) || undefined
+    : _req.query.assignedToId ? Number(_req.query.assignedToId) : undefined
   const items = await svc.listAssets({ page, pageSize, q, status, category, assignedToId })
   res.json(items)
 }
@@ -106,6 +109,10 @@ export async function getOne(req: Request, res: Response) {
   if (!id) return res.status(400).json({ error: 'Invalid asset id' })
   const asset = await svc.getAssetById(id)
   if (!asset) return res.status(404).json({ error: 'Asset not found' })
+  const viewer = (req as any).user
+  if (viewer?.role === 'USER' && viewer?.id && Number(asset.assignedToId) !== Number(viewer.id)) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
   res.json(asset)
 }
 

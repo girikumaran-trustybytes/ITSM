@@ -7,8 +7,8 @@ const router = Router()
 
 router.use(authenticateJWT)
 
-router.get('/', permit(['ADMIN','AGENT']), ctrl.list)
-router.get('/:id', permit(['ADMIN','AGENT']), ctrl.getOne)
+router.get('/', permit(['ADMIN','AGENT','USER']), ctrl.list)
+router.get('/:id', permit(['ADMIN','AGENT','USER']), ctrl.getOne)
 router.post('/', permit(['ADMIN','AGENT']), ctrl.create)
 router.patch('/:id', permit(['ADMIN','AGENT']), ctrl.update)
 router.delete('/:id', permit(['ADMIN']), ctrl.remove)

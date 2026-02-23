@@ -12,10 +12,28 @@ import { loadLeftPanelConfig, type QueueRule, type TicketQueueConfig } from '../
 import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, toPresenceClass, type PresenceStatus } from '../utils/presence'
 import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../utils/avatar'
 const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
+const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
 
 type LocalAttachment = {
   key: string
   file: File
+}
+
+type EmailSignatureRecord = {
+  id: string
+  userId: string
+  userLabel: string
+  signatureHtml: string
+  active: boolean
+}
+
+type MailBannerRecord = {
+  id: string
+  title: string
+  message: string
+  tone: 'info' | 'success' | 'warning' | 'danger'
+  active: boolean
 }
 
 export type Incident = {
@@ -83,13 +101,33 @@ export default function TicketsView() {
   const [composerAttachments, setComposerAttachments] = useState<LocalAttachment[]>([])
   const [internalNoteAttachments, setInternalNoteAttachments] = useState<LocalAttachment[]>([])
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
+  const [composerBodyHtml, setComposerBodyHtml] = useState('')
+  const [composerBodyText, setComposerBodyText] = useState('')
+  const [showSendReview, setShowSendReview] = useState(false)
   const composerFileInputRef = React.useRef<HTMLInputElement | null>(null)
   const internalNoteFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const composerEditorRef = React.useRef<HTMLDivElement | null>(null)
   const slaPolicyMenuRef = React.useRef<HTMLDivElement | null>(null)
   const slaPriorityMenuRef = React.useRef<HTMLDivElement | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [showCcField, setShowCcField] = useState(false)
   const [showBccField, setShowBccField] = useState(false)
+  const [composerFullscreen, setComposerFullscreen] = useState(false)
+  const [showFontMenu, setShowFontMenu] = useState(false)
+  const [showAlignMenu, setShowAlignMenu] = useState(false)
+  const [showOrderedMenu, setShowOrderedMenu] = useState(false)
+  const [showUnorderedMenu, setShowUnorderedMenu] = useState(false)
+  const [showQuoteMenu, setShowQuoteMenu] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [linkForm, setLinkForm] = useState({ url: '', text: '' })
+  const [showImageModal, setShowImageModal] = useState(false)
+  const [imageForm, setImageForm] = useState({ url: '' })
+  const [showTablePicker, setShowTablePicker] = useState(false)
+  const [tableSize, setTableSize] = useState({ rows: 3, cols: 3 })
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showCannedMenu, setShowCannedMenu] = useState(false)
+  const [showCannedModal, setShowCannedModal] = useState(false)
+  const [cannedForm, setCannedForm] = useState({ name: '', html: '' })
   const [actionStateByTicket, setActionStateByTicket] = useState<Record<string, { ackSent: boolean; supplierLogged: boolean }>>({})
   const [composerMode, setComposerMode] = useState<
     'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
@@ -100,6 +138,7 @@ export default function TicketsView() {
     bcc: '',
     subject: '',
     body: '',
+    actionStatus: 'With User',
     nextUpdateDate: '',
     nextUpdateTime: '',
     issue: 'Category1',
@@ -1114,6 +1153,126 @@ export default function TicketsView() {
     return ''
   }
 
+  const htmlToPlainText = (html: string) => {
+    if (typeof window === 'undefined') return html
+    const container = document.createElement('div')
+    container.innerHTML = html
+    return String(container.textContent || container.innerText || '').trim()
+  }
+
+  const loadStoredList = <T,>(key: string, fallback: T): T => {
+    if (typeof window === 'undefined') return fallback
+    try {
+      const raw = window.localStorage.getItem(key)
+      if (!raw) return fallback
+      const parsed = JSON.parse(raw)
+      return parsed as T
+    } catch {
+      return fallback
+    }
+  }
+
+  const buildMailPreviewHtml = () => {
+    const bannerList = loadStoredList<MailBannerRecord[]>(MAIL_BANNER_STORAGE_KEY, [])
+    const signatureList = loadStoredList<EmailSignatureRecord[]>(EMAIL_SIGNATURE_STORAGE_KEY, [])
+    const activeBanner = bannerList.find((b) => b && b.active)
+    const userId = user?.id ? String(user.id) : ''
+    const signature = signatureList.find((s) => s && s.active && String(s.userId || '') === userId)
+    const bannerTone = activeBanner?.tone || 'info'
+    const bannerColor =
+      bannerTone === 'success' ? '#16a34a' :
+      bannerTone === 'warning' ? '#f59e0b' :
+      bannerTone === 'danger' ? '#ef4444' :
+      '#2563eb'
+    const bannerHtml = activeBanner
+      ? `<div style="border:1px solid ${bannerColor};background:${bannerColor}1a;border-radius:10px;padding:10px 12px;margin-bottom:16px">
+          <div style="font-weight:700;margin-bottom:4px;color:#111827">${activeBanner.title}</div>
+          <div style="color:#111827;font-size:13px">${activeBanner.message}</div>
+        </div>`
+      : ''
+    const recipientName = String(endUser?.name || '').trim()
+    const greeting = recipientName ? `Hi ${recipientName},` : 'Hello,'
+    const bodyHtml = composerBodyHtml || '<p>(Empty message)</p>'
+    let signatureHtml = ''
+    if (signature?.signatureHtml) {
+      const raw = String(signature.signatureHtml)
+      const hasTags = /<[^>]+>/.test(raw)
+      const safe = hasTags ? raw : raw.replace(/\n/g, '<br/>')
+      signatureHtml = `<div style="margin-top:18px">${safe}</div>`
+    }
+
+    return `
+      ${bannerHtml}
+      <p>${greeting}</p>
+      <div>${bodyHtml}</div>
+      ${signatureHtml}
+    `
+  }
+
+  const CANNED_TEXT_STORAGE_KEY = 'composer.canned_texts.v1'
+  const loadCannedTexts = () => loadStoredList<{ id: string; name: string; html: string }[]>(CANNED_TEXT_STORAGE_KEY, [])
+  const saveCannedTexts = (items: { id: string; name: string; html: string }[]) => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(CANNED_TEXT_STORAGE_KEY, JSON.stringify(items))
+  }
+
+  const insertHtmlAtCursor = (html: string) => {
+    const editor = composerEditorRef.current
+    if (!editor) return
+    editor.focus()
+    document.execCommand('insertHTML', false, html)
+    handleComposerInput(editor.innerHTML)
+  }
+
+  const getClosestListEl = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    let node = sel.getRangeAt(0).commonAncestorContainer as HTMLElement | null
+    if (node?.nodeType === 3) node = node.parentElement
+    while (node && node !== composerEditorRef.current) {
+      if (node.tagName === 'OL' || node.tagName === 'UL') return node
+      node = node.parentElement
+    }
+    return null
+  }
+
+  const applyListStyle = (style: string) => {
+    const list = getClosestListEl()
+    if (list) (list as HTMLElement).style.listStyleType = style
+  }
+
+  const applyComposerCommand = (command: string, value?: string) => {
+    const editor = composerEditorRef.current
+    if (!editor) return
+    editor.focus()
+    if (command === 'createLink') {
+      if (!value) return
+      document.execCommand('createLink', false, value)
+      return
+    }
+    if (command === 'insertImage') {
+      if (!value) return
+      document.execCommand('insertImage', false, value)
+      return
+    }
+    if (command === 'insertText' && value) {
+      document.execCommand('insertText', false, value)
+      return
+    }
+    if (value !== undefined) {
+      document.execCommand(command, false, value)
+    } else {
+      document.execCommand(command, false)
+    }
+  }
+
+  const handleComposerInput = (html: string) => {
+    const text = htmlToPlainText(html)
+    setComposerBodyHtml(html)
+    setComposerBodyText(text)
+    setComposerForm((prev) => ({ ...prev, body: text }))
+  }
+
   const openComposer = (
     mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
   ) => {
@@ -1138,10 +1297,14 @@ export default function TicketsView() {
       bcc: '',
       subject: subjectDefault,
       body: '',
+      actionStatus: 'With User',
       currentAction: '',
       nextAction: '',
       asset: '',
     }))
+    setComposerBodyHtml('')
+    setComposerBodyText('')
+    if (composerEditorRef.current) composerEditorRef.current.innerHTML = ''
     setComposerAttachments([])
     setShowCcField(false)
     setShowBccField(false)
@@ -1754,9 +1917,19 @@ export default function TicketsView() {
     })
   }
 
+  const openSendReview = () => {
+    const bodyText = composerBodyText.trim() || htmlToPlainText(composerBodyHtml)
+    if (!bodyText) {
+      alert('Please enter message')
+      return
+    }
+    setComposerBodyText(bodyText)
+    setShowSendReview(true)
+  }
+
   const handleSendActionComposer = async () => {
     if (!selectedTicket) return
-    const body = composerForm.body.trim()
+    const body = composerBodyText.trim()
     if (!body) {
       alert('Please enter message')
       return
@@ -1844,6 +2017,8 @@ export default function TicketsView() {
         }
       }
       setComposerAttachments([])
+      setComposerBodyHtml('')
+      setComposerBodyText('')
       setShowActionComposer(false)
     } catch (e: any) {
       alert(e?.response?.data?.error || e?.message || 'Failed to send action')
@@ -2461,7 +2636,7 @@ export default function TicketsView() {
           </div>
           <div className={`progress-list${showActionComposer || showInternalNoteEditor ? ' progress-list-editor-open' : ''}`}>
             {showActionComposer && (
-              <div className="action-compose-modal inline-compose-card">
+              <div className={`action-compose-modal inline-compose-card${composerFullscreen ? ' compose-fullscreen' : ''}`}>
                 <div className="compose-header">
                   <div className="compose-identity">
                     <div className="compose-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
@@ -2493,6 +2668,7 @@ export default function TicketsView() {
                       className="compose-icon-btn"
                       onClick={() => {
                         setComposerAttachments([])
+                        setShowSendReview(false)
                         setShowActionComposer(false)
                       }}
                       aria-label="Close"
@@ -2537,31 +2713,136 @@ export default function TicketsView() {
 
                 <div className="compose-editor-shell">
                   <div className="compose-editor-toolbar">
-                    <button type="button">[]</button>
-                    <button type="button">A:</button>
-                    <button type="button">-</button>
-                    <button type="button">=</button>
-                    <button type="button">::</button>
-                    <button type="button">""</button>
-                    <button type="button">()</button>
-                    <button type="button">[]</button>
-                    <button type="button">#</button>
-                    <button type="button">+/-</button>
-                    <button type="button">+</button>
-                    <button type="button">-</button>
-                    <button type="button">A</button>
-                    <button type="button">&lt;&gt;</button>
+                    <button type="button" onClick={() => setComposerFullscreen((v) => !v)} aria-label="Fullscreen">[]</button>
+                    <button type="button" onClick={() => setShowFontMenu((v) => !v)} aria-label="Font styles">A:</button>
+                    {showFontMenu && (
+                      <div className="compose-toolbar-menu">
+                        <div className="compose-toolbar-group">
+                          <button type="button" onClick={() => applyComposerCommand('bold')}>B</button>
+                          <button type="button" onClick={() => applyComposerCommand('italic')}>i</button>
+                          <button type="button" onClick={() => applyComposerCommand('underline')}>U</button>
+                          <button type="button" onClick={() => applyComposerCommand('strikeThrough')}>S</button>
+                        </div>
+                        <div className="compose-toolbar-group">
+                          <button type="button" onClick={() => applyComposerCommand('fontName', 'Arial')}>Aa</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontName', 'Georgia')}>Gg</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontName', 'Courier New')}>Mono</button>
+                        </div>
+                        <div className="compose-toolbar-group">
+                          <button type="button" onClick={() => applyComposerCommand('fontSize', '2')}>A-</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontSize', '3')}>A</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontSize', '5')}>A+</button>
+                        </div>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowAlignMenu((v) => !v)} aria-label="Align">=</button>
+                    {showAlignMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyComposerCommand('justifyLeft')}>Left</button>
+                        <button type="button" onClick={() => applyComposerCommand('justifyCenter')}>Center</button>
+                        <button type="button" onClick={() => applyComposerCommand('justifyRight')}>Right</button>
+                        <button type="button" onClick={() => applyComposerCommand('justifyFull')}>Justify</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => { applyComposerCommand('insertOrderedList'); setShowOrderedMenu((v) => !v) }} aria-label="Ordered list">1.</button>
+                    {showOrderedMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyListStyle('decimal')}>Default</button>
+                        <button type="button" onClick={() => applyListStyle('lower-alpha')}>Lower Alpha</button>
+                        <button type="button" onClick={() => applyListStyle('upper-alpha')}>Upper Alpha</button>
+                        <button type="button" onClick={() => applyListStyle('lower-roman')}>Lower Roman</button>
+                        <button type="button" onClick={() => applyListStyle('upper-roman')}>Upper Roman</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => { applyComposerCommand('insertUnorderedList'); setShowUnorderedMenu((v) => !v) }} aria-label="Unordered list">•</button>
+                    {showUnorderedMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyListStyle('disc')}>Disc</button>
+                        <button type="button" onClick={() => applyListStyle('circle')}>Circle</button>
+                        <button type="button" onClick={() => applyListStyle('square')}>Square</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => { applyComposerCommand('formatBlock', 'blockquote'); setShowQuoteMenu((v) => !v) }} aria-label="Quote">""</button>
+                    {showQuoteMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyComposerCommand('indent')}>Increase</button>
+                        <button type="button" onClick={() => applyComposerCommand('outdent')}>Decrease</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowLinkModal(true)} aria-label="Insert link">link</button>
+                    <button type="button" onClick={() => setShowImageModal(true)} aria-label="Insert image">img</button>
+                    <button type="button" onClick={() => setShowTablePicker((v) => !v)} aria-label="Insert table">table</button>
+                    {showTablePicker && (
+                      <div className="compose-toolbar-menu">
+                        <label>
+                          Rows
+                          <input value={tableSize.rows} onChange={(e) => setTableSize((prev) => ({ ...prev, rows: Number(e.target.value || 1) }))} />
+                        </label>
+                        <label>
+                          Cols
+                          <input value={tableSize.cols} onChange={(e) => setTableSize((prev) => ({ ...prev, cols: Number(e.target.value || 1) }))} />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rows = Math.max(1, tableSize.rows)
+                            const cols = Math.max(1, tableSize.cols)
+                            const table = `<table style="border-collapse:collapse;width:100%;">${Array.from({ length: rows })
+                              .map(() => `<tr>${Array.from({ length: cols }).map(() => `<td style="border:1px solid #d1d5db;padding:6px;">&nbsp;</td>`).join('')}</tr>`)
+                              .join('')}</table>`
+                            insertHtmlAtCursor(table)
+                            setShowTablePicker(false)
+                          }}
+                        >
+                          Insert
+                        </button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowEmojiPicker((v) => !v)} aria-label="Emoticons">:)</button>
+                    {showEmojiPicker && (
+                      <div className="compose-toolbar-menu emoji">
+                        {['😀','😁','😂','😅','😊','😍','😎','😇','😢','😡','👍','🙏','🎉','✅','⚠️','❗','💡','📌'].map((e) => (
+                          <button key={e} type="button" onClick={() => { applyComposerCommand('insertText', e); setShowEmojiPicker(false) }}>{e}</button>
+                        ))}
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowCannedMenu((v) => !v)} aria-label="Insert canned">+:</button>
+                    {showCannedMenu && (
+                      <div className="compose-toolbar-menu">
+                        {loadCannedTexts().length === 0 && <span style={{ fontSize: 12, color: '#6b7280' }}>No canned text</span>}
+                        {loadCannedTexts().map((item) => (
+                          <button key={item.id} type="button" onClick={() => { insertHtmlAtCursor(item.html); setShowCannedMenu(false) }}>
+                            {item.name}
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => { setShowCannedMenu(false); setShowCannedModal(true) }}>Create Canned Text</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => applyComposerCommand('insertHorizontalRule')} aria-label="Horizontal line">-</button>
+                    <button type="button" onClick={() => applyComposerCommand('removeFormat')} aria-label="Clear formatting">Tx</button>
                   </div>
-                  <textarea
-                    className="compose-editor-body"
-                    placeholder="Type your update/note here"
-                    value={composerForm.body}
-                    onChange={(e) => setComposerForm((prev) => ({ ...prev, body: e.target.value }))}
+                  <div
+                    ref={composerEditorRef}
+                    className="compose-editor-body rich"
+                    contentEditable
+                    suppressContentEditableWarning
+                    data-placeholder="Type your update/note here"
+                    onInput={(e) => handleComposerInput(e.currentTarget.innerHTML)}
                   />
-                  <div className="compose-editor-assist">
-                    <button type="button" aria-label="AI assist">Q</button>
-                    <button type="button" aria-label="Assistant">G</button>
-                  </div>
+                </div>
+                <div className="compose-meta-row">
+                  <label className="compose-meta-field">
+                    <span>Status *</span>
+                    <select
+                      value={composerForm.actionStatus}
+                      onChange={(e) => setComposerForm((prev) => ({ ...prev, actionStatus: e.target.value }))}
+                    >
+                      <option>With User</option>
+                      <option>In Progress</option>
+                      <option>Awaiting Approval</option>
+                      <option>On Hold</option>
+                    </select>
+                  </label>
                 </div>
                 <input
                   ref={composerFileInputRef}
@@ -2623,10 +2904,10 @@ export default function TicketsView() {
                 )}
 
                 <div className="compose-footer-actions">
-                  <button className="btn-submit" onClick={handleSendActionComposer} disabled={isUploadingAttachments}>
+                  <button className="btn-submit" onClick={openSendReview} disabled={isUploadingAttachments}>
                     {isUploadingAttachments ? 'Uploading...' : 'Send'}
                   </button>
-                  <button className="btn-cancel" onClick={() => { setComposerAttachments([]); setShowActionComposer(false) }}>Discard</button>
+                  <button className="btn-cancel" onClick={() => { setComposerAttachments([]); setShowSendReview(false); setShowActionComposer(false) }}>Discard</button>
                   <button type="button" className="compose-footer-icon" aria-label="Schedule">[]</button>
                 </div>
               </div>
@@ -3203,6 +3484,163 @@ export default function TicketsView() {
     <div className="tickets-view">
       {queueSidebar}
       {mainContent}
+
+      {showSendReview && (
+        <div className="compose-review-overlay" onClick={() => setShowSendReview(false)}>
+          <div className="compose-review-card" onClick={(e) => e.stopPropagation()}>
+            <div className="compose-review-topbar">
+              <button
+                className="compose-review-send"
+                onClick={async () => {
+                  setShowSendReview(false)
+                  await handleSendActionComposer()
+                }}
+                disabled={isUploadingAttachments}
+              >
+                Send
+              </button>
+              <button className="compose-review-cancel" onClick={() => setShowSendReview(false)}>Cancel</button>
+              <button className="compose-review-close" onClick={() => setShowSendReview(false)} aria-label="Close">x</button>
+            </div>
+            <div className="compose-review-header">
+              <div className="compose-review-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
+              <div>
+                <div className="compose-review-title">{getComposerHeading()}</div>
+                <div className="compose-review-subtitle">Email</div>
+              </div>
+            </div>
+            <div className="compose-review-body">
+              <div className="compose-review-row">
+                <span>Sent:</span>
+                <span>Not yet ready to send (press "Send" to save your Action and send this Email or "Cancel" to edit your Action).</span>
+              </div>
+              <div className="compose-review-row">
+                <span>From:</span>
+                <span>{user?.email || 'support@itsm.local'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>To:</span>
+                <span>{composerForm.to || 'Not set'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>Cc:</span>
+                <span>{composerForm.cc || 'Not set'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>Bcc:</span>
+                <span>{composerForm.bcc || 'Not set'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>Subject:</span>
+                <span>{composerForm.subject || 'Not set'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>Status:</span>
+                <span>{composerForm.actionStatus || 'Not set'}</span>
+              </div>
+              {composerAttachments.length > 0 && (
+                <div className="compose-review-row">
+                  <span>Attachments:</span>
+                  <span>{composerAttachments.map((a) => a.file.name).join(', ')}</span>
+                </div>
+              )}
+              <div className="compose-review-content" dangerouslySetInnerHTML={{ __html: buildMailPreviewHtml() }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLinkModal && (
+        <div className="compose-modal-overlay" onClick={() => setShowLinkModal(false)}>
+          <div className="compose-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Insert Link</h4>
+            <label>
+              URL
+              <input value={linkForm.url} onChange={(e) => setLinkForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
+            </label>
+            <label>
+              Text
+              <input value={linkForm.text} onChange={(e) => setLinkForm((prev) => ({ ...prev, text: e.target.value }))} placeholder="Link text" />
+            </label>
+            <div className="compose-modal-actions">
+              <button onClick={() => setShowLinkModal(false)}>Cancel</button>
+              <button
+                onClick={() => {
+                  const url = linkForm.url.trim()
+                  if (!url) return
+                  const text = linkForm.text.trim()
+                  if (text) insertHtmlAtCursor(`<a href="${url}">${text}</a>`)
+                  else applyComposerCommand('createLink', url)
+                  setLinkForm({ url: '', text: '' })
+                  setShowLinkModal(false)
+                }}
+              >
+                Insert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImageModal && (
+        <div className="compose-modal-overlay" onClick={() => setShowImageModal(false)}>
+          <div className="compose-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Insert Image</h4>
+            <label>
+              Image URL
+              <input value={imageForm.url} onChange={(e) => setImageForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
+            </label>
+            <div className="compose-modal-actions">
+              <button onClick={() => setShowImageModal(false)}>Cancel</button>
+              <button
+                onClick={() => {
+                  const url = imageForm.url.trim()
+                  if (!url) return
+                  insertHtmlAtCursor(`<img src="${url}" alt="" style="max-width:100%;" />`)
+                  setImageForm({ url: '' })
+                  setShowImageModal(false)
+                }}
+              >
+                Insert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCannedModal && (
+        <div className="compose-modal-overlay" onClick={() => setShowCannedModal(false)}>
+          <div className="compose-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Create Canned Text</h4>
+            <label>
+              Name
+              <input value={cannedForm.name} onChange={(e) => setCannedForm((prev) => ({ ...prev, name: e.target.value }))} />
+            </label>
+            <label>
+              Text
+              <textarea value={cannedForm.html} onChange={(e) => setCannedForm((prev) => ({ ...prev, html: e.target.value }))} />
+            </label>
+            <div className="compose-modal-actions">
+              <button onClick={() => setShowCannedModal(false)}>Cancel</button>
+              <button
+                onClick={() => {
+                  const name = cannedForm.name.trim()
+                  const raw = (cannedForm.html.trim() || composerBodyHtml).trim()
+                  const hasTags = /<[^>]+>/.test(raw)
+                  const html = hasTags ? raw : raw.replace(/\n/g, '<br/>')
+                  if (!name || !html) return
+                  const items = loadCannedTexts()
+                  saveCannedTexts([{ id: `ct-${Date.now()}`, name, html }, ...items])
+                  setCannedForm({ name: '', html: '' })
+                  setShowCannedModal(false)
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showNewIncidentModal && (
         <div className="modal-overlay" onClick={() => setShowNewIncidentModal(false)}>

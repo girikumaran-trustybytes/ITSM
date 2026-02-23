@@ -14,6 +14,9 @@ import ProtectedRoute from './app/ProtectedRoute'
 import Unauthorized from './app/Unauthorized'
 import { useAuth } from './contexts/AuthContext'
 import PortalHome from './components/portal/PortalHome'
+import PortalTickets from './components/portal/PortalTickets'
+import PortalAssets from './components/portal/PortalAssets'
+import PortalNewTicket from './components/portal/PortalNewTicket'
 import AccountSecurityView from './components/AccountSecurityView'
 import { logout } from './services/auth.service'
 import NotificationsPanel from './components/panels/NotificationsPanel'
@@ -943,7 +946,9 @@ export default function App() {
       <Route path="/reset-password" element={<Login />} />
       <Route path="/portal/login" element={<Login />} />
       <Route path="/portal/dashboard" element={<PortalHome />} />
-      <Route path="/portal/tickets" element={<TicketsView />} />
+      <Route path="/portal/tickets" element={<PortalTickets />} />
+      <Route path="/portal/assets" element={<PortalAssets />} />
+      <Route path="/portal/new-ticket" element={<PortalNewTicket />} />
       <Route path="/unauthorized" element={<Unauthorized />} />
       <Route
         path="/portal/home"

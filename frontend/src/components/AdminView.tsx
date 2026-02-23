@@ -55,7 +55,7 @@ const settingsMenu: MenuSection[] = [
     id: 'user-access',
     label: 'User & Access Management',
     items: [
-      { id: 'roles-permissions', label: 'Roles & permissions', requiresAdmin: true },
+      { id: 'roles-permissions', label: 'User & Access management', requiresAdmin: true },
       { id: 'mfa-settings', label: 'MFA settings', requiresAdmin: true },
     ],
   },
@@ -2755,8 +2755,8 @@ export default function AdminView(_props: AdminViewProps) {
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div style={{ padding: 16 }}>
-            <div className="sla-policy-toolbar">
-              <div className="sla-policy-toolbar-left">
+            <div className="rbac-top-action-row">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   className="table-icon-btn"
                   onClick={() => setSidebarCollapsed((v) => !v)}
@@ -2777,21 +2777,18 @@ export default function AdminView(_props: AdminViewProps) {
                     )}
                   </svg>
                 </button>
-                <h3 style={{ margin: 0 }}>SLA Policies</h3>
+                <div className="rbac-top-action-title">SLA Policies</div>
               </div>
-              <div className="sla-policy-toolbar-actions">
+              <div className="rbac-top-action-actions">
                 {!showPolicyForm && (
-                  <button className="table-icon-btn" onClick={loadSlaRows} disabled={slaBusy} title="Refresh" aria-label="Refresh SLA policies">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="23 4 23 10 17 10" />
-                      <polyline points="1 20 1 14 7 14" />
-                      <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15" />
-                    </svg>
+                  <button className="admin-settings-ghost" onClick={loadSlaRows} disabled={slaBusy}>
+                    {slaBusy ? 'Loading...' : 'Reload'}
                   </button>
                 )}
                 {!showPolicyForm ? (
-                  <button className="admin-settings-primary" onClick={openCreatePolicyForm} disabled={slaBusy}>
-                    Add Policy
+                  <button className="rbac-add-btn" onClick={openCreatePolicyForm} disabled={slaBusy}>
+                    <span className="rbac-add-btn-plus" aria-hidden="true">+</span>
+                    <span>Add Policy</span>
                   </button>
                 ) : <span />}
               </div>

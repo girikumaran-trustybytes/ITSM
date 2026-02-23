@@ -187,6 +187,7 @@ export default function RbacModule({ isAdmin }: Props) {
   const [autoUpgradeQueues, setAutoUpgradeQueues] = useState(true)
   const [selectedServiceQueueIds, setSelectedServiceQueueIds] = useState<string[]>([])
   const [serviceInviteBusy, setServiceInviteBusy] = useState(false)
+  const [serviceDeactivateBusy, setServiceDeactivateBusy] = useState(false)
 
   const notify = (type: 'ok' | 'error', text: string) => {
     setToast({ type, text })
@@ -208,6 +209,16 @@ export default function RbacModule({ isAdmin }: Props) {
     return titleCase(u.role || 'user')
   }
 
+  const getServiceInviteStatus = (u: RbacUserRow) => {
+    const raw = String(u.inviteStatus || u.status || 'none').trim().toLowerCase()
+    return raw || 'none'
+  }
+
+  const isServiceInviteSent = (u: RbacUserRow) => {
+    const status = getServiceInviteStatus(u)
+    return ['invited', 'invite_pending', 'invited_not_accepted'].includes(status)
+  }
+
   const usersForSelection = useMemo(() => {
     return users
       .slice()
@@ -219,6 +230,7 @@ export default function RbacModule({ isAdmin }: Props) {
       })
   }, [users])
   const serviceAccountsForSelection = useMemo(() => usersForSelection.filter((u) => u.isServiceAccount), [usersForSelection])
+  const usersForServiceTable = useMemo(() => usersForSelection, [usersForSelection])
   const nonServiceAccountsForSelection = useMemo(() => usersForSelection.filter((u) => !u.isServiceAccount), [usersForSelection])
 
   const loadUsers = async () => {
@@ -759,6 +771,58 @@ export default function RbacModule({ isAdmin }: Props) {
     }
   }
 
+  const handleServiceAccountInviteActionForUser = async (user: RbacUserRow, mode: 'invite' | 'reinvite') => {
+    const targetUserId = Number(user?.id || 0)
+    const targetEmail = String(user?.email || '').trim()
+    if (!targetUserId) {
+      notify('error', 'Invalid user selected')
+      return
+    }
+    if (!targetEmail) {
+      notify('error', 'Selected user mail ID is missing')
+      return
+    }
+    try {
+      setServiceInviteBusy(true)
+      if (mode === 'invite') {
+        const result = await sendServiceAccountInvite(targetUserId, targetEmail)
+        notify('ok', `Service account invite sent to ${result?.sentTo || targetEmail}`)
+      } else {
+        const result = await reinviteServiceAccount(targetUserId, targetEmail)
+        notify('ok', `Service account re-invite sent to ${result?.sentTo || targetEmail}`)
+      }
+      await loadUsers()
+      if (selectedUserId === targetUserId) {
+        await loadPermissions(targetUserId)
+      }
+    } catch (error: any) {
+      notify('error', error?.response?.data?.error || 'Failed to process service account invite')
+    } finally {
+      setServiceInviteBusy(false)
+    }
+  }
+
+  const handleDeactivateServiceAccount = async (user: RbacUserRow) => {
+    const targetUserId = Number(user?.id || 0)
+    if (!targetUserId) {
+      notify('error', 'Invalid user selected')
+      return
+    }
+    try {
+      setServiceDeactivateBusy(true)
+      await updateUser(targetUserId, { role: 'USER', isServiceAccount: false })
+      await loadUsers()
+      if (selectedUserId === targetUserId) {
+        setSelectedUserId(null)
+      }
+      notify('ok', 'Service account deactivated')
+    } catch (error: any) {
+      notify('error', error?.response?.data?.error || 'Failed to deactivate service account')
+    } finally {
+      setServiceDeactivateBusy(false)
+    }
+  }
+
   return (
     <>
       <div className="rbac-top-action-row">
@@ -1140,29 +1204,70 @@ export default function RbacModule({ isAdmin }: Props) {
                     <th scope="col">Role</th>
                     <th scope="col">Invite Status</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Service Account?</th>
                     <th scope="col">Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {serviceAccountsForSelection.length > 0 ? (
-                    serviceAccountsForSelection.map((u) => (
+                  {usersForServiceTable.length > 0 ? (
+                    usersForServiceTable.map((u) => (
                       <tr key={u.id}>
                         <td>{u.email}</td>
                         <td>{u.name || 'No name'}</td>
                         <td>{getRoleLabel(u)}</td>
                         <td>{titleCase(u.inviteStatus || 'none')}</td>
                         <td>{titleCase(u.status || 'active')}</td>
+                        <td>{u.isServiceAccount ? 'Yes' : 'No'}</td>
                         <td>
-                          <button className="admin-settings-ghost" onClick={() => setSelectedUserId(Number(u.id))}>
-                            Edit
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <button className="admin-settings-ghost" onClick={() => setSelectedUserId(Number(u.id))}>
+                              Edit
+                            </button>
+                            {!u.isServiceAccount ? (
+                              <button
+                                className="admin-settings-primary"
+                                onClick={() => {
+                                  setServiceExistingUserId(Number(u.id))
+                                  setServiceAccountView('existing-user')
+                                }}
+                                disabled={!isAdmin}
+                                title="Convert user to service account (agent)"
+                              >
+                                Make Service Account
+                              </button>
+                            ) : null}
+                            <button
+                              className="admin-settings-ghost"
+                              onClick={() => handleServiceAccountInviteActionForUser(u, 'invite')}
+                              disabled={serviceInviteBusy || isServiceInviteSent(u) || !isAdmin}
+                              title={isServiceInviteSent(u) ? 'Invite already sent; use re-invite' : 'Send invite'}
+                            >
+                              {serviceInviteBusy ? 'Processing...' : 'Invite'}
+                            </button>
+                            <button
+                              className="admin-settings-ghost"
+                              onClick={() => handleServiceAccountInviteActionForUser(u, 'reinvite')}
+                              disabled={serviceInviteBusy || !isServiceInviteSent(u) || !isAdmin}
+                              title={isServiceInviteSent(u) ? 'Send re-invite' : 'Re-invite available only after invite'}
+                            >
+                              {serviceInviteBusy ? 'Processing...' : 'Reinvite'}
+                            </button>
+                            <button
+                              className="admin-settings-danger"
+                              onClick={() => handleDeactivateServiceAccount(u)}
+                              disabled={serviceDeactivateBusy || !isAdmin || !u.isServiceAccount}
+                              title="Remove agent permissions and keep as user"
+                            >
+                              {serviceDeactivateBusy ? 'Working...' : 'Deactivate'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6}>
-                        <div className="rbac-empty-state">No service account (agent) users found.</div>
+                      <td colSpan={7}>
+                        <div className="rbac-empty-state">No users found.</div>
                       </td>
                     </tr>
                   )}
