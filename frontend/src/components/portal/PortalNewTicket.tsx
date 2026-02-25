@@ -50,6 +50,7 @@ export default function PortalNewTicket() {
         impact,
         urgency,
         type: 'Incident',
+        createdFrom: 'User portal',
         requesterId: user?.id,
         requesterEmail: user?.email,
       })

@@ -20,6 +20,25 @@ type LocalAttachment = {
   file: File
 }
 
+type ProgressFilterType =
+  | 'All Actions'
+  | 'Conversation & Internal'
+  | 'Conversation'
+  | 'Internal Conversations'
+  | 'Staff'
+  | 'Public ( User View)'
+  | 'Private'
+
+type TimelineEntry = {
+  author: string
+  text: string
+  time: string
+  action?: string
+  internal?: boolean
+  changedById?: number | null
+  kind?: 'conversation' | 'internal' | 'private' | 'sla' | 'asset' | 'user' | 'system' | 'public'
+}
+
 type EmailSignatureRecord = {
   id: string
   userId: string
@@ -93,6 +112,10 @@ export default function TicketsView() {
   const [assetAssignId, setAssetAssignId] = useState<number | ''>('')
   const [slaNowMs, setSlaNowMs] = useState(() => Date.now())
   const [activeDetailTab, setActiveDetailTab] = useState('Progress')
+  const [progressFilter, setProgressFilter] = useState<ProgressFilterType>('All Actions')
+  const [showProgressFilterMenu, setShowProgressFilterMenu] = useState(false)
+  const [progressExpanded, setProgressExpanded] = useState(true)
+  const [progressAtEnd, setProgressAtEnd] = useState(false)
   const [isCompactDetailLayout, setIsCompactDetailLayout] = useState(() => {
     if (typeof window === 'undefined') return false
     const viewportWidth = window.visualViewport?.width ?? window.innerWidth
@@ -100,6 +123,7 @@ export default function TicketsView() {
   })
   const [showActionComposer, setShowActionComposer] = useState(false)
   const [showInternalNoteEditor, setShowInternalNoteEditor] = useState(false)
+  const [internalNoteVisibility, setInternalNoteVisibility] = useState<'internal' | 'private'>('private')
   const [slaPolicies, setSlaPolicies] = useState<any[]>([])
   const [slaApplying, setSlaApplying] = useState(false)
   const [slaPolicyMenuOpen, setSlaPolicyMenuOpen] = useState(false)
@@ -116,6 +140,8 @@ export default function TicketsView() {
   const composerEditorRef = React.useRef<HTMLDivElement | null>(null)
   const slaPolicyMenuRef = React.useRef<HTMLDivElement | null>(null)
   const slaPriorityMenuRef = React.useRef<HTMLDivElement | null>(null)
+  const progressFilterMenuRef = React.useRef<HTMLDivElement | null>(null)
+  const progressListRef = React.useRef<HTMLDivElement | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [showCcField, setShowCcField] = useState(false)
   const [showBccField, setShowBccField] = useState(false)
@@ -166,6 +192,11 @@ export default function TicketsView() {
     timeHours: '00',
     timeMinutes: '01',
   })
+
+  const openInternalNoteEditor = (mode: 'internal' | 'private') => {
+    setInternalNoteVisibility(mode)
+    setShowInternalNoteEditor(true)
+  }
   const [agents, setAgents] = useState<any[]>([])
   const [myPresenceStatus, setMyPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
   const [, setAvatarRefreshTick] = useState(0)
@@ -221,6 +252,10 @@ export default function TicketsView() {
     const explicitSource = String(ticketData?.createdFrom || ticketData?.source || '').trim().toLowerCase()
     if (explicitSource.includes('portal')) return 'User portal'
     if (explicitSource.includes('itsm') || explicitSource.includes('platform')) return 'ITSM Platform'
+
+    if (Number(ticketData?.requesterId || 0) > 0 && String(ticketData?.assigneeId || '').trim() === '') {
+      return 'User portal'
+    }
 
     const requesterRole = String(ticketData?.requester?.role || ticketData?.requesterRole || '').trim().toUpperCase()
     if (requesterRole === 'USER') return 'User portal'
@@ -347,6 +382,9 @@ export default function TicketsView() {
       if (slaPriorityMenuRef.current && !slaPriorityMenuRef.current.contains(target)) {
         setSlaPriorityMenuOpen(false)
       }
+      if (progressFilterMenuRef.current && !progressFilterMenuRef.current.contains(target)) {
+        setShowProgressFilterMenu(false)
+      }
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
@@ -379,12 +417,58 @@ export default function TicketsView() {
     }
     const note = String(historyEntry?.note || '').toLowerCase()
     const isInboundReply = note.includes('inbound email reply received') || note.includes('\nfrom:')
-    if (!isInboundReply) return 'System'
+    if (!isInboundReply) return 'Platform Field'
     const requester = inferInboundEndUser(ticketData)
     if (requester?.name || requester?.email || requester?.username) {
       return String(requester.name || requester.email || requester.username)
     }
-    return 'System'
+    return 'Platform Field'
+  }
+
+  const isEmailRaisedTicket = (ticketData: any) => {
+    const sourceRaw = String(ticketData?.createdFrom || ticketData?.source || '').toLowerCase()
+    if (sourceRaw.includes('email') || sourceRaw.includes('mail')) return true
+
+    const description = String(ticketData?.description || '').toLowerCase()
+    if (description.includes('inbound email') || description.includes('mailbox:') || description.includes('\nfrom:')) return true
+
+    const historyItems = Array.isArray(ticketData?.history) ? ticketData.history : []
+    return historyItems.some((h: any) => String(h?.note || '').toLowerCase().includes('inbound email'))
+  }
+
+  const getCreatedTimelineAction = (ticketData: any): 'Opened' | 'New' => {
+    if (isEmailRaisedTicket(ticketData)) return 'New'
+    const createdFrom = String(inferCreatedFrom(ticketData) || '').trim().toLowerCase()
+    if (createdFrom.includes('user portal')) return 'New'
+    return 'Opened'
+  }
+
+  const resolveTimelineAction = (opts: { noteRaw?: string; note?: string; fromStatus?: string; toStatus?: string; internal?: boolean; kind?: string; createdAction?: 'Opened' | 'New' }) => {
+    const noteRaw = String(opts.noteRaw || '').toLowerCase()
+    const note = String(opts.note || '').toLowerCase()
+    const fromStatus = String(opts.fromStatus || '').trim()
+    const toStatus = String(opts.toStatus || '').trim()
+    const internal = Boolean(opts.internal)
+    const kind = String(opts.kind || '').toLowerCase()
+
+    if (note.includes('ticket created')) return opts.createdAction || 'Opened'
+    if (note.includes('response sla marked as responded')) return 'Mark As Responded'
+    if (note.includes('asset assigned')) return 'Asset Assigned'
+    if (note.includes('asset unassigned')) return 'Asset Unassigned'
+    if (noteRaw.startsWith('[email]')) return 'Email+Note'
+    if (note.includes('inbound email reply received')) return 'Conversation'
+    if (internal && note.startsWith('private:')) return 'Private Note'
+    if (internal) return 'Internal Note'
+    if (fromStatus || toStatus) {
+      const toKey = toStatus.toLowerCase()
+      if (toKey === 'acknowledged') return 'Accept Ticket'
+      if (toKey === 'resolved') return 'Resolve Ticket'
+      if (toKey === 'closed') return 'Close Ticket'
+      if (toStatus) return toStatus
+    }
+    if (kind === 'conversation') return 'First Response'
+    if (kind === 'system') return 'Updated'
+    return 'Updated'
   }
 
   const hydrateTimelineFromTicket = (ticketData: any) => {
@@ -392,33 +476,43 @@ export default function TicketsView() {
     if (!ticketKey) return
 
     const requester = inferInboundEndUser(ticketData)
-    const initialAuthor = String(requester?.name || requester?.email || requester?.username || 'System')
+    const initialAuthor = String(requester?.name || requester?.email || requester?.username || 'Platform Field')
     const initialText = String(ticketData?.subject || ticketData?.description || 'Ticket created').trim()
     const initialTime = formatTimelineTime(ticketData?.createdAt)
+    const createdAction = getCreatedTimelineAction(ticketData)
 
     const historyItems = Array.isArray(ticketData?.history) ? ticketData.history : []
     const historyComments = historyItems
       .map((h: any) => {
-        const note = String(h?.note || '').trim()
+        const noteRaw = String(h?.note || '').trim()
+        const note = noteRaw.replace(/^\[EMAIL\]\s*/i, '').trim()
         const fromStatus = String(h?.fromStatus || '').trim()
         const toStatus = String(h?.toStatus || '').trim()
         const fallback = fromStatus || toStatus ? `Status changed: ${fromStatus || '-'} -> ${toStatus || '-'}` : 'Ticket updated'
+        const internal = Boolean(h?.internal)
+        const kind = noteRaw.toLowerCase().startsWith('[email]')
+          ? 'conversation'
+          : classifyTimelineKind(note || fallback, internal)
         return {
           author: resolveHistoryAuthor(h, ticketData),
           text: note || fallback,
           time: formatTimelineTime(h?.createdAt),
+          action: resolveTimelineAction({ noteRaw, note: note || fallback, fromStatus, toStatus, internal, kind, createdAction }),
+          internal,
+          changedById: Number(h?.changedById || 0) || null,
+          kind,
         }
       })
       .filter((e: any) => String(e.text || '').trim().length > 0)
 
     const merged = [
-      { author: initialAuthor, text: `Ticket created: ${initialText}`, time: initialTime },
+      { author: initialAuthor, text: `Ticket created: ${initialText}`, time: initialTime, action: createdAction, internal: false, changedById: null, kind: 'public' as const },
       ...historyComments,
     ]
 
     const seen = new Set<string>()
     const deduped = merged.filter((e) => {
-      const key = `${e.author}|${e.text}|${e.time}`
+    const key = `${e.author}|${e.action || ''}|${e.text}|${e.time}`
       if (seen.has(key)) return false
       seen.add(key)
       return true
@@ -806,6 +900,24 @@ export default function TicketsView() {
     'Closed Tickets',
     'Open Tickets'
   ]
+  const progressFilterOptions: ProgressFilterType[] = [
+    'All Actions',
+    'Conversation & Internal',
+    'Conversation',
+    'Internal Conversations',
+    'Staff',
+    'Public ( User View)',
+    'Private',
+  ]
+  const progressFilterIcons: Record<ProgressFilterType, string> = {
+    'All Actions': 'eye',
+    'Conversation & Internal': 'message-circle',
+    'Conversation': 'messages-square',
+    'Internal Conversations': 'corner-up-left',
+    'Staff': 'user',
+    'Public ( User View)': 'eye',
+    'Private': 'eye-off',
+  }
 
   const handleSelectAll = () => {
     if (selectAll) {
@@ -841,6 +953,7 @@ export default function TicketsView() {
           category: newIncidentForm.category,
           description: newIncidentForm.description,
           subject: newIncidentForm.subject,
+          createdFrom: 'ITSM Platform',
           requesterId: user?.id ? Number(user.id) : undefined,
           requesterEmail: user?.email || undefined,
         }
@@ -964,8 +1077,8 @@ export default function TicketsView() {
     })
   }
 
-  // Comments keyed by ticket id (simple in-memory store for timeline)
-  const [ticketComments, setTicketComments] = useState<Record<string, {author: string; text: string; time: string}[]>>({})
+  // Timeline entries keyed by ticket id
+  const [ticketComments, setTicketComments] = useState<Record<string, TimelineEntry[]>>({})
 
   const getCurrentAgentName = () => {
     if (!user) return 'You'
@@ -1053,12 +1166,34 @@ export default function TicketsView() {
     return initials
   }
 
-  const addTicketComment = (ticketId: string, text: string) => {
+  const classifyTimelineKind = (text: string, internal = false, explicitKind?: TimelineEntry['kind']): TimelineEntry['kind'] => {
+    if (explicitKind) return explicitKind
+    const t = String(text || '').toLowerCase()
+    if (t.includes('[email]') || t.includes('inbound email reply received') || t.includes('email user') || t.includes('note + email') || t.includes('email supplier')) {
+      return 'conversation'
+    }
+    if (t.includes('response sla') || t.includes('resolution sla') || t.includes('sla')) return 'sla'
+    if (t.includes('asset assigned') || t.includes('asset unassigned')) return 'asset'
+    if (t.includes('user name') || t.includes('email address') || t.includes('phone number') || t.includes('reporting manager') || t.includes('site')) return 'user'
+    if (internal && (t.includes('private') || t.startsWith('internal:'))) return 'private'
+    if (internal) return 'internal'
+    if (t.includes('status changed') || t.includes('accepted by') || t.includes('acknowledge')) return 'system'
+    return 'public'
+  }
+
+  const addTicketComment = (
+    ticketId: string,
+    text: string,
+    meta?: { internal?: boolean; kind?: TimelineEntry['kind']; changedById?: number | null }
+  ) => {
     const now = new Date().toLocaleString()
     const author = getCurrentAgentName()
+    const internal = Boolean(meta?.internal)
+    const kind = classifyTimelineKind(text, internal, meta?.kind)
+    const changedById = Number(meta?.changedById || user?.id || 0) || null
     setTicketComments(prev => ({
       ...prev,
-      [ticketId]: [ ...(prev[ticketId] || []), { author, text, time: now } ]
+      [ticketId]: [ ...(prev[ticketId] || []), { author, text, time: now, internal, kind, changedById } ]
     }))
   }
 
@@ -1090,7 +1225,14 @@ export default function TicketsView() {
     const typeKey = normalizeTicketTypeKey(selectedTicket.type)
     const status = String(selectedTicket.status || '')
     const statusKey = status.toLowerCase()
+    const actionState = getTicketActionState(selectedTicket)
+    const acceptedDone = statusKey !== 'new'
+    const acknowledgedDone = actionState.ackSent || (acceptedDone && statusKey !== 'acknowledged')
     const buttons: { label: string; onClick: () => void; className?: string }[] = [{ label: 'Back', onClick: closeDetail }]
+    const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
+    if (acknowledgedDone && !responseMarked) buttons.push({ label: 'Mark as responsed', onClick: handleMarkAsResponsed })
+    buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
+    buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
     const go = (to: string, note?: string) => () => applyStatus(to, note || `Status updated to ${to}`)
 
     if (typeKey === 'servicerequest') {
@@ -1109,7 +1251,12 @@ export default function TicketsView() {
       } else if (statusKey === 'closed') {
         buttons.push({ label: 'Re-open', onClick: go('In Progress', 'Re-opened') })
       }
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'changerequestassetreplacement' || typeKey === 'changerequest') {
       if (statusKey === 'new') buttons.push({ label: 'Verify Asset', onClick: go('Under Verification') })
@@ -1123,7 +1270,12 @@ export default function TicketsView() {
       } else if (statusKey === 'procurement') buttons.push({ label: 'Start Implementation', onClick: go('In Progress') })
       else if (statusKey === 'in progress') buttons.push({ label: 'Complete Change', onClick: go('Completed') })
       else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'accessrequest') {
       if (statusKey === 'new') buttons.push({ label: 'Send to Manager', onClick: go('Manager Approval') })
@@ -1133,7 +1285,12 @@ export default function TicketsView() {
       } else if (statusKey === 'it approval') buttons.push({ label: 'IT Approve', onClick: go('Provisioning') })
       else if (statusKey === 'provisioning') buttons.push({ label: 'Provision Access', onClick: go('Completed') })
       else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'newstarterrequest') {
       if (statusKey === 'new') buttons.push({ label: 'Confirm by HR', onClick: go('HR Confirmation') })
@@ -1141,7 +1298,12 @@ export default function TicketsView() {
       else if (statusKey === 'it setup') buttons.push({ label: 'Allocate Asset', onClick: go('Asset Allocation') })
       else if (statusKey === 'asset allocation') buttons.push({ label: 'Mark Ready', onClick: go('Ready for Joining') })
       else if (statusKey === 'ready for joining') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'leaverrequest') {
       if (statusKey === 'new') buttons.push({ label: 'HR Confirm', onClick: go('HR Confirmation') })
@@ -1149,14 +1311,24 @@ export default function TicketsView() {
       else if (statusKey === 'access revoked') buttons.push({ label: 'Collect Asset', onClick: go('Asset Collected') })
       else if (statusKey === 'asset collected') buttons.push({ label: 'Complete Offboarding', onClick: go('Completed') })
       else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'task') {
       if (statusKey === 'new') buttons.push({ label: 'Accept', onClick: go('Assigned') })
       else if (statusKey === 'assigned') buttons.push({ label: 'Start', onClick: go('In Progress') })
       else if (statusKey === 'in progress') buttons.push({ label: 'Complete', onClick: go('Completed') })
       else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'softwarerequest') {
       if (statusKey === 'new') buttons.push({ label: 'Request Approval', onClick: go('Manager Approval') })
@@ -1167,7 +1339,12 @@ export default function TicketsView() {
       else if (statusKey === 'procurement') buttons.push({ label: 'Install Software', onClick: go('Installation') })
       else if (statusKey === 'installation') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
       else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'hrrequest') {
       if (statusKey === 'new') buttons.push({ label: 'Send to HR', onClick: go('HR Review') })
@@ -1176,7 +1353,12 @@ export default function TicketsView() {
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
       } else if (statusKey === 'in progress') buttons.push({ label: 'Resolve', onClick: go('Resolved') })
       else if (statusKey === 'resolved') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
     if (typeKey === 'peripheralrequest') {
       if (statusKey === 'new') buttons.push({ label: 'Check Stock', onClick: go('Stock Check') })
@@ -1187,9 +1369,19 @@ export default function TicketsView() {
         buttons.push({ label: 'Issue Asset', onClick: go('Issued') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
       } else if (statusKey === 'issued') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons
+      return buttons.filter((btn) => {
+        const key = String(btn.label || '').trim().toLowerCase()
+        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+        return true
+      })
     }
-    return buttons
+    return buttons.filter((btn) => {
+      const key = String(btn.label || '').trim().toLowerCase()
+      if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+      if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
+      return true
+    })
   }
 
   const closeDetail = () => {
@@ -1234,7 +1426,7 @@ export default function TicketsView() {
     if (mode === 'logSupplier') return 'Log With Supplier'
     if (mode === 'emailSupplier') return 'Email Supplier'
     if (mode === 'callbackSupplier') return 'Call Back Supplier'
-    if (mode === 'approval') return 'Approval Request'
+    if (mode === 'approval') return 'Requesting Approval'
     if (mode === 'resolve') return 'Resolve Ticket'
     if (mode === 'close') return 'Close Ticket'
     return 'Note + Email'
@@ -1253,6 +1445,108 @@ export default function TicketsView() {
     const container = document.createElement('div')
     container.innerHTML = html
     return String(container.textContent || container.innerText || '').trim()
+  }
+
+  const escapeHtml = (value: string) => (
+    String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  )
+
+  const formatTemplateDate = (raw: string) => {
+    if (!raw) return '-'
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return raw
+    return d.toLocaleDateString()
+  }
+
+  const getApprovalTemplate = () => {
+    if (!selectedTicket) return ''
+    const approverName = composerForm.approvalTeam || 'Approver'
+    const requesterName = String(endUser?.name || selectedTicket.endUser || 'Requester').trim() || 'Requester'
+    const department = String(selectedTicket.team || selectedTicket.category || '-').trim() || '-'
+    const requestType = String(selectedTicket.type || 'Service').trim() || 'Service'
+    const priority = String(selectedTicket.priority || '-').trim() || '-'
+    const shortDescription = String(selectedTicket.subject || '-').trim() || '-'
+    const businessJustification = String(selectedTicket.issueDetail || '-').trim() || '-'
+    const impactDetails = String(selectedTicket.resolution || '-').trim() || '-'
+    const plannedStartDate = formatTemplateDate(selectedTicket.createdAt || '')
+    const plannedEndDate = '-'
+
+    return `Dear ${approverName},
+
+Approval is required for the following request:
+
+Ticket ID: ${selectedTicket.id}
+Request Type: ${requestType}
+Requested By: ${requesterName}
+Department: ${department}
+Priority: ${priority}
+
+Description:
+${shortDescription}
+
+Business Justification:
+${businessJustification}
+
+Impact:
+${impactDetails}
+
+Planned Start Date: ${plannedStartDate}
+Planned End Date: ${plannedEndDate}
+
+Kindly review and approve or reject this request at your earliest convenience.
+
+You may respond by:
+- Clicking Approve in the system
+- Clicking Reject in the system
+- Replying to this email with "Approved" or "Rejected"
+
+If rejected, please provide a reason for tracking purposes.
+
+Thank you for your prompt action.
+
+Regards,
+Service Desk
+TrustyBytes
+
+---
+Quick Approval Template
+
+Hi ${approverName},
+
+Please review the below request:
+
+Ticket ID: ${selectedTicket.id}
+Requested By: ${requesterName}
+Request: ${shortDescription}
+
+Kindly reply with:
+YES - to approve
+NO - to reject
+
+If rejecting, please mention the reason.
+
+Thank you,
+Service Desk Team
+
+---
+System Notification Version
+
+Subject: Approval Pending - Ticket #${selectedTicket.id}
+
+You have a pending approval request.
+
+Ticket: #${selectedTicket.id}
+Requester: ${requesterName}
+Priority: ${priority}
+Summary: ${shortDescription}
+
+Click below to proceed:
+[Approve] [Reject]`
   }
 
   const loadStoredList = <T,>(key: string, fallback: T): T => {
@@ -1379,11 +1673,16 @@ export default function TicketsView() {
     const subjectPrefix = `[${selectedTicket.id}] ${selectedTicket.subject}`
     const subjectDefault =
       mode === 'logSupplier' ? `Supplier log - ${subjectPrefix}` :
-      mode === 'approval' ? `Approval needed - ${subjectPrefix}` :
+      mode === 'approval' ? `Approval Pending - Ticket #${selectedTicket.id}` :
       mode === 'resolve' ? `Resolution update - ${subjectPrefix}` :
       mode === 'close' ? `Ticket closed - ${subjectPrefix}` :
       mode === 'acknowledge' ? `Acknowledged - ${subjectPrefix}` :
       `Update - ${subjectPrefix}`
+
+    const defaultBody = mode === 'approval' ? getApprovalTemplate() : ''
+    const defaultBodyHtml = defaultBody
+      ? `<div>${escapeHtml(defaultBody).replace(/\n/g, '<br/>')}</div>`
+      : ''
 
     setComposerForm((prev) => ({
       ...prev,
@@ -1391,20 +1690,23 @@ export default function TicketsView() {
       cc: '',
       bcc: '',
       subject: subjectDefault,
-      body: '',
+      body: defaultBody,
       actionStatus: 'With User',
       currentAction: '',
       nextAction: '',
       asset: '',
     }))
-    setComposerBodyHtml('')
-    setComposerBodyText('')
-    if (composerEditorRef.current) composerEditorRef.current.innerHTML = ''
+    setComposerBodyHtml(defaultBodyHtml)
+    setComposerBodyText(defaultBody)
+    if (composerEditorRef.current) composerEditorRef.current.innerHTML = defaultBodyHtml
     setComposerAttachments([])
     setShowCcField(false)
     setShowBccField(false)
     setComposerMenuOpen(false)
     setShowActionComposer(true)
+    window.requestAnimationFrame(() => {
+      if (composerEditorRef.current) composerEditorRef.current.innerHTML = defaultBodyHtml
+    })
   }
 
   const getActionButtons = () => {
@@ -1416,33 +1718,39 @@ export default function TicketsView() {
 
     const status = (selectedTicket.status || '').toLowerCase()
     const actionState = getTicketActionState(selectedTicket)
+    const acceptedDone = status !== 'new'
+    const acknowledgedDone = actionState.ackSent || (acceptedDone && status !== 'acknowledged')
+    const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
     const buttons: { label: string; onClick: () => void; className?: string }[] = []
 
     buttons.push({ label: 'Back', onClick: closeDetail })
+    if (acknowledgedDone && !responseMarked) buttons.push({ label: 'Mark as responsed', onClick: handleMarkAsResponsed })
 
     if (status === 'closed') {
       buttons.push({ label: 'Re-open', onClick: () => applyStatus('In Progress', 'Re-opened') })
-      buttons.push({ label: 'Internal note', onClick: () => setShowInternalNoteEditor(true) })
+      buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
       buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
       return buttons
     }
 
     if (status === 'new') buttons.push({ label: 'Accept', onClick: handleAccept })
 
-    if (!actionState.ackSent) buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
+    if (acceptedDone && !actionState.ackSent) buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
     buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
 
-    if (!actionState.supplierLogged) {
+    if (acknowledgedDone && !actionState.supplierLogged) {
       buttons.push({ label: 'Log to Supplier', onClick: () => openComposer('logSupplier') })
-    } else {
+    } else if (acknowledgedDone) {
       buttons.push({ label: 'Email Supplier', onClick: () => openComposer('emailSupplier') })
       buttons.push({ label: 'Call Back Supplier', onClick: () => openComposer('callbackSupplier') })
     }
 
-    buttons.push({ label: 'Internal note', onClick: () => setShowInternalNoteEditor(true) })
+    buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
+    buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
     buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
-    buttons.push({ label: 'Approval', onClick: () => openComposer('approval') })
-    buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
+    if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
+    if (acknowledgedDone) buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
     buttons.push({ label: 'Close', onClick: () => openComposer('close') })
     return buttons
   }
@@ -1452,10 +1760,12 @@ export default function TicketsView() {
     Accept: 'circle-check-big',
     Acknowledge: 'check',
     'Internal note': 'sticky-note',
+    'Private note': 'sticky-note',
     Close: 'circle-x',
     'Email User': 'mail',
     'Log to Supplier': 'package',
     Approval: 'clipboard-check',
+    'Requesting Approval': 'clipboard-check',
     'Note + Email': 'mail-plus',
     'Call Back Supplier': 'phone-call',
     Resolve: 'circle-check-big',
@@ -1466,6 +1776,7 @@ export default function TicketsView() {
     'Waiting for Approval': 'clipboard-check',
     'In Progress': 'refresh-ccw',
     Acknowledged: 'check',
+    'Mark as responsed': 'badge-check',
   }
 
   const isOpenStatus = (status: string) => {
@@ -2012,11 +2323,57 @@ export default function TicketsView() {
     setSelectedTicket(prev => prev ? { ...prev, status: 'Acknowledged', assignedAgentId: assigneeId, assignedAgentName: assigneeName } : prev)
     addTicketComment(selectedTicket.id, `Accepted by ${assigneeName}`)
     markTicketActionState(selectedTicket.id, { ackSent: false })
-    if (user?.id) {
-      ticketService.updateTicket(selectedTicket.id, { assigneeId: Number(user.id) }).catch((err) => {
-        console.warn('Assign after accept failed', err)
-      })
+    const syncFromServer = (res: any) => {
+      if (!res) return
+      setSelectedTicket((prev) => prev ? {
+        ...prev,
+        status: res.status || prev.status,
+        sla: res.sla || prev.sla,
+        slaTimeLeft: res.slaTimeLeft || prev.slaTimeLeft,
+      } : prev)
+      setIncidents((prev) => prev.map((i) => i.id === selectedTicket.id ? {
+        ...i,
+        status: res.status || i.status,
+        sla: res.sla || i.sla,
+        slaTimeLeft: res.slaTimeLeft || i.slaTimeLeft,
+      } : i))
     }
+    ;(async () => {
+      try {
+        const transitioned = await ticketService.transitionTicket(selectedTicket.id, 'Acknowledged')
+        syncFromServer(transitioned)
+      } catch (err) {
+        console.warn('Acknowledge transition failed', err)
+      }
+      if (user?.id) {
+        ticketService.updateTicket(selectedTicket.id, { assigneeId: Number(user.id) }).then(syncFromServer).catch((err) => {
+          console.warn('Assign after accept failed', err)
+        })
+      }
+    })()
+  }
+
+  const handleMarkAsResponsed = () => {
+    if (!selectedTicket) return
+    ;(async () => {
+      try {
+        const res = await ticketService.markResponded(selectedTicket.id)
+        setSelectedTicket((prev) => prev ? {
+          ...prev,
+          sla: res.sla || prev.sla,
+          slaTimeLeft: res.slaTimeLeft || prev.slaTimeLeft,
+        } : prev)
+        setIncidents((prev) => prev.map((i) => i.id === selectedTicket.id ? {
+          ...i,
+          sla: res.sla || i.sla,
+          slaTimeLeft: res.slaTimeLeft || i.slaTimeLeft,
+        } : i))
+        addTicketComment(selectedTicket.id, 'Response SLA marked as responded')
+      } catch (err: any) {
+        console.warn('Mark response SLA failed', err)
+        alert(err?.response?.data?.error || err?.message || 'Failed to mark response SLA')
+      }
+    })()
   }
 
   const renderActionIcon = (label: string) => {
@@ -2236,15 +2593,23 @@ export default function TicketsView() {
   const handleSaveInternalNote = async () => {
     if (!selectedTicket) return
     const note = internalNoteForm.body.trim()
+    const noteTypeLabel = internalNoteVisibility === 'internal' ? 'internal note' : 'private note'
     if (!note) {
-      alert('Please enter internal note')
+      alert(`Please enter ${noteTypeLabel}`)
       return
     }
-    addTicketComment(selectedTicket.id, `Internal: ${note}`)
+    const normalizedText = internalNoteVisibility === 'internal'
+      ? (/^internal:/i.test(note) ? note : `Internal: ${note}`)
+      : (/^private:/i.test(note) ? note : `Private: ${note}`)
+    addTicketComment(selectedTicket.id, normalizedText, {
+      internal: true,
+      kind: internalNoteVisibility,
+      changedById: Number(user?.id || 0) || null
+    })
     try {
       const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, internalNoteAttachments)
       const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
-      await ticketService.privateNote(selectedTicket.id, { note, attachmentIds })
+      await ticketService.privateNote(selectedTicket.id, { note: normalizedText, attachmentIds })
       if (internalNoteForm.status && internalNoteForm.status !== selectedTicket.status) {
         await ticketSvc.transitionTicket(selectedTicket.id, internalNoteForm.status).catch(() => undefined)
         updateTicketStatusLocal(selectedTicket.id, internalNoteForm.status)
@@ -2687,12 +3052,24 @@ export default function TicketsView() {
     const balancePercent = totalMs > 0 ? Math.max(0, Math.min(100, (remainingMsRaw / totalMs) * 100)) : 0
     const percent = Math.max(0, 100 - balancePercent)
     const remainingMs = remainingMsRaw
+    const completedAtMs = toTimestamp(branch?.completedAt)
+    const responseCompletedById = Number(branch?.completedById || 0)
+    const done = kind === 'response'
+      ? Boolean(completedAtMs && responseCompletedById > 0)
+      : Boolean(completedAtMs)
+    const breachedByCompletion = Boolean(done && effectiveTargetMs && completedAtMs && completedAtMs > effectiveTargetMs)
+    const breachedByRunning = Boolean(!done && effectiveTargetMs ? slaNowMs > effectiveTargetMs : false)
+    const breached = Boolean(branch?.breached) || breachedByCompletion || breachedByRunning
+    const met = done && !breached
     return {
       percent,
       balancePercent,
       remainingLabel: formatSlaClock(remainingMs),
       targetLabel: toLocalDateTime(effectiveTargetMs),
-      breached: !!branch?.breached || (effectiveTargetMs ? slaNowMs > effectiveTargetMs : false),
+      completedLabel: toLocalDateTime(completedAtMs),
+      done,
+      met,
+      breached,
       color: getSlaElapsedColor(percent),
     }
   }
@@ -2715,35 +3092,53 @@ export default function TicketsView() {
     }
     return negative ? -seconds : seconds
   }
+  const getDefaultResponseWindowMinutes = (priority: string) => {
+    const p = String(priority || '').toLowerCase()
+    if (p === 'critical' || p === 'p1') return 15
+    if (p === 'high' || p === 'p2') return 30
+    if (p === 'medium' || p === 'p3') return 60
+    return 240
+  }
   const getDefaultResolutionWindowMinutes = (priority: string) => {
     const p = String(priority || '').toLowerCase()
-    if (p === 'critical' || p === 'p1') return 4 * 60
-    if (p === 'high' || p === 'p2') return 8 * 60
-    if (p === 'medium' || p === 'p3') return 24 * 60
-    return 72 * 60
+    if (p === 'critical' || p === 'p1') return 2 * 60
+    if (p === 'high' || p === 'p2') return 4 * 60
+    if (p === 'medium' || p === 'p3') return 8 * 60
+    return 24 * 60
   }
   const getTableSlaVisual = (incident: Incident) => {
     const now = slaNowMs
-    const startMs = toTimestamp((incident as any)?.sla?.resolution?.startedAt) ?? toTimestamp((incident as any)?.createdAt) ?? toTimestamp(incident.dateReported)
-    const targetMs = toTimestamp((incident as any)?.sla?.resolution?.targetAt)
+    const responseBranch = (incident as any)?.sla?.response || {}
+    const resolutionBranch = (incident as any)?.sla?.resolution || {}
+    const responseDone = Boolean(responseBranch?.completedAt) && Number(responseBranch?.completedById || 0) > 0
+    const activeBranch = responseDone ? resolutionBranch : responseBranch
+    const startMs = toTimestamp(activeBranch?.startedAt) ?? toTimestamp((incident as any)?.sla?.startedAt) ?? toTimestamp((incident as any)?.createdAt) ?? toTimestamp(incident.dateReported)
+    const targetMs = toTimestamp(activeBranch?.targetAt)
     let balancePercent = 0
     let breached = false
-    let label = String(incident.slaTimeLeft || '--:--')
+    let label = responseDone
+      ? String((incident as any)?.sla?.resolution?.remainingLabel || incident.slaTimeLeft || '--:--')
+      : String((incident as any)?.sla?.response?.remainingLabel || incident.slaTimeLeft || '--:--')
 
     if (startMs && targetMs && targetMs > startMs) {
       const total = targetMs - startMs
       const remaining = targetMs - now
-      breached = remaining < 0
+      const completedAtMs = toTimestamp(activeBranch?.completedAt)
+      breached = completedAtMs ? completedAtMs > targetMs : remaining < 0
       balancePercent = breached ? 0 : Math.max(0, Math.min(100, (remaining / total) * 100))
-      label = formatSlaClock(remaining)
+      label = completedAtMs ? 'SLA met' : formatSlaClock(remaining)
     } else {
-      const parsedSeconds = parseSlaClockToSeconds(String(incident.slaTimeLeft || ''))
+      const parsedSeconds = parseSlaClockToSeconds(label)
       if (parsedSeconds !== null) {
         breached = parsedSeconds < 0
-        const defaultWindowSeconds = getDefaultResolutionWindowMinutes(String(incident.priority || 'Low')) * 60
+        const defaultWindowSeconds = (
+          responseDone
+            ? getDefaultResolutionWindowMinutes(String(incident.priority || 'Low'))
+            : getDefaultResponseWindowMinutes(String(incident.priority || 'Low'))
+        ) * 60
         balancePercent = breached ? 0 : Math.max(0, Math.min(100, (parsedSeconds / Math.max(1, defaultWindowSeconds)) * 100))
       } else {
-        breached = String(incident.slaTimeLeft || '').trim().startsWith('-')
+        breached = String(label || '').trim().startsWith('-')
         balancePercent = breached ? 0 : 50
       }
     }
@@ -2752,9 +3147,82 @@ export default function TicketsView() {
     return { balancePercent, elapsedPercent, breached, label, color: getSlaElapsedColor(elapsedPercent) }
   }
   const isTicketClosed = String(selectedTicket?.status || '').trim().toLowerCase() === 'closed'
+  const isPortalUser = String(user?.role || '').trim().toUpperCase() === 'USER'
+  const selectedTicketTimeline = React.useMemo<TimelineEntry[]>(() => {
+    if (!selectedTicket) return []
+    return ticketComments[selectedTicket.id] || []
+  }, [selectedTicket, ticketComments])
+  const filteredProgressTimeline = React.useMemo<TimelineEntry[]>(() => {
+    const list = selectedTicketTimeline
+    const meId = Number(user?.id || 0)
+    const meName = String(getCurrentAgentName() || '').trim().toLowerCase()
+    const isConversation = (entry: TimelineEntry) => {
+      const kind = String(entry?.kind || '').toLowerCase()
+      const text = String(entry?.text || '').toLowerCase()
+      return kind === 'conversation' || text.includes('inbound email reply received') || text.includes('[email]')
+    }
+    const isInternal = (entry: TimelineEntry) => Boolean(entry?.internal) || String(entry?.kind || '').toLowerCase() === 'internal' || String(entry?.kind || '').toLowerCase() === 'private'
+    const isPrivate = (entry: TimelineEntry) => String(entry?.kind || '').toLowerCase() === 'private' || (Boolean(entry?.internal) && String(entry?.text || '').toLowerCase().startsWith('private'))
+    const isSlaOrUserOrAsset = (entry: TimelineEntry) => {
+      const kind = String(entry?.kind || '').toLowerCase()
+      return kind === 'sla' || kind === 'user' || kind === 'asset'
+    }
+    const isAllActionsOnlyEntry = (entry: TimelineEntry) => {
+      if (isSlaOrUserOrAsset(entry)) return true
+      const text = String(entry?.text || '').toLowerCase()
+      return (
+        text.includes('ticket updated') ||
+        text.includes('created from') ||
+        text.includes('ticket type') ||
+        text.includes('workflow') ||
+        text.includes('assigned staff') ||
+        text.includes('additional staff') ||
+        text.includes('issue - detail') ||
+        text.includes('service level agreement') ||
+        text.includes('response target') ||
+        text.includes('resolution target') ||
+        text.includes('end-user') ||
+        text.includes('reporting manager') ||
+        text.includes('phone number')
+      )
+    }
+    const isPublic = (entry: TimelineEntry) => !isPrivate(entry) && !isInternal(entry) && !isSlaOrUserOrAsset(entry)
+    const isStaff = (entry: TimelineEntry) => {
+      const kind = String(entry?.kind || '').toLowerCase()
+      const changedById = Number(entry?.changedById || 0)
+      return (kind === 'system' || kind === 'internal' || kind === 'private') && changedById > 0
+    }
+
+    // User portal visibility: show only conversation timeline.
+    if (isPortalUser) return list.filter((entry) => isConversation(entry) && !isAllActionsOnlyEntry(entry))
+
+    switch (progressFilter) {
+      case 'Conversation & Internal':
+        return list.filter((entry) => (isConversation(entry) || isInternal(entry) || String(entry?.kind || '').toLowerCase() === 'system' || String(entry?.kind || '').toLowerCase() === 'public') && !isAllActionsOnlyEntry(entry))
+      case 'Conversation':
+        return list.filter((entry) => isConversation(entry) && !isAllActionsOnlyEntry(entry))
+      case 'Internal Conversations':
+        return list.filter((entry) => isInternal(entry) && !isAllActionsOnlyEntry(entry))
+      case 'Staff':
+        return list.filter((entry) => isStaff(entry) && !isAllActionsOnlyEntry(entry))
+      case 'Public ( User View)':
+        return list.filter((entry) => isPublic(entry) && !isAllActionsOnlyEntry(entry))
+      case 'Private':
+        return list.filter((entry) => {
+          if (isAllActionsOnlyEntry(entry)) return false
+          if (!isPrivate(entry)) return false
+          const byId = meId > 0 && Number(entry?.changedById || 0) === meId
+          const byAuthor = !byId && meName && String(entry?.author || '').trim().toLowerCase() === meName
+          return byId || byAuthor
+        })
+      case 'All Actions':
+      default:
+        return list
+    }
+  }, [isPortalUser, progressFilter, selectedTicketTimeline, user?.id, user?.name, user?.email, user?.username])
   const closingEntry = React.useMemo(() => {
     if (!selectedTicket) return null
-    const timeline = ticketComments[selectedTicket.id] || []
+    const timeline = selectedTicketTimeline
     return timeline
       .slice()
       .sort((a, b) => (toTimestamp(b.time) || 0) - (toTimestamp(a.time) || 0))
@@ -2762,7 +3230,27 @@ export default function TicketsView() {
         const text = String(entry?.text || '').toLowerCase()
         return text.startsWith('closed:') || text.includes('status updated to closed') || text.includes('ticket resolved/closed')
       }) || null
-  }, [selectedTicket, ticketComments])
+  }, [selectedTicket, selectedTicketTimeline])
+  const updateProgressScrollState = React.useCallback(() => {
+    const el = progressListRef.current
+    if (!el) return
+    const threshold = 24
+    const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
+    setProgressAtEnd(atEnd)
+  }, [])
+  const jumpProgressList = () => {
+    const el = progressListRef.current
+    if (!el) return
+    if (progressAtEnd) {
+      el.scrollTo({ top: 0, behavior: 'smooth' })
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    }
+  }
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => updateProgressScrollState(), 0)
+    return () => window.clearTimeout(timer)
+  }, [selectedTicket?.id, filteredProgressTimeline.length, showActionComposer, showInternalNoteEditor, progressExpanded, updateProgressScrollState])
   const closedAtMs =
     toTimestamp((selectedTicket as any)?.closedAt) ??
     toTimestamp(closingEntry?.time) ??
@@ -2780,7 +3268,11 @@ export default function TicketsView() {
   const createdDateObj = createdAtMs ? new Date(createdAtMs) : new Date()
   const createdTimeValue = `${String(createdDateObj.getHours()).padStart(2, '0')}:${String(createdDateObj.getMinutes()).padStart(2, '0')}`
 
-  const openTicketFieldEditor = (field: string) => setEditingTicketField(field)
+  const pendingOpenTicketFieldRef = React.useRef<string | null>(null)
+  const openTicketFieldEditor = (field: string) => {
+    pendingOpenTicketFieldRef.current = field
+    setEditingTicketField(field)
+  }
   const closeTicketFieldEditor = () => setEditingTicketField(null)
 
   const renderTicketFieldValue = (
@@ -2795,6 +3287,22 @@ export default function TicketsView() {
         <select
           className="sidebar-select"
           autoFocus
+          ref={(el) => {
+            if (!el) return
+            if (pendingOpenTicketFieldRef.current !== field) return
+            pendingOpenTicketFieldRef.current = null
+            // Open option list immediately on first click (single-click edit+open).
+            window.setTimeout(() => {
+              try {
+                el.focus()
+                const picker = (el as any).showPicker
+                if (typeof picker === 'function') picker.call(el)
+              } catch {
+                // keep focused as fallback for browsers without showPicker
+                el.focus()
+              }
+            }, 0)
+          }}
           value={value || ''}
           onBlur={closeTicketFieldEditor}
           onChange={(e) => {
@@ -2873,6 +3381,7 @@ export default function TicketsView() {
   React.useEffect(() => {
     setSlaPolicyMenuOpen(false)
     setSlaPriorityMenuOpen(false)
+    setShowProgressFilterMenu(false)
     setSelectedSlaPolicyName('')
     setActiveDetailTab('Progress')
   }, [selectedTicket?.id])
@@ -2896,20 +3405,22 @@ export default function TicketsView() {
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
       <div className="work-main">
         <div className="detail-view-container">
-      <div className="detail-action-bar">
+        <div className="detail-action-bar">
         <div className="action-toolbar">
-          <button
-            className="pill-icon-btn"
-            title={queueCollapsed ? 'Show side panel' : 'Hide side panel'}
-            aria-label={queueCollapsed ? 'Show side panel' : 'Hide side panel'}
-            onClick={() => setQueueCollapsed((prev) => !prev)}
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="4" y1="7" x2="20" y2="7" />
-              <line x1="4" y1="12" x2="20" y2="12" />
-              <line x1="4" y1="17" x2="20" y2="17" />
-            </svg>
-          </button>
+          {queueCollapsed && (
+            <button
+              className="pill-icon-btn"
+              title="Show side panel"
+              aria-label="Show side panel"
+              onClick={() => setQueueCollapsed(false)}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="4" y1="7" x2="20" y2="7" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="17" x2="20" y2="17" />
+              </svg>
+            </button>
+          )}
           {getActionButtons().map((btn, idx) => (
             btn.label === 'Back' ? (
               <button key={idx} className="pill-icon-btn back-icon-btn" onClick={btn.onClick} title="Back" aria-label="Back">
@@ -2945,8 +3456,85 @@ export default function TicketsView() {
         <div className="progress-card">
           <div className="progress-card-header">
             <span className="progress-title">Progress</span>
+            <div className="progress-header-right">
+              {!isPortalUser && (
+                <div className="filter-dropdown progress-filter-dropdown" ref={progressFilterMenuRef}>
+                  <button
+                    className="progress-icon-btn progress-icon-btn-filter"
+                    type="button"
+                    onClick={() => setShowProgressFilterMenu((v) => !v)}
+                    title={progressFilter}
+                    aria-label="Progress filter"
+                  >
+                    <img
+                      className="progress-icon-image"
+                      src="https://unpkg.com/lucide-static@latest/icons/messages-square.svg"
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  </button>
+                  {showProgressFilterMenu && (
+                    <div className="filter-menu progress-filter-menu">
+                      {progressFilterOptions.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className={`filter-option progress-filter-option ${option === progressFilter ? 'active' : ''}`}
+                          onClick={() => {
+                            setProgressFilter(option)
+                            setShowProgressFilterMenu(false)
+                          }}
+                        >
+                          <img
+                            className="progress-filter-icon"
+                            src={`https://unpkg.com/lucide-static@latest/icons/${progressFilterIcons[option]}.svg`}
+                            alt=""
+                            aria-hidden="true"
+                          />
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="progress-actions">
+                <button
+                  type="button"
+                  className="progress-icon-btn"
+                  title={progressExpanded ? 'Collapse All' : 'Expand All'}
+                  aria-label={progressExpanded ? 'Collapse All' : 'Expand All'}
+                  onClick={() => setProgressExpanded((v) => !v)}
+                >
+                  <img
+                    className="progress-icon-image"
+                    src={`https://unpkg.com/lucide-static@latest/icons/${progressExpanded ? 'square-minus' : 'square-plus'}.svg`}
+                    alt=""
+                    aria-hidden="true"
+                  />
+                </button>
+                <button
+                  type="button"
+                  className="progress-icon-btn"
+                  title={progressAtEnd ? 'Move to Top' : 'Move to Last'}
+                  aria-label={progressAtEnd ? 'Move to Top' : 'Move to Last'}
+                  onClick={jumpProgressList}
+                >
+                  <img
+                    className="progress-icon-image"
+                    src={`https://unpkg.com/lucide-static@latest/icons/${progressAtEnd ? 'arrow-up' : 'arrow-down'}.svg`}
+                    alt=""
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+            </div>
           </div>
-          <div className={`progress-list${showActionComposer || showInternalNoteEditor ? ' progress-list-editor-open' : ''}`}>
+          <div
+            ref={progressListRef}
+            onScroll={updateProgressScrollState}
+            className={`progress-list${showActionComposer || showInternalNoteEditor ? ' progress-list-editor-open' : ''}${!progressExpanded ? ' progress-list-collapsed' : ''}`}
+          >
             {showActionComposer && (
               <div className={`action-compose-modal inline-compose-card${composerFullscreen ? ' compose-fullscreen' : ''}`}>
                 <div className="compose-header">
@@ -3231,7 +3819,7 @@ export default function TicketsView() {
                     <div className="compose-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
                     <div>
                     <div className="compose-user">{getCurrentAgentName()}</div>
-                    <div className="compose-mode">Internal Note</div>
+                    <div className="compose-mode">{internalNoteVisibility === 'internal' ? 'Internal Note' : 'Private Note'}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -3283,29 +3871,6 @@ export default function TicketsView() {
                     ))}
                   </div>
                 )}
-                <div className="compose-grid four">
-                  <label>Status
-                    <select value={internalNoteForm.status} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, status: e.target.value }))}>
-                      <option>In Progress</option>
-                      <option>Awaiting Approval</option>
-                      <option>With Supplier</option>
-                      <option>Resolved</option>
-                      <option>Closed</option>
-                    </select>
-                  </label>
-                  <label>Team
-                    <input value={internalNoteForm.team} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, team: e.target.value }))} />
-                  </label>
-                  <label>Staff
-                    <input value={internalNoteForm.staff} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, staff: e.target.value }))} />
-                  </label>
-                  <label>Time Taken
-                    <div className="inline-row">
-                      <input value={internalNoteForm.timeHours} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeHours: e.target.value }))} />
-                      <input value={internalNoteForm.timeMinutes} onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, timeMinutes: e.target.value }))} />
-                    </div>
-                  </label>
-                </div>
                 <div className="compose-footer-actions">
                   <button className="btn-submit" onClick={handleSaveInternalNote} disabled={isUploadingAttachments}>
                     {isUploadingAttachments ? 'Uploading...' : 'Save'}
@@ -3314,7 +3879,7 @@ export default function TicketsView() {
                 </div>
               </div>
             )}
-            {(ticketComments[selectedTicket.id] || [])
+            {filteredProgressTimeline
               .slice()
               .sort((a, b) => {
                 const ta = new Date(a.time).getTime()
@@ -3325,8 +3890,9 @@ export default function TicketsView() {
               .map((c, idx) => {
                 const authorName = String((c as any)?.author ?? '')
                 const identity = resolveCommentIdentity(authorName)
+                const actionLabel = String((c as any)?.action || '').trim()
                 return (
-              <div key={`${c.time}-${idx}`} className="progress-item">
+              <div key={`${c.time}-${idx}`} className={`progress-item${!progressExpanded ? ' is-collapsed' : ''}`}>
                 <div className="progress-avatar">
                   {identity.avatarUrl ? (
                     <img
@@ -3340,34 +3906,58 @@ export default function TicketsView() {
                 </div>
                 <div className="progress-body">
                   <div className="progress-meta">
-                    <div className="progress-author">{identity.name}</div>
+                    <div className="progress-head-left">
+                      <div className="progress-author">{identity.name}</div>
+                      {actionLabel ? <div className="progress-action-line">| {actionLabel}</div> : null}
+                    </div>
                     <div className="progress-time">{c.time}</div>
                   </div>
                   <div className="progress-text">{c.text}</div>
                 </div>
               </div>
             )})}
-            {(!ticketComments[selectedTicket.id] || ticketComments[selectedTicket.id].length === 0) && (
+            {filteredProgressTimeline.length === 0 && (
               <div className="progress-item">
-                <div className="progress-avatar">
-                  {getInboundDisplayUser().avatarUrl ? (
-                    <img
-                      src={getInboundDisplayUser().avatarUrl}
-                      alt={getInboundDisplayUser().name}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none'
-                      }}
-                    />
-                  ) : getInitials(getInboundDisplayUser().name)}
-                </div>
-                <div className="progress-body">
-                  <div className="progress-meta">
-                    <div className="progress-author">{getInboundDisplayUser().name}</div>
-                    <div className="progress-time">{selectedTicket.dateReported}</div>
+                {isPortalUser ? (
+                  <div className="progress-body">
+                    <div className="progress-meta">
+                      <div className="progress-author">No conversation yet</div>
+                    </div>
                   </div>
-                  <div className="progress-text">{selectedTicket.subject}</div>
-                </div>
+                ) : (
+                  <>
+                    <div className="progress-avatar">
+                      {getInboundDisplayUser().avatarUrl ? (
+                        <img
+                          src={getInboundDisplayUser().avatarUrl}
+                          alt={getInboundDisplayUser().name}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      ) : getInitials(getInboundDisplayUser().name)}
+                    </div>
+                    <div className="progress-body">
+                      <div className="progress-meta">
+                        <div className="progress-author">{getInboundDisplayUser().name}</div>
+                        <div className="progress-time">{selectedTicket.dateReported}</div>
+                      </div>
+                      <div className="progress-text">{selectedTicket.subject}</div>
+                    </div>
+                  </>
+                )}
               </div>
+            )}
+            {progressAtEnd && filteredProgressTimeline.length > 0 && (
+              <button
+                type="button"
+                className="progress-float-btn"
+                title="Move to Top"
+                aria-label="Move to Top"
+                onClick={jumpProgressList}
+              >
+                ↑
+              </button>
             )}
           </div>
         </div>
@@ -3584,35 +4174,43 @@ export default function TicketsView() {
                   <div className="sla-row">
                     <span>Response Target</span>
                     <span>{responseSla.targetLabel}</span>
-                    <span className="sla-x">{responseSla.breached ? 'x' : 'ok'}</span>
+                    <span className={`sla-x${responseSla.met ? ' sla-check' : ''}`}>{responseSla.met ? '✓' : responseSla.breached ? 'x' : ''}</span>
                   </div>
-                  <div className="sla-progress-track" role="progressbar" aria-label="Response SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(responseSla.percent)}>
-                    <div
-                      className="sla-progress-fill"
-                      style={{
-                        width: `${responseSla.breached ? 100 : responseSla.percent}%`,
-                        background: responseSla.breached ? '#8B0000' : responseSla.color,
-                      }}
-                    />
-                    <span className="sla-progress-time">{responseSla.remainingLabel}</span>
-                  </div>
+                  {!responseSla.done ? (
+                    <div className="sla-progress-track" role="progressbar" aria-label="Response SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(responseSla.percent)}>
+                      <div
+                        className="sla-progress-fill"
+                        style={{
+                          width: `${responseSla.breached ? 100 : responseSla.percent}%`,
+                          background: responseSla.breached ? '#8B0000' : responseSla.color,
+                        }}
+                      />
+                      <span className="sla-progress-time">{responseSla.remainingLabel}</span>
+                    </div>
+                  ) : (
+                    <div className="sla-done-line">First response completed {responseSla.completedLabel !== '-' ? `at ${responseSla.completedLabel}` : ''}</div>
+                  )}
                 </div>
                 <div className="sla-metric">
                   <div className="sla-row">
                     <span>Resolution Target</span>
                     <span>{resolutionSla.targetLabel}</span>
-                    <span className="sla-x">{resolutionSla.breached ? 'x' : 'ok'}</span>
+                    <span className={`sla-x${resolutionSla.met ? ' sla-check' : ''}`}>{resolutionSla.met ? '✓' : resolutionSla.breached ? 'x' : ''}</span>
                   </div>
-                  <div className="sla-progress-track" role="progressbar" aria-label="Resolution SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(resolutionSla.percent)}>
-                    <div
-                      className="sla-progress-fill"
-                      style={{
-                        width: `${resolutionSla.breached ? 100 : resolutionSla.percent}%`,
-                        background: resolutionSla.breached ? '#8B0000' : resolutionSla.color,
-                      }}
-                    />
-                    <span className="sla-progress-time">{resolutionSla.remainingLabel}</span>
-                  </div>
+                  {!resolutionSla.done ? (
+                    <div className="sla-progress-track" role="progressbar" aria-label="Resolution SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(resolutionSla.percent)}>
+                      <div
+                        className="sla-progress-fill"
+                        style={{
+                          width: `${resolutionSla.breached ? 100 : resolutionSla.percent}%`,
+                          background: resolutionSla.breached ? '#8B0000' : resolutionSla.color,
+                        }}
+                      />
+                      <span className="sla-progress-time">{resolutionSla.remainingLabel}</span>
+                    </div>
+                  ) : (
+                    <div className="sla-done-line">Resolution completed {resolutionSla.completedLabel !== '-' ? `at ${resolutionSla.completedLabel}` : ''}</div>
+                  )}
                 </div>
                 {isTicketClosed && (
                   <div className="closure-section">
@@ -3842,6 +4440,8 @@ export default function TicketsView() {
               <div className="col-category">{incident.category || '-'}</div>
               <div className="col-sla">
                 {(() => {
+                  const isClosed = String(incident.status || '').trim().toLowerCase() === 'closed'
+                  if (isClosed) return <span>-</span>
                   const slaVisual = getTableSlaVisual(incident)
                   return (
                     <div className={`sla-table-track${slaVisual.breached ? ' is-breached' : ''}`}>

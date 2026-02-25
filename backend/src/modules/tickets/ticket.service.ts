@@ -12,6 +12,7 @@ const ATTACHMENT_BASE_DIR = path.resolve(process.cwd(), 'uploads', 'tickets')
 let attachmentSchemaReady: Promise<void> | null = null
 let slaSchemaReady: Promise<void> | null = null
 let slaConfigSchemaReady: Promise<void> | null = null
+let ticketOriginSchemaReady: Promise<void> | null = null
 
 function buildTicketWhere(idOrTicketId: string, alias = 't', startIndex = 1) {
   if (isNumericId(idOrTicketId)) {
@@ -60,6 +61,7 @@ async function ensureSlaTrackingSchema() {
       await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "responseTargetAt" TIMESTAMP(3)')
       await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolutionTargetAt" TIMESTAMP(3)')
       await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "firstRespondedAt" TIMESTAMP(3)')
+      await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "firstRespondedById" INTEGER')
       await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolvedAt" TIMESTAMP(3)')
       await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "policyId" INTEGER')
     })()
@@ -108,10 +110,10 @@ async function getSlaPolicyByPriority(priority: string) {
 
 function fallbackSlaMinutes(priority: string) {
   const normalized = normalizePriority(priority)
-  if (normalized === 'Critical') return { responseTimeMin: 15, resolutionTimeMin: 4 * 60 }
-  if (normalized === 'High') return { responseTimeMin: 30, resolutionTimeMin: 8 * 60 }
-  if (normalized === 'Medium') return { responseTimeMin: 60, resolutionTimeMin: 24 * 60 }
-  return { responseTimeMin: 240, resolutionTimeMin: 72 * 60 }
+  if (normalized === 'Critical') return { responseTimeMin: 15, resolutionTimeMin: 2 * 60 }
+  if (normalized === 'High') return { responseTimeMin: 30, resolutionTimeMin: 4 * 60 }
+  if (normalized === 'Medium') return { responseTimeMin: 60, resolutionTimeMin: 8 * 60 }
+  return { responseTimeMin: 240, resolutionTimeMin: 24 * 60 }
 }
 
 const weekdayByShortName: Record<string, string> = {
@@ -203,9 +205,9 @@ async function upsertSlaTrackingForTicket(ticket: any, options?: { keepFirstResp
   await query(
     `INSERT INTO "SlaTracking" (
       "ticketId", "slaName", "startTime", "breachTime", "status", "policyId",
-      "responseTargetAt", "resolutionTargetAt", "firstRespondedAt", "resolvedAt", "createdAt", "updatedAt"
+      "responseTargetAt", "resolutionTargetAt", "firstRespondedAt", "firstRespondedById", "resolvedAt", "createdAt", "updatedAt"
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL, NOW(), NOW())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL, NULL, NOW(), NOW())
     ON CONFLICT ("ticketId") DO UPDATE
     SET
       "slaName" = EXCLUDED."slaName",
@@ -216,6 +218,7 @@ async function upsertSlaTrackingForTicket(ticket: any, options?: { keepFirstResp
       "responseTargetAt" = EXCLUDED."responseTargetAt",
       "resolutionTargetAt" = EXCLUDED."resolutionTargetAt",
       "firstRespondedAt" = CASE WHEN $9 THEN "SlaTracking"."firstRespondedAt" ELSE EXCLUDED."firstRespondedAt" END,
+      "firstRespondedById" = CASE WHEN $9 THEN "SlaTracking"."firstRespondedById" ELSE EXCLUDED."firstRespondedById" END,
       "resolvedAt" = CASE WHEN $10 THEN "SlaTracking"."resolvedAt" ELSE EXCLUDED."resolvedAt" END,
       "updatedAt" = NOW()`,
     [
@@ -245,20 +248,37 @@ function buildSlaSnapshot(ticket: any, tracking: any) {
   const now = Date.now()
   const responseTargetMs = tracking.responseTargetAt ? new Date(tracking.responseTargetAt).getTime() : null
   const resolutionTargetMs = tracking.resolutionTargetAt ? new Date(tracking.resolutionTargetAt).getTime() : null
-  const responseDone = Boolean(tracking.firstRespondedAt)
+  const responseDone = Boolean(tracking.firstRespondedAt && tracking.firstRespondedById)
   const resolutionDone = Boolean(tracking.resolvedAt) || ['Resolved', 'Closed'].includes(String(ticket.status || ''))
+  const responseCompletedMs = tracking.firstRespondedAt ? new Date(tracking.firstRespondedAt).getTime() : null
+  const resolutionCompletedMs = tracking.resolvedAt
+    ? new Date(tracking.resolvedAt).getTime()
+    : ticket.resolvedAt
+      ? new Date(ticket.resolvedAt).getTime()
+      : null
   const responseRemainingMs = responseTargetMs === null ? null : responseTargetMs - now
   const resolutionRemainingMs = resolutionTargetMs === null ? null : resolutionTargetMs - now
-  const responseBreached = !responseDone && responseRemainingMs !== null && responseRemainingMs < 0
-  const resolutionBreached = !resolutionDone && resolutionRemainingMs !== null && resolutionRemainingMs < 0
+  const responseBreached = responseDone
+    ? responseTargetMs !== null && responseCompletedMs !== null && responseCompletedMs > responseTargetMs
+    : responseRemainingMs !== null && responseRemainingMs < 0
+  const resolutionBreached = resolutionDone
+    ? resolutionTargetMs !== null && resolutionCompletedMs !== null && resolutionCompletedMs > resolutionTargetMs
+    : resolutionRemainingMs !== null && resolutionRemainingMs < 0
+  const responseStatus = responseDone ? (responseBreached ? 'MISSED' : 'MET') : 'RUNNING'
+  const resolutionStatus = resolutionDone ? (resolutionBreached ? 'MISSED' : 'MET') : 'RUNNING'
 
   return {
     policyName: tracking.slaName || null,
     priority: normalizePriority(ticket.priority),
+    responseSlaStatus: responseStatus,
+    resolutionSlaStatus: resolutionStatus,
     response: {
       targetAt: toIsoOrNull(tracking.responseTargetAt),
       completedAt: toIsoOrNull(tracking.firstRespondedAt),
+      completedById: tracking.firstRespondedById || null,
       breached: responseBreached,
+      met: responseDone && !responseBreached,
+      status: responseStatus,
       remainingMs: responseRemainingMs,
       remainingLabel: responseRemainingMs === null ? '--:--' : formatSlaClock(responseRemainingMs),
     },
@@ -266,12 +286,22 @@ function buildSlaSnapshot(ticket: any, tracking: any) {
       targetAt: toIsoOrNull(tracking.resolutionTargetAt),
       completedAt: toIsoOrNull(tracking.resolvedAt || ticket.resolvedAt),
       breached: resolutionBreached,
+      met: resolutionDone && !resolutionBreached,
+      status: resolutionStatus,
       remainingMs: resolutionRemainingMs,
       remainingLabel: resolutionRemainingMs === null ? '--:--' : formatSlaClock(resolutionRemainingMs),
     },
     breached: responseBreached || resolutionBreached,
     state: resolutionDone ? 'resolved' : responseDone ? 'responded' : 'running',
   }
+}
+
+function deriveSlaTimeLeft(snapshot: any) {
+  if (!snapshot) return '--:--'
+  if (!snapshot?.response?.completedAt || !snapshot?.response?.completedById) {
+    return snapshot?.response?.remainingLabel || '--:--'
+  }
+  return snapshot?.resolution?.remainingLabel || '--:--'
 }
 
 async function attachSlaData(items: any[]) {
@@ -289,7 +319,7 @@ async function attachSlaData(items: any[]) {
     const tracking = map.get(Number(ticket.id))
     const snapshot = buildSlaSnapshot(ticket, tracking)
     ;(ticket as any).sla = snapshot
-    ;(ticket as any).slaTimeLeft = snapshot?.resolution?.remainingLabel || '--:--'
+    ;(ticket as any).slaTimeLeft = deriveSlaTimeLeft(snapshot)
   })
   return items
 }
@@ -304,6 +334,15 @@ async function ensureAttachmentSchema() {
   await attachmentSchemaReady
 }
 
+async function ensureTicketOriginSchema() {
+  if (!ticketOriginSchemaReady) {
+    ticketOriginSchemaReady = (async () => {
+      await query('ALTER TABLE "Ticket" ADD COLUMN IF NOT EXISTS "createdFrom" TEXT')
+    })()
+  }
+  await ticketOriginSchemaReady
+}
+
 function sanitizeFilename(name: string) {
   return String(name || 'file').replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').slice(0, 180) || 'file'
 }
@@ -315,19 +354,39 @@ function decodeBase64Payload(input: string) {
 }
 
 async function resolveChangedById(user: any): Promise<number | null> {
-  const parsed = typeof user === 'number' ? user : parseInt(String(user), 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) return null
+  const candidateIdRaw = (() => {
+    if (typeof user === 'number' || typeof user === 'string') return user
+    if (user && typeof user === 'object') return user.id ?? user.sub ?? user.userId ?? null
+    return null
+  })()
+  const parsed = typeof candidateIdRaw === 'number' ? candidateIdRaw : parseInt(String(candidateIdRaw), 10)
 
-  // Primary path: auth id directly matches "User"."id"
-  const direct = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [parsed])
-  if (direct?.id) return direct.id
+  if (Number.isFinite(parsed) && parsed > 0) {
+    // Primary path: auth id directly matches "User"."id"
+    const direct = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [parsed])
+    if (direct?.id) return direct.id
 
-  // Compatibility fallback: token subject may be "ServiceAccounts"."id"
-  const serviceAccount = await queryOne<{ userId: number }>(
-    'SELECT "userId" FROM "ServiceAccounts" WHERE "id" = $1 AND "enabled" = TRUE',
-    [parsed]
-  )
-  return serviceAccount?.userId ?? null
+    // Compatibility fallback: token subject may be "ServiceAccounts"."id"
+    const serviceAccount = await queryOne<{ userId: number }>(
+      'SELECT "userId" FROM "ServiceAccounts" WHERE "id" = $1 AND "enabled" = TRUE',
+      [parsed]
+    )
+    if (serviceAccount?.userId) return serviceAccount.userId
+  }
+
+  // Fallback path when token subject is non-numeric (UUID/email-based providers).
+  const rawEmail = typeof user === 'string'
+    ? (String(user).includes('@') ? user : '')
+    : (user && typeof user === 'object' ? String(user.email || '').trim() : '')
+  if (rawEmail) {
+    const byEmail = await queryOne<{ id: number }>(
+      'SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1) LIMIT 1',
+      [rawEmail]
+    )
+    if (byEmail?.id) return byEmail.id
+  }
+
+  return null
 }
 
 function buildInsert(table: string, data: Record<string, any>) {
@@ -420,11 +479,12 @@ export const getTicketById = async (id: string, viewer?: any) => {
   t.attachments = attachments
   t.history = history
   t.sla = buildSlaSnapshot(t, tracking)
-  t.slaTimeLeft = t.sla?.resolution?.remainingLabel || '--:--'
+  t.slaTimeLeft = deriveSlaTimeLeft(t.sla)
   return t
 }
 
 export const createTicket = async (payload: any, creator = 'system') => {
+  await ensureTicketOriginSchema()
   const ticketId = await getNextTicketTag()
   // auto-actions: compute priority from impact x urgency if not provided
   function computePriority(impact: string, urgency: string) {
@@ -470,6 +530,7 @@ export const createTicket = async (payload: any, creator = 'system') => {
     subcategory: payload.subcategory,
     description: payload.description,
     slaStart: now,
+    createdFrom: String(payload.createdFrom || '').trim() || 'ITSM Platform',
   }
   if (category) data.category = category
   if (payload.requesterId) data.requesterId = payload.requesterId
@@ -499,7 +560,7 @@ export const createTicket = async (payload: any, creator = 'system') => {
 
   const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [created.id])
   created.sla = buildSlaSnapshot(created, tracking)
-  created.slaTimeLeft = created.sla?.resolution?.remainingLabel || '--:--'
+  created.slaTimeLeft = deriveSlaTimeLeft(created.sla)
   return created
 }
 
@@ -517,6 +578,7 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
     [toState, ...where.params]
   )
   const updated = updatedRows[0]
+  const changedById = await resolveChangedById(user)
   if (['Resolved', 'Closed'].includes(String(toState || ''))) {
     await ensureSlaTrackingSchema()
     await query(
@@ -525,7 +587,6 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
     )
   }
 
-  const changedById = await resolveChangedById(user)
   await query(
     'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [
@@ -543,6 +604,9 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
     user,
     meta: { from, to: toState },
   })
+  const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id])
+  updated.sla = buildSlaSnapshot(updated, tracking)
+  updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla)
   // notify requester/assignee
   try {
     const requester = updated.requesterId ? await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [updated.requesterId]) : null
@@ -615,6 +679,9 @@ export const addResponse = async (
   if (!t) throw { status: 404, message: 'Ticket not found' }
   const attachmentRows = await resolveAttachmentRows(t.id, opts.attachmentIds || [])
   const messageWithAttachments = appendAttachmentSummary(opts.message, attachmentRows)
+  const persistedMessage = opts.sendEmail
+    ? `[EMAIL]\n${messageWithAttachments}`
+    : messageWithAttachments
 
   const changedById = await resolveChangedById(opts.user)
   const rows = await query(
@@ -624,16 +691,11 @@ export const addResponse = async (
       t.status,
       t.status,
       changedById,
-      messageWithAttachments,
+      persistedMessage,
       false,
     ]
   )
   const created = rows[0]
-  await ensureSlaTrackingSchema()
-  await query(
-    'UPDATE "SlaTracking" SET "firstRespondedAt" = COALESCE("firstRespondedAt", NOW()), "status" = CASE WHEN "status" = \'resolved\' THEN "status" ELSE \'responded\' END, "updatedAt" = NOW() WHERE "ticketId" = $1',
-    [t.id]
-  )
 
   await auditLog({
     action: 'respond',
@@ -667,6 +729,46 @@ export const addResponse = async (
   }
 
   return created
+}
+
+export const markResponseSlaMet = async (ticketId: string, user: any = 'system') => {
+  const t = await getTicketRecord(ticketId)
+  if (!t) throw { status: 404, message: 'Ticket not found' }
+
+  const changedById = await resolveChangedById(user)
+  const actorRole = String((user && typeof user === 'object' ? user.role : '') || '').trim().toUpperCase()
+  const hasAgentPrivileges = actorRole === 'AGENT' || actorRole === 'ADMIN'
+  const isInternalResponder = Boolean(changedById) && (
+    hasAgentPrivileges ||
+    !t.requesterId ||
+    Number(changedById) !== Number(t.requesterId)
+  )
+  if (!isInternalResponder) {
+    throw { status: 403, message: 'Only internal agent actions can mark response SLA' }
+  }
+
+  await ensureSlaTrackingSchema()
+  await query(
+    'UPDATE "SlaTracking" SET "firstRespondedAt" = COALESCE("firstRespondedAt", NOW()), "firstRespondedById" = COALESCE("firstRespondedById", $2), "status" = CASE WHEN "status" = \'resolved\' THEN "status" ELSE \'responded\' END, "updatedAt" = NOW() WHERE "ticketId" = $1',
+    [t.id, changedById]
+  )
+  await query(
+    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    [t.id, t.status, t.status, changedById, 'Response SLA marked as responded', false]
+  )
+  await auditLog({
+    action: 'mark_response_sla',
+    ticketId: t.ticketId,
+    user,
+    meta: { changedById },
+  })
+
+  const updated = await getTicketRecord(ticketId)
+  const tracking = updated ? await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id]) : null
+  if (!updated) throw { status: 404, message: 'Ticket not found' }
+  updated.sla = buildSlaSnapshot(updated, tracking)
+  updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla)
+  return updated
 }
 
 export const addPrivateNote = async (ticketId: string, opts: { note: string; user?: any; attachmentIds?: number[] }) => {
@@ -826,6 +928,7 @@ export const uploadTicketAttachments = async (
 }
 
 export const updateTicket = async (ticketId: string, payload: any, user?: any) => {
+  await ensureTicketOriginSchema()
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
 
@@ -836,6 +939,7 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
   if (payload.type !== undefined) data.type = payload.type
   if (payload.priority !== undefined) data.priority = payload.priority
   if (payload.category !== undefined) data.category = payload.category
+  if (payload.createdFrom !== undefined) data.createdFrom = payload.createdFrom
   if (payload.assigneeId !== undefined) data.assigneeId = payload.assigneeId || null
   if (payload.requesterId !== undefined) data.requesterId = payload.requesterId || null
 
@@ -872,7 +976,7 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
   await auditLog({ action: 'update_ticket', ticketId: updated.ticketId, user, meta: { changes: data } })
   const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id])
   updated.sla = buildSlaSnapshot(updated, tracking)
-  updated.slaTimeLeft = updated.sla?.resolution?.remainingLabel || '--:--'
+  updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla)
   return updated
 }
 

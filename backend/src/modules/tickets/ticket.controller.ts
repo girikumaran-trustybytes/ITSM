@@ -27,7 +27,9 @@ export const createTicket = async (req: Request, res: Response) => {
     const role = (req as any).user?.role
     if (role === 'USER') {
       payload.requesterId = (req as any).user?.id
+      if (!payload.createdFrom) payload.createdFrom = 'User portal'
     }
+    if (!payload.createdFrom) payload.createdFrom = 'ITSM Platform'
     const t = await ticketService.createTicket(payload, creator)
     res.status(201).json(t)
   } catch (err: any) {
@@ -39,7 +41,7 @@ export const createTicket = async (req: Request, res: Response) => {
 export const transitionTicket = async (req: Request, res: Response) => {
   const id = req.params.id
   const { to } = (req as any).validated?.body || req.body
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const t = await ticketService.transitionTicket(id, to, user)
     res.json(t)
@@ -53,7 +55,7 @@ export const addHistory = async (req: Request, res: Response) => {
   const payload = (req as any).validated?.body || req.body || {}
   const note = String(payload.note || '')
   if (!note || !note.trim()) return res.status(400).json({ error: 'Note is required' })
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const entry = await ticketService.createHistoryEntry(id, { note, user })
     res.status(201).json(entry)
@@ -66,7 +68,7 @@ export const respond = async (req: Request, res: Response) => {
   const id = req.params.id
   const { message, sendEmail, to, cc, bcc, subject, attachmentIds } = (req as any).validated?.body || req.body || {}
   if (!message || !message.trim()) return res.status(400).json({ error: 'Message is required' })
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject, attachmentIds })
     res.status(201).json(entry)
@@ -75,11 +77,22 @@ export const respond = async (req: Request, res: Response) => {
   }
 }
 
+export const markResponded = async (req: Request, res: Response) => {
+  const id = req.params.id
+  const user = (req as any).user || 'system'
+  try {
+    const t = await ticketService.markResponseSlaMet(id, user)
+    res.json(t)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to mark response SLA' })
+  }
+}
+
 export const privateNote = async (req: Request, res: Response) => {
   const id = req.params.id
   const { note, attachmentIds } = (req as any).validated?.body || req.body || {}
   if (!note || !note.trim()) return res.status(400).json({ error: 'Note is required' })
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const entry = await ticketService.addPrivateNote(id, { note, user, attachmentIds })
     res.status(201).json(entry)
@@ -91,7 +104,7 @@ export const privateNote = async (req: Request, res: Response) => {
 export const uploadAttachments = async (req: Request, res: Response) => {
   const id = req.params.id
   const { files, note, internal } = (req as any).validated?.body || req.body || {}
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const result = await ticketService.uploadTicketAttachments(id, { files, user, note, internal })
     res.status(201).json(result)
@@ -104,7 +117,7 @@ export const resolveTicket = async (req: Request, res: Response) => {
   const id = req.params.id
   const { resolution, resolutionCategory, sendEmail } = (req as any).validated?.body || req.body || {}
   if (!resolution || !resolution.trim()) return res.status(400).json({ error: 'Resolution details are required' })
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const updated = await ticketService.resolveTicketWithDetails(id, { resolution, resolutionCategory, user, sendEmail })
     res.json(updated)
@@ -117,7 +130,7 @@ export const assignAsset = async (req: Request, res: Response) => {
   const id = req.params.id
   const { assetId } = (req as any).validated?.body || req.body || {}
   if (!assetId) return res.status(400).json({ error: 'assetId is required' })
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const updated = await ticketService.assignAsset(id, Number(assetId), user)
     res.json(updated)
@@ -128,7 +141,7 @@ export const assignAsset = async (req: Request, res: Response) => {
 
 export const unassignAsset = async (req: Request, res: Response) => {
   const id = req.params.id
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const updated = await ticketService.unassignAsset(id, user)
     res.json(updated)
@@ -140,7 +153,7 @@ export const unassignAsset = async (req: Request, res: Response) => {
 export const updateTicket = async (req: Request, res: Response) => {
   const id = req.params.id
   const payload = (req as any).validated?.body || req.body || {}
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const updated = await ticketService.updateTicket(id, payload, user)
     res.json(updated)
@@ -151,7 +164,7 @@ export const updateTicket = async (req: Request, res: Response) => {
 
 export const deleteTicket = async (req: Request, res: Response) => {
   const id = req.params.id
-  const user = (req as any).user?.id || 'system'
+  const user = (req as any).user || 'system'
   try {
     const deleted = await ticketService.deleteTicket(id, user)
     res.json({ success: true, deleted })

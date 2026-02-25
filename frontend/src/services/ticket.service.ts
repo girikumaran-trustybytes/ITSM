@@ -10,6 +10,11 @@ export async function transitionTicket(id: string, to: string) {
   return res.data
 }
 
+export async function markResponded(id: string) {
+  const res = await api.post(`/tickets/${encodeURIComponent(id)}/mark-responded`)
+  return res.data
+}
+
 export async function createHistory(id: string, payload: { note: string }) {
   const res = await api.post(`/tickets/${encodeURIComponent(id)}/history`, payload)
   return res.data

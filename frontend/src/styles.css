@@ -61,6 +61,11 @@ html,
   font-size: 12px !important;
 }
 
+.portal-root,
+.portal-root * {
+  font-size: 12px !important;
+}
+
 .app-root {
   display: flex;
   height: 100vh;
@@ -2890,6 +2895,7 @@ html,
 .work-main .users-table,
 .work-main .users-footer,
 .work-main .assets-table,
+.work-main .assets-list-detail-layout,
 .admin-work-main .admin-table,
 .work-main .admin-table,
 .work-main .incidents-table {
@@ -5855,6 +5861,7 @@ body.tickets-queue-expanded .detail-view-container {
   width: 100%;
   margin: 0 auto;
   align-content: start;
+  align-items: start;
 }
 
 .detail-view-card.compact {
@@ -6117,11 +6124,11 @@ body.tickets-queue-expanded .detail-view-container {
 }
 
 .detail-sidebar {
-  padding: 12px 0;
+  padding: 0;
   background: transparent;
   height: auto;
   position: sticky;
-  top: 20px;
+  top: 8px;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -6379,6 +6386,15 @@ body.tickets-queue-expanded .detail-view-container {
   font-weight: 700;
   font-size: 11px;
   text-transform: lowercase;
+}
+.sla-x.sla-check {
+  color: #16a34a;
+  text-transform: none;
+}
+.sla-done-line {
+  font-size: 11px;
+  color: #334155;
+  padding: 4px 0 2px;
 }
 
 .ticket-info-card {
@@ -7876,6 +7892,55 @@ body.tickets-queue-expanded .detail-view-container {
   border-bottom: 1px solid #eef2f7;
 }
 
+.progress-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-filter-dropdown {
+  position: relative;
+}
+
+.progress-filter-menu {
+  min-width: 245px;
+  padding: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+}
+
+.progress-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #111827;
+  border: none;
+  border-bottom: 1px solid #eceff3;
+  background: #ffffff;
+  text-align: left;
+}
+
+.progress-filter-option:last-child {
+  border-bottom: none;
+}
+
+.progress-filter-option.active {
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.progress-filter-icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.72;
+  flex-shrink: 0;
+}
+
 .progress-title {
   font-size: 15px;
   font-weight: 700;
@@ -7888,16 +7953,24 @@ body.tickets-queue-expanded .detail-view-container {
 }
 
 .progress-icon-btn {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 1px solid #e5e7eb;
   background: #ffffff;
-  color: #111827;
+  color: #4b5563;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+.progress-icon-btn:hover {
+  background: #f8fafc;
+}
+.progress-icon-image {
+  width: 14px;
+  height: 14px;
+  opacity: 0.88;
 }
 
 .progress-list {
@@ -7906,11 +7979,23 @@ body.tickets-queue-expanded .detail-view-container {
   gap: 16px;
   max-height: 680px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
+  position: relative;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.progress-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 .progress-list.progress-list-editor-open {
   max-height: none;
   overflow: visible;
+}
+.progress-list.progress-list-collapsed {
+  gap: 10px;
 }
 
 .progress-item {
@@ -7922,6 +8007,17 @@ body.tickets-queue-expanded .detail-view-container {
   padding: 16px 18px;
   border: 1px solid #e9eef5;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+.progress-item.is-collapsed {
+  padding: 12px 16px;
+}
+.progress-item.is-collapsed .progress-body {
+  gap: 2px;
+}
+.progress-item.is-collapsed .progress-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .progress-avatar {
@@ -7972,10 +8068,23 @@ body.tickets-queue-expanded .detail-view-container {
   gap: 12px;
 }
 
+.progress-head-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .progress-author {
   font-weight: 700;
   color: #111827;
   font-size: 14px;
+}
+
+.progress-action-line {
+  font-size: 15px;
+  color: #111827;
+  line-height: 1.1;
 }
 
 .progress-time {
@@ -7987,6 +8096,23 @@ body.tickets-queue-expanded .detail-view-container {
   font-size: 14px;
   color: #1f2937;
   line-height: 1.5;
+}
+
+.progress-float-btn {
+  position: sticky;
+  bottom: 8px;
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: #f3f4f6;
+  color: #374151;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.15);
 }
 
 .dashboard-header {
@@ -8325,6 +8451,12 @@ body.tickets-queue-expanded .detail-view-container {
   padding: 12px;
 }
 .admin-work-main > .admin-view {
+  padding: 0;
+}
+body.suppliers-view-active .work-main > .admin-view {
+  padding: 0;
+}
+body.suppliers-view-active .admin-view {
   padding: 0;
 }
 .admin-header {
@@ -9877,7 +10009,7 @@ body.admin-queue-collapsed .ticket-left-panel {
   background: #e9edf2;
   color: #4f6382;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
   text-transform: none;
   letter-spacing: 0;
   font-family: 'IBM Plex Sans', 'Space Grotesk', system-ui, sans-serif;
@@ -9889,7 +10021,7 @@ body.admin-queue-collapsed .ticket-left-panel {
 .users-grid td {
   color: #5c6d84;
   border-bottom: 1px solid #d4dce6;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .table-row,

@@ -24,6 +24,7 @@ export const ticketsCreateBodySchema = z.object({
   description: z.string().min(1).optional(),
   requesterId: zId.optional(),
   requesterEmail: z.string().email().optional(),
+  createdFrom: z.string().min(1).optional(),
   assigneeId: zId.optional(),
   slaStart: z.string().optional(),
 }).refine((val) => val.subject || val.summary, {
@@ -38,6 +39,7 @@ export const ticketsUpdateBodySchema = z.object({
   priority: z.string().min(1).optional(),
   category: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
+  createdFrom: z.string().min(1).optional(),
   assigneeId: zId.optional(),
   requesterId: zId.optional(),
 })
