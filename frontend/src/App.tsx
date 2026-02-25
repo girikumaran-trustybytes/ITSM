@@ -846,7 +846,7 @@ function MainShell() {
         )}
         <Routes>
           <Route path="/dashboard" element={<div className="work-main"><Dashboard /></div>} />
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<Navigate to="/portal/login" replace />} />
           <Route
             path="/tickets"
             element={

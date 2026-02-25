@@ -70,6 +70,11 @@ export async function listAssets(params: any = {}) {
   return res.data
 }
 
+export async function listMyAssets(params: any = {}) {
+  const res = await api.get('/assets/my', { params })
+  return res.data
+}
+
 export async function getAsset(id: number) {
   const res = await api.get(`/assets/${id}`)
   return res.data

@@ -42,6 +42,8 @@ export type Incident = {
   sla?: any
   subject: string
   category: string
+  issueDetail?: string
+  resolution?: string
   priority: 'Low' | 'Medium' | 'High' | 'Critical'
   status: string
   type: string
@@ -51,6 +53,11 @@ export type Incident = {
   lastActionTime: string
   assignedAgentId?: string
   assignedAgentName?: string
+  workflow?: string
+  team?: string
+  additionalAgents?: string[]
+  requesterId?: number
+  createdFrom?: string
   createdAt?: string
   updatedAt?: string
   closedAt?: string
@@ -178,7 +185,19 @@ export default function TicketsView() {
 
   const inferInboundEndUser = (ticketData: any) => {
     const requester = ticketData?.requester
-    if (requester && (requester.name || requester.email || requester.username)) return requester
+    if (requester && (requester.name || requester.email || requester.username)) {
+      return {
+        id: requester.id,
+        role: requester.role,
+        name: requester.name || requester.username || requester.email || 'End User',
+        username: requester.username || requester.userName || requester.name || '',
+        email: requester.email || '',
+        phone: requester.phone || '',
+        site: requester.site || '',
+        accountManager: requester.accountManager || requester.reportingManager || '',
+        avatarUrl: requester.avatarUrl || requester.profilePic || requester.avatar || '',
+      }
+    }
 
     const body = String(ticketData?.description || '')
     const fromLine = body.match(/^\s*From:\s*(.+)\s*$/im)?.[1]?.trim() || ''
@@ -192,7 +211,21 @@ export default function TicketsView() {
       name: namePart || username || email || 'End User',
       username: username || undefined,
       email: email || undefined,
+      phone: undefined,
+      site: undefined,
+      accountManager: undefined,
     }
+  }
+
+  const inferCreatedFrom = (ticketData: any) => {
+    const explicitSource = String(ticketData?.createdFrom || ticketData?.source || '').trim().toLowerCase()
+    if (explicitSource.includes('portal')) return 'User portal'
+    if (explicitSource.includes('itsm') || explicitSource.includes('platform')) return 'ITSM Platform'
+
+    const requesterRole = String(ticketData?.requester?.role || ticketData?.requesterRole || '').trim().toUpperCase()
+    if (requesterRole === 'USER') return 'User portal'
+    if (requesterRole) return 'ITSM Platform'
+    return 'ITSM Platform'
   }
 
   const formatTimelineTime = (raw: any) => {
@@ -407,6 +440,8 @@ export default function TicketsView() {
         sla: t.sla || null,
         subject: t.subject || t.description || '',
         category: t.category || '',
+        issueDetail: t.issueDetail || t.subCategory || t.resolutionCategory || '',
+        resolution: t.resolution || t.resolutionText || t.closureNotes || '',
         priority: t.priority || 'Low',
         status: t.status,
         type: t.type,
@@ -416,6 +451,10 @@ export default function TicketsView() {
         lastActionTime: '',
         assignedAgentId: t.assignedTo?.id || t.assignee?.id,
         assignedAgentName: t.assignedTo?.name || t.assignee?.name,
+        workflow: t.workflow || undefined,
+        team: t.team || t.category || undefined,
+        requesterId: t.requesterId || t.requester?.id || undefined,
+        createdFrom: inferCreatedFrom(t),
         createdAt: t.createdAt || undefined,
         updatedAt: t.updatedAt || undefined,
         closedAt: t.closedAt || undefined,
@@ -472,6 +511,8 @@ export default function TicketsView() {
         sla: d.sla || null,
         subject: d.subject || d.description || 'Ticket',
         category: d.category || '',
+        issueDetail: d.issueDetail || d.subCategory || d.resolutionCategory || '',
+        resolution: d.resolution || d.resolutionText || d.closureNotes || '',
         priority: d.priority || 'Low',
         status: d.status || 'New',
         type: d.type || 'Incident',
@@ -481,6 +522,10 @@ export default function TicketsView() {
         lastActionTime: '',
         assignedAgentId: d.assignedTo?.id || d.assignee?.id,
         assignedAgentName: d.assignedTo?.name || d.assignee?.name,
+        workflow: d.workflow || undefined,
+        team: d.team || d.category || undefined,
+        requesterId: d.requesterId || d.requester?.id || undefined,
+        createdFrom: inferCreatedFrom(d),
         createdAt: d.createdAt || undefined,
         updatedAt: d.updatedAt || undefined,
         closedAt: d.closedAt || undefined,
@@ -498,10 +543,13 @@ export default function TicketsView() {
         sla: null,
         subject: 'Ticket',
         category: '',
+        issueDetail: '',
+        resolution: '',
         priority: 'Low',
         status: 'New',
         type: 'Incident',
         endUser: '',
+        createdFrom: 'ITSM Platform',
         dateReported: new Date().toLocaleString(),
         lastAction: '',
         lastActionTime: '',
@@ -648,6 +696,32 @@ export default function TicketsView() {
     Infrastructure: ['Power', 'Data Connection', 'Router', 'Server', 'Printer'],
     'Infrastructure>Power': ['Switch', 'Socket']
   }
+  const defaultTicketTypeOptions = ['Fault', 'Live Chat', 'Problem', 'Change', 'Service Request']
+  const defaultWorkflowOptions = ['Fault Workflow', 'Incident Management Workflow', 'Service Request Workflow', 'Change Workflow']
+  const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Resolved', 'Closed']
+  const defaultTeamOptions = ['Automated Alerts', 'Support Desk', '2nd Line Support']
+  const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
+  const createdFromOptions = ['User portal', 'ITSM Platform']
+
+  const uniqueOptions = (values: Array<string | null | undefined>) =>
+    Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)))
+
+  const [ticketWorkflowValue, setTicketWorkflowValue] = useState('Incident Management Workflow')
+  const [ticketTeamValue, setTicketTeamValue] = useState('Support Desk')
+  const [createdFromValue, setCreatedFromValue] = useState('ITSM Platform')
+  const [additionalStaffValue, setAdditionalStaffValue] = useState('')
+  const [issueValue, setIssueValue] = useState('')
+  const [issueDetailValue, setIssueDetailValue] = useState('')
+  const [resolutionValue, setResolutionValue] = useState('Not set')
+  const [editingTicketField, setEditingTicketField] = useState<string | null>(null)
+  const [editingEndUserField, setEditingEndUserField] = useState<null | 'name' | 'email' | 'phone' | 'site' | 'accountManager'>(null)
+  const [endUserDraft, setEndUserDraft] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    site: '',
+    accountManager: '',
+  })
   const [searchValues, setSearchValues] = useState({
     viewing: '',
     id: '',
@@ -659,7 +733,10 @@ export default function TicketsView() {
     type: '',
     endUser: '',
     lastAction: '',
-    dateReported: ''
+    dateReported: '',
+    issueDetail: '',
+    resolution: '',
+    dateClosed: ''
   })
   // per-column minimum widths (px) and snap step
   const columnMinWidths: Record<string, number> = {
@@ -673,7 +750,10 @@ export default function TicketsView() {
     type: 100,
     endUser: 140,
     lastAction: 120,
-    date: 120
+    date: 120,
+    issueDetail: 140,
+    resolution: 140,
+    dateClosed: 130
   }
   const widthSnap = 10
   // table container width (start exactly fitting columns; expand only when needed)
@@ -688,7 +768,10 @@ export default function TicketsView() {
     type: 100,
     endUser: 160,
     lastAction: 150,
-    date: 140
+    date: 140,
+    issueDetail: 160,
+    resolution: 150,
+    dateClosed: 150
   }
   const colsCount = Object.keys(baseColWidths).length
   const gapTotal = (colsCount - 1) * 10 // match CSS grid gap
@@ -709,7 +792,10 @@ export default function TicketsView() {
     type: baseColWidths.type,
     endUser: baseColWidths.endUser,
     lastAction: baseColWidths.lastAction,
-    date: baseColWidths.date
+    date: baseColWidths.date,
+    issueDetail: baseColWidths.issueDetail,
+    resolution: baseColWidths.resolution,
+    dateClosed: baseColWidths.dateClosed
   })
   const [resizingColumn, setResizingColumn] = useState<string | null>(null)
   const [resizeStartX, setResizeStartX] = useState(0)
@@ -768,6 +854,8 @@ export default function TicketsView() {
           priority: created.priority || (newIncidentForm.priority as Incident['priority']),
           status: created.status || 'New',
           type: created.type,
+          endUser: '',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'ITSM Platform',
           dateReported: new Date(created.createdAt).toLocaleString(),
           lastAction: 'Created',
           lastActionTime: new Date().toLocaleString()
@@ -793,6 +881,8 @@ export default function TicketsView() {
           priority: (newIncidentForm.priority || 'Low') as Incident['priority'],
           status: 'New',
           type: newIncidentForm.ticketType,
+          endUser: '',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'ITSM Platform',
           dateReported: new Date().toLocaleString(),
           lastAction: 'Created',
           lastActionTime: new Date().toLocaleString()
@@ -820,8 +910,12 @@ export default function TicketsView() {
       priority: '',
       status: '',
       type: '',
+      endUser: '',
       lastAction: '',
-      dateReported: ''
+      dateReported: '',
+      issueDetail: '',
+      resolution: '',
+      dateClosed: ''
     })
   }
 
@@ -857,6 +951,7 @@ export default function TicketsView() {
         setSelectedTicket(prev => prev ? {
           ...prev,
           status: d.status || prev.status,
+          createdFrom: inferCreatedFrom(d),
           dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : prev.dateReported,
           createdAt: d.createdAt || prev.createdAt,
           updatedAt: d.updatedAt || prev.updatedAt,
@@ -1472,6 +1567,119 @@ export default function TicketsView() {
     status: 'Tickets by Status',
     myLists: 'My Lists',
   }
+
+  const ticketTypeOptions = React.useMemo(
+    () => uniqueOptions([...defaultTicketTypeOptions, ...incidents.map((incident) => incident.type), selectedTicket?.type]),
+    [incidents, selectedTicket?.type]
+  )
+  const workflowOptions = React.useMemo(
+    () => uniqueOptions([...defaultWorkflowOptions, selectedTicket?.workflow]),
+    [selectedTicket?.workflow]
+  )
+  const statusOptions = React.useMemo(
+    () => uniqueOptions([...defaultStatusOptions, ...incidents.map((incident) => incident.status), selectedTicket?.status]),
+    [incidents, selectedTicket?.status]
+  )
+  const teamOptions = React.useMemo(
+    () =>
+      uniqueOptions([
+        ...defaultTeamOptions,
+        ...visibleTicketQueues.map((queue) => queue.label),
+        selectedTicket?.team,
+        selectedTicket?.category,
+        selectedTicket ? mapTeam(selectedTicket).team : '',
+      ]),
+    [visibleTicketQueues, selectedTicket]
+  )
+  const agentOptions = React.useMemo(
+    () =>
+      agents.map((agent) => ({
+        id: String(agent?.id || ''),
+        label: getAgentDisplayName(agent),
+      })),
+    [agents]
+  )
+  const issueOptions = React.useMemo(
+    () => uniqueOptions(Object.keys(categoryOptions).map((key) => key.split('>')[0])),
+    [categoryOptions]
+  )
+  const issueDetailOptions = React.useMemo(() => {
+    if (!issueValue) return []
+    const direct = categoryOptions[issueValue as keyof typeof categoryOptions] || []
+    const nested = Object.entries(categoryOptions)
+      .filter(([key]) => key.startsWith(`${issueValue}>`))
+      .flatMap(([, values]) => values)
+    return uniqueOptions([...direct, ...nested, selectedTicket?.issueDetail, issueDetailValue])
+  }, [categoryOptions, issueDetailValue, issueValue, selectedTicket?.issueDetail])
+
+  const syncSelectedTicketInList = (ticketId: string, patch: Partial<Incident>) => {
+    setSelectedTicket((prev) => (prev && prev.id === ticketId ? { ...prev, ...patch } : prev))
+    setIncidents((prev) => prev.map((incident) => (incident.id === ticketId ? { ...incident, ...patch } : incident)))
+  }
+
+  const updateTicketPatch = async (patch: any, localPatch: Partial<Incident>) => {
+    if (!selectedTicket) return
+    syncSelectedTicketInList(selectedTicket.id, localPatch)
+    try {
+      await ticketService.updateTicket(selectedTicket.id, patch)
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Failed to update ticket details')
+    }
+  }
+
+  React.useEffect(() => {
+    if (!selectedTicket) return
+    setEditingTicketField(null)
+    setEditingEndUserField(null)
+    setCreatedFromValue(String(selectedTicket.createdFrom || inferCreatedFrom(selectedTicket)))
+    setTicketWorkflowValue(String(selectedTicket.workflow || 'Incident Management Workflow'))
+    setTicketTeamValue(String(selectedTicket.team || mapTeam(selectedTicket).team || selectedTicket.category || 'Support Desk'))
+    setAdditionalStaffValue(String((selectedTicket.additionalAgents || [])[0] || ''))
+    setIssueValue(String(selectedTicket.category || ''))
+    setIssueDetailValue(String(selectedTicket.issueDetail || ''))
+    setResolutionValue(String(selectedTicket.resolution || 'Not set'))
+    setEndUserDraft({
+      name: String(endUser?.name || ''),
+      email: String(endUser?.email || ''),
+      phone: String(endUser?.phone || ''),
+      site: String(endUser?.site || ''),
+      accountManager: String(endUser?.accountManager || ''),
+    })
+  }, [endUser?.accountManager, endUser?.email, endUser?.name, endUser?.phone, endUser?.site, selectedTicket?.id])
+
+  React.useEffect(() => {
+    if (!endUser) return
+    const byId = endUser?.id ? agents.find((a: any) => Number(a?.id) === Number(endUser.id)) : null
+    const byEmail = !byId && endUser?.email
+      ? agents.find((a: any) => String(a?.email || '').trim().toLowerCase() === String(endUser.email || '').trim().toLowerCase())
+      : null
+    const match: any = byId || byEmail
+    if (!match) return
+    const next = {
+      id: endUser?.id || match.id,
+      name: endUser?.name || match.name || match.username || endUser?.email || 'End User',
+      username: endUser?.username || match.username || match.userName || '',
+      email: endUser?.email || match.email || '',
+      phone: endUser?.phone || match.phone || '',
+      site: endUser?.site || match.site || '',
+      accountManager: endUser?.accountManager || match.accountManager || match.reportingManager || '',
+      avatarUrl: endUser?.avatarUrl || match.avatarUrl || '',
+    }
+    const changed =
+      String(endUser?.id || '') !== String(next.id || '') ||
+      String(endUser?.name || '') !== String(next.name || '') ||
+      String(endUser?.username || '') !== String(next.username || '') ||
+      String(endUser?.email || '') !== String(next.email || '') ||
+      String(endUser?.phone || '') !== String(next.phone || '') ||
+      String(endUser?.site || '') !== String(next.site || '') ||
+      String(endUser?.accountManager || '') !== String(next.accountManager || '') ||
+      String(endUser?.avatarUrl || '') !== String(next.avatarUrl || '')
+    if (!changed) return
+    setEndUser((prev: any) => ({
+      ...(prev || {}),
+      ...next,
+    }))
+  }, [agents, endUser])
   const renderQueueHeaderIcon = () => {
     if (queueView === 'staff') {
       return (
@@ -2167,7 +2375,10 @@ export default function TicketsView() {
           incident.priority.toLowerCase().includes(searchLower) ||
           incident.status.toLowerCase().includes(searchLower) ||
           incident.type.toLowerCase().includes(searchLower) ||
-          incident.dateReported.toLowerCase().includes(searchLower)
+          incident.dateReported.toLowerCase().includes(searchLower) ||
+          String(incident.issueDetail || '').toLowerCase().includes(searchLower) ||
+          String(incident.resolution || '').toLowerCase().includes(searchLower) ||
+          String(incident.closedAt ? new Date(incident.closedAt).toLocaleString() : '').toLowerCase().includes(searchLower)
         )
       if (!globalMatch) return false
     }
@@ -2183,6 +2394,12 @@ export default function TicketsView() {
       if (searchValues.endUser && !incident.endUser.toLowerCase().includes(searchValues.endUser.toLowerCase())) return false
     if (searchValues.lastAction && !incident.lastAction.toLowerCase().includes(searchValues.lastAction.toLowerCase())) return false
     if (searchValues.dateReported && !incident.dateReported.toLowerCase().includes(searchValues.dateReported.toLowerCase())) return false
+    if (searchValues.issueDetail && !String(incident.issueDetail || '').toLowerCase().includes(searchValues.issueDetail.toLowerCase())) return false
+    if (searchValues.resolution && !String(incident.resolution || '').toLowerCase().includes(searchValues.resolution.toLowerCase())) return false
+    if (searchValues.dateClosed) {
+      const closedLabel = incident.closedAt ? new Date(incident.closedAt).toLocaleString() : ''
+      if (!closedLabel.toLowerCase().includes(searchValues.dateClosed.toLowerCase())) return false
+    }
 
     // Filter by queue selection (unassigned / agent / supplier)
     if (queueFilter.type === 'unassigned') {
@@ -2283,7 +2500,10 @@ export default function TicketsView() {
       type: 'type',
       lastAction: 'lastAction',
       date: 'date',
-      endUser: 'endUser'
+      endUser: 'endUser',
+      issueDetail: 'issueDetail',
+      resolution: 'resolution',
+      dateClosed: 'dateClosed'
     }
     const className = classMap[key] || String(key)
     const nodes = Array.from(tableRef.current.querySelectorAll<HTMLElement>(`.col-${className}`))
@@ -2407,7 +2627,7 @@ export default function TicketsView() {
     return { width, height, points }
   }, [ticketVisuals])
 
-  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.sla}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px 1fr`
+  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.sla}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.issueDetail}px ${columnWidths.resolution}px ${columnWidths.dateClosed}px 1fr`
   const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
   const activeSlaPriorityRank = Number(selectedTicket?.sla?.priorityRank || rankFromPriorityLabel(selectedTicket?.sla?.priority || selectedTicket?.priority))
   const activeSlaPolicyName = String(selectedTicket?.sla?.policyName || 'Select Policy')
@@ -2557,6 +2777,98 @@ export default function TicketsView() {
     closedAtMs && createdAtMs
       ? formatElapsedClock(Math.max(0, closedAtMs - createdAtMs))
       : '--:--'
+  const createdDateObj = createdAtMs ? new Date(createdAtMs) : new Date()
+  const createdTimeValue = `${String(createdDateObj.getHours()).padStart(2, '0')}:${String(createdDateObj.getMinutes()).padStart(2, '0')}`
+
+  const openTicketFieldEditor = (field: string) => setEditingTicketField(field)
+  const closeTicketFieldEditor = () => setEditingTicketField(null)
+
+  const renderTicketFieldValue = (
+    field: string,
+    value: string,
+    onSelect: (next: string) => void,
+    options: string[],
+    fallback = 'Not set'
+  ) => {
+    if (editingTicketField === field) {
+      return (
+        <select
+          className="sidebar-select"
+          autoFocus
+          value={value || ''}
+          onBlur={closeTicketFieldEditor}
+          onChange={(e) => {
+            onSelect(e.target.value)
+            closeTicketFieldEditor()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeTicketFieldEditor()
+          }}
+        >
+          {options.map((option) => (
+            <option key={`${field}-${option || 'empty'}`} value={option}>{option || fallback}</option>
+          ))}
+        </select>
+      )
+    }
+    return (
+      <button type="button" className="sidebar-inline-value" onClick={() => openTicketFieldEditor(field)}>
+        {String(value || '').trim() || fallback}
+      </button>
+    )
+  }
+
+  const saveEndUserField = async (field: 'name' | 'email' | 'phone' | 'site' | 'accountManager') => {
+    const value = String(endUserDraft[field] || '').trim()
+    setEndUser((prev: any) => ({ ...(prev || {}), [field]: value }))
+    if (field === 'name' && selectedTicket) {
+      syncSelectedTicketInList(selectedTicket.id, { endUser: value || selectedTicket.endUser })
+    }
+    setEditingEndUserField(null)
+    if (!endUser?.id) return
+    try {
+      await userService.updateUser(Number(endUser.id), { [field]: value })
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Failed to update end-user details')
+    }
+  }
+
+  const renderEndUserField = (label: string, field: 'name' | 'email' | 'phone' | 'site' | 'accountManager') => {
+    const value = String((endUser as any)?.[field] || '')
+    const isEditing = editingEndUserField === field
+    return (
+      <div className="sidebar-field">
+        <label>{label}</label>
+        {isEditing ? (
+          <input
+            className="sidebar-select"
+            autoFocus
+            value={endUserDraft[field]}
+            onChange={(e) => setEndUserDraft((prev) => ({ ...prev, [field]: e.target.value }))}
+            onBlur={() => saveEndUserField(field)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveEndUserField(field)
+              if (e.key === 'Escape') {
+                setEndUserDraft((prev) => ({ ...prev, [field]: value }))
+                setEditingEndUserField(null)
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="sidebar-inline-value"
+            onClick={() => {
+              setEndUserDraft((prev) => ({ ...prev, [field]: value }))
+              setEditingEndUserField(field)
+            }}
+          >
+            {value || 'Not set'}
+          </button>
+        )}
+      </div>
+    )
+  }
 
   React.useEffect(() => {
     setSlaPolicyMenuOpen(false)
@@ -3067,41 +3379,131 @@ export default function TicketsView() {
               <div className="ticket-info-card">
                 <h3 className="sidebar-title">Ticket information</h3>
                 <div className="sidebar-field">
-                  <label>Date Reported</label>
-                  <span>{selectedTicket.dateReported}</span>
+                  <label>Date Created</label>
+                  <span>{createdDateObj.toLocaleDateString()} {createdTimeValue}</span>
                 </div>
                 <div className="sidebar-field">
-                  <label>Created by</label>
-                  <span>Admin</span>
+                  <label>Created from</label>
+                  {renderTicketFieldValue(
+                    'createdFrom',
+                    createdFromValue,
+                    (value) => {
+                      setCreatedFromValue(value)
+                      syncSelectedTicketInList(selectedTicket.id, { createdFrom: value })
+                    },
+                    createdFromOptions
+                  )}
                 </div>
                 <div className="sidebar-field">
                   <label>Ticket Type</label>
-                  <span className="ticket-type-link">{selectedTicket.type}</span>
+                  {renderTicketFieldValue(
+                    'type',
+                    selectedTicket.type || '',
+                    (value) => updateTicketPatch({ type: value }, { type: value }),
+                    ticketTypeOptions
+                  )}
                 </div>
                 <div className="sidebar-field">
                   <label>Workflow</label>
-                  <span className="workflow-link">Incident Management Workflow</span>
+                  {renderTicketFieldValue(
+                    'workflow',
+                    ticketWorkflowValue,
+                    (value) => {
+                      setTicketWorkflowValue(value)
+                      syncSelectedTicketInList(selectedTicket.id, { workflow: value })
+                    },
+                    workflowOptions
+                  )}
                 </div>
                 <div className="sidebar-field">
                   <label>Status</label>
-                  <span className={`status-badge ${statusClass(selectedTicket.status)}`}>{selectedTicket.status}</span>
+                  {renderTicketFieldValue(
+                    'status',
+                    selectedTicket.status || '',
+                    (value) => applyStatus(value, `Status updated to ${value}`),
+                    statusOptions
+                  )}
                 </div>
                 <div className="sidebar-field">
                   <label>Team</label>
-                  <span className="team-link">2nd Line Support</span>
+                  {renderTicketFieldValue(
+                    'team',
+                    ticketTeamValue,
+                    (value) => {
+                      setTicketTeamValue(value)
+                      syncSelectedTicketInList(selectedTicket.id, { team: value, category: value })
+                      ticketService.updateTicket(selectedTicket.id, { category: value }).catch(() => undefined)
+                    },
+                    teamOptions
+                  )}
                 </div>
                 <div className="sidebar-field assigned-field">
-                  <div className="assigned-label">Assigned Agent</div>
-                  <div className="assigned-agent">
-                    <div className="agent-avatar">{getInitials(selectedTicket.assignedAgentName || 'Not set')}</div>
-                    <div className="agent-info">
-                      <span className="agent-name">{selectedTicket.assignedAgentName || 'Not set'}</span>
-                    </div>
-                  </div>
+                  <label>Assigned Staff</label>
+                  {renderTicketFieldValue(
+                    'assignedStaff',
+                    selectedTicket.assignedAgentName || '',
+                    (value) => {
+                      const match = agentOptions.find((option) => option.label === value)
+                      const selectedId = String(match?.id || '')
+                      const name = match?.label || 'Not set'
+                      updateTicketPatch(
+                        { assigneeId: selectedId ? Number(selectedId) : null },
+                        { assignedAgentId: selectedId, assignedAgentName: name }
+                      )
+                    },
+                    ['Not set', ...uniqueOptions(agentOptions.map((option) => option.label))]
+                  )}
                 </div>
                 <div className="sidebar-field">
-                  <label>Additional Agents</label>
-                  <span>Not set</span>
+                  <label>Additional Staff</label>
+                  {renderTicketFieldValue(
+                    'additionalStaff',
+                    additionalStaffValue,
+                    (value) => {
+                      const next = value === 'Not set' ? '' : value
+                      setAdditionalStaffValue(next)
+                      syncSelectedTicketInList(selectedTicket.id, { additionalAgents: next ? [next] : [] })
+                    },
+                    ['Not set', ...uniqueOptions(agentOptions.map((option) => option.label))]
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Issue</label>
+                  {renderTicketFieldValue(
+                    'issue',
+                    issueValue,
+                    (value) => {
+                      const next = value === 'Not set' ? '' : value
+                      setIssueValue(next)
+                      updateTicketPatch({ category: next }, { category: next })
+                    },
+                    ['Not set', ...issueOptions]
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Issue - Detail</label>
+                  {renderTicketFieldValue(
+                    'issueDetail',
+                    issueDetailValue,
+                    (value) => {
+                      const next = value === 'Not set' ? '' : value
+                      setIssueDetailValue(next)
+                      syncSelectedTicketInList(selectedTicket.id, { issueDetail: next })
+                    },
+                    ['Not set', ...issueDetailOptions]
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Resolution</label>
+                  {renderTicketFieldValue(
+                    'resolution',
+                    resolutionValue,
+                    (value) => {
+                      setResolutionValue(value)
+                      syncSelectedTicketInList(selectedTicket.id, { resolution: value })
+                    },
+                    uniqueOptions([...defaultResolutionOptions, selectedTicket.resolution, resolutionValue])
+                  )}
                 </div>
                 <div className="sidebar-field">
                   <label>Source</label>
@@ -3239,29 +3641,14 @@ export default function TicketsView() {
                   <div className="enduser-avatar">{(endUser && endUser.name ? endUser.name.split(' ').map((n:string)=>n[0]).slice(0,2).join('') : 'EU')}</div>
                   <div>
                     <div className="enduser-name" style={{ fontWeight: 700 }}>{endUser?.name || 'Not set'}</div>
-                    <div className="enduser-client" style={{ color: '#6b7280', fontSize: 13 }}>{endUser?.client || 'Not set'}</div>
+                    <div className="enduser-client" style={{ color: '#6b7280', fontSize: 13 }}>{endUser?.email || 'Not set'}</div>
                   </div>
                 </div>
-                <div className="sidebar-field">
-                  <label>User Name</label>
-                  <span>{endUser?.name || 'Not set'}</span>
-                </div>
-                <div className="sidebar-field">
-                  <label>Email Address</label>
-                  <span>{endUser?.email || 'Not set'}</span>
-                </div>
-                <div className="sidebar-field">
-                  <label>Phone Number</label>
-                  <span>{endUser?.phone || 'Not set'}</span>
-                </div>
-                <div className="sidebar-field">
-                  <label>Site</label>
-                  <span>{endUser?.site || 'Not set'}</span>
-                </div>
-                <div className="sidebar-field">
-                  <label>Reporting Manager</label>
-                  <span>{endUser?.accountManager || 'Not set'}</span>
-                </div>
+                {renderEndUserField('User Name', 'name')}
+                {renderEndUserField('Email Address', 'email')}
+                {renderEndUserField('Phone Number', 'phone')}
+                {renderEndUserField('Site', 'site')}
+                {renderEndUserField('Reporting Manager', 'accountManager')}
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <button className="message-button" onClick={handleOpenGChat}>Message Directly on GChat</button>
                 </div>
@@ -3397,14 +3784,17 @@ export default function TicketsView() {
             </div>
             <div className="col-status col-header">Status<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')} /></div>
             <div className="col-id col-header">Ticket ID<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')} /></div>
-            <div className="col-summary col-header">Summary<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')} /></div>
-            <div className="col-category col-header">Category<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')} /></div>
+            <div className="col-summary col-header">Subject<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')} /></div>
+            <div className="col-category col-header">Issue<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')} /></div>
             <div className="col-sla col-header">SLA Time Left<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'sla')} onDoubleClick={() => handleAutoFit('sla')} /></div>
             <div className="col-priority col-header">Priority<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')} /></div>
-            <div className="col-type col-header">Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
-            <div className="col-endUser col-header">End User<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
-            <div className="col-lastAction col-header">Last Action<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')} /></div>
-            <div className="col-date col-header">Date Reported<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onDoubleClick={() => handleAutoFit('date')} /></div>
+            <div className="col-type col-header">Ticket Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
+            <div className="col-endUser col-header">Client<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
+            <div className="col-lastAction col-header">Last Action Date<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')} /></div>
+            <div className="col-date col-header">Date Created<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onDoubleClick={() => handleAutoFit('date')} /></div>
+            <div className="col-issueDetail col-header">Issue - Detail<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'issueDetail')} onDoubleClick={() => handleAutoFit('issueDetail')} /></div>
+            <div className="col-resolution col-header">Resolution<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'resolution')} onDoubleClick={() => handleAutoFit('resolution')} /></div>
+            <div className="col-dateClosed col-header">Date Closed<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'dateClosed')} onDoubleClick={() => handleAutoFit('dateClosed')} /></div>
             <div className="col-spacer col-header" aria-hidden="true" />
           </div>
           {showSearchBar && (
@@ -3426,6 +3816,9 @@ export default function TicketsView() {
               <div className="col-endUser"><input className="table-filter-input" value={searchValues.endUser} onChange={(e) => handleSearchChange('endUser', e.target.value)} /></div>
               <div className="col-lastAction"><input className="table-filter-input" value={searchValues.lastAction} onChange={(e) => handleSearchChange('lastAction', e.target.value)} /></div>
               <div className="col-date"><input className="table-filter-input" value={searchValues.dateReported} onChange={(e) => handleSearchChange('dateReported', e.target.value)} /></div>
+              <div className="col-issueDetail"><input className="table-filter-input" value={searchValues.issueDetail} onChange={(e) => handleSearchChange('issueDetail', e.target.value)} /></div>
+              <div className="col-resolution"><input className="table-filter-input" value={searchValues.resolution} onChange={(e) => handleSearchChange('resolution', e.target.value)} /></div>
+              <div className="col-dateClosed"><input className="table-filter-input" value={searchValues.dateClosed} onChange={(e) => handleSearchChange('dateClosed', e.target.value)} /></div>
               <div className="col-spacer" aria-hidden="true" />
             </div>
           )}
@@ -3469,6 +3862,9 @@ export default function TicketsView() {
               <div className="col-endUser">{incident.endUser || '-'}</div>
               <div className="col-lastAction">{incident.lastAction || '-'}</div>
               <div className="col-date">{incident.dateReported || '-'}</div>
+              <div className="col-issueDetail">{incident.issueDetail || '-'}</div>
+              <div className="col-resolution">{incident.resolution || '-'}</div>
+              <div className="col-dateClosed">{incident.closedAt ? new Date(incident.closedAt).toLocaleString() : '-'}</div>
               <div className="col-spacer" aria-hidden="true" />
             </div>
           ))}

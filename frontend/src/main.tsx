@@ -16,7 +16,7 @@ createRoot(document.getElementById('root')!).render(
           return null
         }
         if (pathname !== '/' && !hash) {
-          window.location.replace('/#/login')
+          window.location.replace('/#/portal/login')
         }
       }
       return null

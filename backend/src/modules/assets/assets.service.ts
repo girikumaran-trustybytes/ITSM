@@ -5,6 +5,7 @@ function buildAssetWhere(opts: {
   status?: string
   category?: string
   assignedToId?: number
+  assignedUserEmail?: string
 }) {
   const conditions: string[] = []
   const params: any[] = []
@@ -20,9 +21,18 @@ function buildAssetWhere(opts: {
     params.push(opts.category)
     conditions.push(`"category" = $${params.length}`)
   }
-  if (opts.assignedToId !== undefined) {
+  if (opts.assignedToId !== undefined && opts.assignedUserEmail) {
+    params.push(opts.assignedToId)
+    const assignedIdParam = params.length
+    params.push(String(opts.assignedUserEmail).trim().toLowerCase())
+    const assignedEmailParam = params.length
+    conditions.push(`("assignedToId" = $${assignedIdParam} OR LOWER(COALESCE("assignedUserEmail", '')) = $${assignedEmailParam})`)
+  } else if (opts.assignedToId !== undefined) {
     params.push(opts.assignedToId)
     conditions.push(`"assignedToId" = $${params.length}`)
+  } else if (opts.assignedUserEmail) {
+    params.push(String(opts.assignedUserEmail).trim().toLowerCase())
+    conditions.push(`LOWER(COALESCE("assignedUserEmail", '')) = $${params.length}`)
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   return { where, params }
@@ -58,6 +68,7 @@ export async function listAssets(opts: {
   status?: string
   category?: string
   assignedToId?: number
+  assignedUserEmail?: string
 } = {}) {
   const page = opts.page ?? 1
   const pageSize = opts.pageSize ?? 20
