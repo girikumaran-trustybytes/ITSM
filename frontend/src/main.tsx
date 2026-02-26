@@ -11,12 +11,13 @@ createRoot(document.getElementById('root')!).render(
     {(() => {
       if (typeof window !== 'undefined') {
         const { pathname, hash } = window.location
+        const base = import.meta.env.BASE_URL || '/'
         if (pathname !== '/' && hash.startsWith('#/')) {
-          window.location.replace(`/${hash}`)
+          window.location.replace(`${base}${hash}`)
           return null
         }
         if (pathname !== '/' && !hash) {
-          window.location.replace('/#/portal/login')
+          window.location.replace(`${base}#/portal/login`)
         }
       }
       return null
