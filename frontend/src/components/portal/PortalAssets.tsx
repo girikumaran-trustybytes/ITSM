@@ -143,12 +143,12 @@ export default function PortalAssets() {
 
   return (
     <div className="portal-root">
-      <header className="portal-topbar">
+      <header className="portal-topbar portal-home-topbar portal-unified-topbar">
         <div className="portal-logo">TB ITSM</div>
         <div className="portal-top-actions">
           <nav className="portal-nav">
             <button className="portal-nav-link" onClick={() => navigate('/portal/home')}>Home</button>
-            <button className="portal-nav-link" onClick={() => navigate('/portal/new-ticket')}>Report an issue</button>
+            <button className="portal-nav-link" onClick={() => navigate('/portal/new-ticket')}>New Ticket</button>
             <button className="portal-nav-link" onClick={() => navigate('/portal/tickets')}>My Tickets</button>
             <button className="portal-nav-link active" onClick={() => navigate('/portal/assets')}>My Devices</button>
           </nav>
@@ -162,14 +162,14 @@ export default function PortalAssets() {
       </header>
 
       <section className="portal-page">
-        <div className="portal-page-toolbar portal-page-toolbar-header">
-          <div className="portal-toolbar-title-group">
+        <h1 className="portal-tickets-title">My Devices</h1>
+        <div className="portal-page-toolbar portal-tickets-toolbar portal-tickets-toolbar-row">
+          <div className="portal-tickets-toolbar-left">
             <button className="portal-back-btn" onClick={() => navigate('/portal/home')} aria-label="Back">&larr;</button>
-            <h1>My Assets</h1>
-          </div>
-          <div className="portal-assets-search portal-toolbar-search">
-            <span aria-hidden="true">Search</span>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" />
+            <div className="portal-search">
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." />
+              <span className="portal-search-icon">&#x2315;</span>
+            </div>
           </div>
         </div>
 
@@ -203,10 +203,6 @@ export default function PortalAssets() {
                   <div><span>Assigned To</span><strong>{asset?.assignedTo?.name || asset?.assignedTo?.email || asset?.assignedUserEmail || 'You'}</strong></div>
                   <div><span>Warranty</span><strong>{asset.warrantyUntil ? String(asset.warrantyUntil).slice(0, 10) : '-'}</strong></div>
                   <div><span>Status</span><strong>{asset.status || '-'}</strong></div>
-                </div>
-
-                <div className="portal-asset-actions">
-                  <button type="button" className="portal-asset-action" onClick={() => navigate('/portal/new-ticket')}>Report Issue</button>
                 </div>
               </div>
             ))}
