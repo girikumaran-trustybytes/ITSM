@@ -1,6 +1,16 @@
 import axios from 'axios'
 
-const BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000'
+function normalizeApiBase(rawBase: string) {
+  const trimmed = String(rawBase || '').trim()
+  if (!trimmed) return 'http://localhost:5000/api'
+  const noTrailingSlash = trimmed.replace(/\/+$/, '')
+  if (/^https?:\/\//i.test(noTrailingSlash) && !noTrailingSlash.endsWith('/api')) {
+    return `${noTrailingSlash}/api`
+  }
+  return noTrailingSlash
+}
+
+const BASE = normalizeApiBase(import.meta.env.VITE_API_BASE || '')
 
 const api = axios.create({
   baseURL: BASE,
@@ -106,8 +116,13 @@ api.interceptors.response.use(
 
 export default api
 
+export function buildApiUrl(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${BASE}${normalizedPath}`
+}
+
 export async function fetchJSON(path: string, options: RequestInit = {}) {
-  const res = await fetch(`${BASE}${path}`, options)
+  const res = await fetch(buildApiUrl(path), options)
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }

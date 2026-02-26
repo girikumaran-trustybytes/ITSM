@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { getGoogleConfig, getSsoConfig, login, loginWithGoogle, requestPasswordReset, resetPassword, storeAuthTokens, verifyMfa } from '../services/auth.service'
+import { buildApiUrl } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 
 declare global {
@@ -180,7 +181,7 @@ export default function Login() {
     if (loading) return
     persistRememberChoice(rememberMe, email)
     const remember = rememberMe ? '1' : '0'
-    window.location.href = `/api/auth/sso/${provider}/start?rememberMe=${remember}`
+    window.location.href = buildApiUrl(`/auth/sso/${provider}/start?rememberMe=${remember}`)
   }
 
   async function onForgotPassword(e: React.FormEvent) {
