@@ -25,11 +25,11 @@
   --nav-top-bar-offset: 54px;
   --primary-left-panel-width: 92px;
   --queue-sidebar-width: 260px;
-  --sidebar-bg: #262d39;
+  --sidebar-bg: #0b111e;
   --sidebar-border: #1f2631;
-  --header-bg: #e9ecef;
+  --header-bg: #cbd5e1;
   --header-border: #d4d9df;
-  --queue-bg: #2f3746;
+  --queue-bg: #0e1525;
   --queue-border: #242c38;
   --pill-bg: #f1f3f5;
   --pill-border: #cfd5db;
@@ -4800,6 +4800,26 @@ body.is-column-resizing * {
   color: #fff;
   cursor: pointer;
 }
+.portal-page-toolbar-header {
+  grid-template-columns: 1fr auto;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.portal-toolbar-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.portal-toolbar-title-group h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.portal-toolbar-title-group .portal-page-sub {
+  margin: 4px 0 0;
+}
 .portal-page-toolbar {
   display: grid;
   grid-template-columns: 220px 1fr auto;
@@ -5078,9 +5098,20 @@ body.is-column-resizing * {
   font-size: 14px;
   padding: 10px 0;
 }
+.portal-toolbar-search {
+  width: min(100%, 920px);
+  margin-left: auto;
+}
 @media (max-width: 980px) {
   .portal-assets-toolbar {
     grid-template-columns: 1fr;
+  }
+  .portal-page-toolbar-header {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .portal-toolbar-search {
+    width: 100%;
   }
   .portal-asset-cards {
     grid-template-columns: 1fr;
@@ -5106,6 +5137,10 @@ body.is-column-resizing * {
 }
 .portal-root:not(.portal-home) .portal-back-btn {
   background: #94a3b8;
+}
+.portal-root:not(.portal-home) .portal-page-toolbar-header {
+  background: #ffffff;
+  border-color: #d1d5db;
 }
 .portal-root:not(.portal-home) .portal-page-toolbar select,
 .portal-root:not(.portal-home) .portal-search input,
@@ -11961,3 +11996,4 @@ body.admin-queue-collapsed .ticket-left-panel {
     grid-template-columns: 1fr;
   }
 }
+

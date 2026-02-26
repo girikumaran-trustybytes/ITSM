@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteTicket = exports.updateTicket = exports.unassignAsset = exports.assignAsset = exports.resolveTicket = exports.uploadAttachments = exports.privateNote = exports.respond = exports.addHistory = exports.transitionTicket = exports.createTicket = exports.getTicket = exports.listTickets = void 0;
+exports.deleteTicket = exports.updateTicket = exports.unassignAsset = exports.assignAsset = exports.resolveTicket = exports.uploadAttachments = exports.privateNote = exports.markResponded = exports.respond = exports.addHistory = exports.transitionTicket = exports.createTicket = exports.getTicket = exports.listTickets = void 0;
 const ticketService = __importStar(require("./ticket.service"));
 const listTickets = async (req, res) => {
     const page = Number(req.query.page || 1);
@@ -53,7 +53,11 @@ const createTicket = async (req, res) => {
         const role = req.user?.role;
         if (role === 'USER') {
             payload.requesterId = req.user?.id;
+            if (!payload.createdFrom)
+                payload.createdFrom = 'User portal';
         }
+        if (!payload.createdFrom)
+            payload.createdFrom = 'ITSM Platform';
         const t = await ticketService.createTicket(payload, creator);
         res.status(201).json(t);
     }
@@ -66,7 +70,7 @@ exports.createTicket = createTicket;
 const transitionTicket = async (req, res) => {
     const id = req.params.id;
     const { to } = req.validated?.body || req.body;
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const t = await ticketService.transitionTicket(id, to, user);
         res.json(t);
@@ -82,7 +86,7 @@ const addHistory = async (req, res) => {
     const note = String(payload.note || '');
     if (!note || !note.trim())
         return res.status(400).json({ error: 'Note is required' });
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const entry = await ticketService.createHistoryEntry(id, { note, user });
         res.status(201).json(entry);
@@ -97,7 +101,7 @@ const respond = async (req, res) => {
     const { message, sendEmail, to, cc, bcc, subject, attachmentIds } = req.validated?.body || req.body || {};
     if (!message || !message.trim())
         return res.status(400).json({ error: 'Message is required' });
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const entry = await ticketService.addResponse(id, { message, user, sendEmail, to, cc, bcc, subject, attachmentIds });
         res.status(201).json(entry);
@@ -107,12 +111,24 @@ const respond = async (req, res) => {
     }
 };
 exports.respond = respond;
+const markResponded = async (req, res) => {
+    const id = req.params.id;
+    const user = req.user || 'system';
+    try {
+        const t = await ticketService.markResponseSlaMet(id, user);
+        res.json(t);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to mark response SLA' });
+    }
+};
+exports.markResponded = markResponded;
 const privateNote = async (req, res) => {
     const id = req.params.id;
     const { note, attachmentIds } = req.validated?.body || req.body || {};
     if (!note || !note.trim())
         return res.status(400).json({ error: 'Note is required' });
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const entry = await ticketService.addPrivateNote(id, { note, user, attachmentIds });
         res.status(201).json(entry);
@@ -125,7 +141,7 @@ exports.privateNote = privateNote;
 const uploadAttachments = async (req, res) => {
     const id = req.params.id;
     const { files, note, internal } = req.validated?.body || req.body || {};
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const result = await ticketService.uploadTicketAttachments(id, { files, user, note, internal });
         res.status(201).json(result);
@@ -140,7 +156,7 @@ const resolveTicket = async (req, res) => {
     const { resolution, resolutionCategory, sendEmail } = req.validated?.body || req.body || {};
     if (!resolution || !resolution.trim())
         return res.status(400).json({ error: 'Resolution details are required' });
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const updated = await ticketService.resolveTicketWithDetails(id, { resolution, resolutionCategory, user, sendEmail });
         res.json(updated);
@@ -155,7 +171,7 @@ const assignAsset = async (req, res) => {
     const { assetId } = req.validated?.body || req.body || {};
     if (!assetId)
         return res.status(400).json({ error: 'assetId is required' });
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const updated = await ticketService.assignAsset(id, Number(assetId), user);
         res.json(updated);
@@ -167,7 +183,7 @@ const assignAsset = async (req, res) => {
 exports.assignAsset = assignAsset;
 const unassignAsset = async (req, res) => {
     const id = req.params.id;
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const updated = await ticketService.unassignAsset(id, user);
         res.json(updated);
@@ -180,7 +196,7 @@ exports.unassignAsset = unassignAsset;
 const updateTicket = async (req, res) => {
     const id = req.params.id;
     const payload = req.validated?.body || req.body || {};
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const updated = await ticketService.updateTicket(id, payload, user);
         res.json(updated);
@@ -192,7 +208,7 @@ const updateTicket = async (req, res) => {
 exports.updateTicket = updateTicket;
 const deleteTicket = async (req, res) => {
     const id = req.params.id;
-    const user = req.user?.id || 'system';
+    const user = req.user || 'system';
     try {
         const deleted = await ticketService.deleteTicket(id, user);
         res.json({ success: true, deleted });

@@ -1,7 +1,8 @@
 import api from './api'
 
 export async function listSuppliers(params: { q?: string } = {}) {
-  const res = await api.get('/suppliers', { params })
+  const q = String(params.q || '').trim()
+  const res = await api.get('/suppliers', { params: q ? { q } : {} })
   return res.data
 }
 

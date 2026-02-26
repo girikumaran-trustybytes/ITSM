@@ -84,11 +84,13 @@ export default function PortalNewTicket() {
       </header>
 
       <section className="portal-page">
-        <div className="portal-page-header">
-          <button className="portal-back-btn" onClick={() => navigate('/portal/home')} aria-label="Back">←</button>
-          <div>
-            <h1>New Ticket</h1>
-            <p className="portal-page-sub">Please complete the following form to submit a new Ticket.</p>
+        <div className="portal-page-toolbar portal-page-toolbar-header">
+          <div className="portal-toolbar-title-group">
+            <button className="portal-back-btn" onClick={() => navigate('/portal/home')} aria-label="Back">&larr;</button>
+            <div>
+              <h1>New Ticket</h1>
+              <p className="portal-page-sub">Please complete the following form to submit a new Ticket.</p>
+            </div>
           </div>
           <div className="portal-required-hint">* denotes a mandatory field</div>
         </div>
@@ -190,3 +192,4 @@ export default function PortalNewTicket() {
     </div>
   )
 }
+

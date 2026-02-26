@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.unassignAsset = exports.assignAsset = exports.deleteTicket = exports.updateTicket = exports.uploadTicketAttachments = exports.resolveTicketWithDetails = exports.addPrivateNote = exports.addResponse = exports.createHistoryEntry = exports.transitionTicket = exports.createTicket = exports.getTicketById = exports.getTickets = void 0;
+exports.unassignAsset = exports.assignAsset = exports.deleteTicket = exports.updateTicket = exports.uploadTicketAttachments = exports.resolveTicketWithDetails = exports.addPrivateNote = exports.markResponseSlaMet = exports.addResponse = exports.createHistoryEntry = exports.transitionTicket = exports.createTicket = exports.getTicketById = exports.getTickets = void 0;
 const db_1 = require("../../db");
 const workflow_service_1 = require("../workflows/workflow.service");
 const logger_1 = require("../../common/logger/logger");
@@ -17,6 +17,7 @@ const ATTACHMENT_BASE_DIR = path_1.default.resolve(process.cwd(), 'uploads', 'ti
 let attachmentSchemaReady = null;
 let slaSchemaReady = null;
 let slaConfigSchemaReady = null;
+let ticketOriginSchemaReady = null;
 function buildTicketWhere(idOrTicketId, alias = 't', startIndex = 1) {
     if (isNumericId(idOrTicketId)) {
         return { clause: `${alias}."id" = $${startIndex}`, params: [Number(idOrTicketId)] };
@@ -69,6 +70,7 @@ async function ensureSlaTrackingSchema() {
             await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "responseTargetAt" TIMESTAMP(3)');
             await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolutionTargetAt" TIMESTAMP(3)');
             await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "firstRespondedAt" TIMESTAMP(3)');
+            await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "firstRespondedById" INTEGER');
             await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolvedAt" TIMESTAMP(3)');
             await (0, db_1.query)('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "policyId" INTEGER');
         })();
@@ -111,12 +113,12 @@ async function getSlaPolicyByPriority(priority) {
 function fallbackSlaMinutes(priority) {
     const normalized = normalizePriority(priority);
     if (normalized === 'Critical')
-        return { responseTimeMin: 15, resolutionTimeMin: 4 * 60 };
+        return { responseTimeMin: 15, resolutionTimeMin: 2 * 60 };
     if (normalized === 'High')
-        return { responseTimeMin: 30, resolutionTimeMin: 8 * 60 };
+        return { responseTimeMin: 30, resolutionTimeMin: 4 * 60 };
     if (normalized === 'Medium')
-        return { responseTimeMin: 60, resolutionTimeMin: 24 * 60 };
-    return { responseTimeMin: 240, resolutionTimeMin: 72 * 60 };
+        return { responseTimeMin: 60, resolutionTimeMin: 8 * 60 };
+    return { responseTimeMin: 240, resolutionTimeMin: 24 * 60 };
 }
 const weekdayByShortName = {
     Sun: 'Sunday',
@@ -202,9 +204,9 @@ async function upsertSlaTrackingForTicket(ticket, options) {
     const status = ['Resolved', 'Closed'].includes(String(ticket.status || '')) ? 'resolved' : 'running';
     await (0, db_1.query)(`INSERT INTO "SlaTracking" (
       "ticketId", "slaName", "startTime", "breachTime", "status", "policyId",
-      "responseTargetAt", "resolutionTargetAt", "firstRespondedAt", "resolvedAt", "createdAt", "updatedAt"
+      "responseTargetAt", "resolutionTargetAt", "firstRespondedAt", "firstRespondedById", "resolvedAt", "createdAt", "updatedAt"
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL, NOW(), NOW())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL, NULL, NOW(), NOW())
     ON CONFLICT ("ticketId") DO UPDATE
     SET
       "slaName" = EXCLUDED."slaName",
@@ -215,6 +217,7 @@ async function upsertSlaTrackingForTicket(ticket, options) {
       "responseTargetAt" = EXCLUDED."responseTargetAt",
       "resolutionTargetAt" = EXCLUDED."resolutionTargetAt",
       "firstRespondedAt" = CASE WHEN $9 THEN "SlaTracking"."firstRespondedAt" ELSE EXCLUDED."firstRespondedAt" END,
+      "firstRespondedById" = CASE WHEN $9 THEN "SlaTracking"."firstRespondedById" ELSE EXCLUDED."firstRespondedById" END,
       "resolvedAt" = CASE WHEN $10 THEN "SlaTracking"."resolvedAt" ELSE EXCLUDED."resolvedAt" END,
       "updatedAt" = NOW()`, [
         ticket.id,
@@ -243,19 +246,36 @@ function buildSlaSnapshot(ticket, tracking) {
     const now = Date.now();
     const responseTargetMs = tracking.responseTargetAt ? new Date(tracking.responseTargetAt).getTime() : null;
     const resolutionTargetMs = tracking.resolutionTargetAt ? new Date(tracking.resolutionTargetAt).getTime() : null;
-    const responseDone = Boolean(tracking.firstRespondedAt);
+    const responseDone = Boolean(tracking.firstRespondedAt && tracking.firstRespondedById);
     const resolutionDone = Boolean(tracking.resolvedAt) || ['Resolved', 'Closed'].includes(String(ticket.status || ''));
+    const responseCompletedMs = tracking.firstRespondedAt ? new Date(tracking.firstRespondedAt).getTime() : null;
+    const resolutionCompletedMs = tracking.resolvedAt
+        ? new Date(tracking.resolvedAt).getTime()
+        : ticket.resolvedAt
+            ? new Date(ticket.resolvedAt).getTime()
+            : null;
     const responseRemainingMs = responseTargetMs === null ? null : responseTargetMs - now;
     const resolutionRemainingMs = resolutionTargetMs === null ? null : resolutionTargetMs - now;
-    const responseBreached = !responseDone && responseRemainingMs !== null && responseRemainingMs < 0;
-    const resolutionBreached = !resolutionDone && resolutionRemainingMs !== null && resolutionRemainingMs < 0;
+    const responseBreached = responseDone
+        ? responseTargetMs !== null && responseCompletedMs !== null && responseCompletedMs > responseTargetMs
+        : responseRemainingMs !== null && responseRemainingMs < 0;
+    const resolutionBreached = resolutionDone
+        ? resolutionTargetMs !== null && resolutionCompletedMs !== null && resolutionCompletedMs > resolutionTargetMs
+        : resolutionRemainingMs !== null && resolutionRemainingMs < 0;
+    const responseStatus = responseDone ? (responseBreached ? 'MISSED' : 'MET') : 'RUNNING';
+    const resolutionStatus = resolutionDone ? (resolutionBreached ? 'MISSED' : 'MET') : 'RUNNING';
     return {
         policyName: tracking.slaName || null,
         priority: normalizePriority(ticket.priority),
+        responseSlaStatus: responseStatus,
+        resolutionSlaStatus: resolutionStatus,
         response: {
             targetAt: toIsoOrNull(tracking.responseTargetAt),
             completedAt: toIsoOrNull(tracking.firstRespondedAt),
+            completedById: tracking.firstRespondedById || null,
             breached: responseBreached,
+            met: responseDone && !responseBreached,
+            status: responseStatus,
             remainingMs: responseRemainingMs,
             remainingLabel: responseRemainingMs === null ? '--:--' : formatSlaClock(responseRemainingMs),
         },
@@ -263,12 +283,22 @@ function buildSlaSnapshot(ticket, tracking) {
             targetAt: toIsoOrNull(tracking.resolutionTargetAt),
             completedAt: toIsoOrNull(tracking.resolvedAt || ticket.resolvedAt),
             breached: resolutionBreached,
+            met: resolutionDone && !resolutionBreached,
+            status: resolutionStatus,
             remainingMs: resolutionRemainingMs,
             remainingLabel: resolutionRemainingMs === null ? '--:--' : formatSlaClock(resolutionRemainingMs),
         },
         breached: responseBreached || resolutionBreached,
         state: resolutionDone ? 'resolved' : responseDone ? 'responded' : 'running',
     };
+}
+function deriveSlaTimeLeft(snapshot) {
+    if (!snapshot)
+        return '--:--';
+    if (!snapshot?.response?.completedAt || !snapshot?.response?.completedById) {
+        return snapshot?.response?.remainingLabel || '--:--';
+    }
+    return snapshot?.resolution?.remainingLabel || '--:--';
 }
 async function attachSlaData(items) {
     if (!Array.isArray(items) || items.length === 0)
@@ -284,7 +314,7 @@ async function attachSlaData(items) {
         const tracking = map.get(Number(ticket.id));
         const snapshot = buildSlaSnapshot(ticket, tracking);
         ticket.sla = snapshot;
-        ticket.slaTimeLeft = snapshot?.resolution?.remainingLabel || '--:--';
+        ticket.slaTimeLeft = deriveSlaTimeLeft(snapshot);
     });
     return items;
 }
@@ -297,6 +327,14 @@ async function ensureAttachmentSchema() {
     }
     await attachmentSchemaReady;
 }
+async function ensureTicketOriginSchema() {
+    if (!ticketOriginSchemaReady) {
+        ticketOriginSchemaReady = (async () => {
+            await (0, db_1.query)('ALTER TABLE "Ticket" ADD COLUMN IF NOT EXISTS "createdFrom" TEXT');
+        })();
+    }
+    await ticketOriginSchemaReady;
+}
 function sanitizeFilename(name) {
     return String(name || 'file').replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').slice(0, 180) || 'file';
 }
@@ -306,16 +344,34 @@ function decodeBase64Payload(input) {
     return Buffer.from(cleaned, 'base64');
 }
 async function resolveChangedById(user) {
-    const parsed = typeof user === 'number' ? user : parseInt(String(user), 10);
-    if (!Number.isFinite(parsed) || parsed <= 0)
+    const candidateIdRaw = (() => {
+        if (typeof user === 'number' || typeof user === 'string')
+            return user;
+        if (user && typeof user === 'object')
+            return user.id ?? user.sub ?? user.userId ?? null;
         return null;
-    // Primary path: auth id directly matches "User"."id"
-    const direct = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [parsed]);
-    if (direct?.id)
-        return direct.id;
-    // Compatibility fallback: token subject may be "ServiceAccounts"."id"
-    const serviceAccount = await (0, db_1.queryOne)('SELECT "userId" FROM "ServiceAccounts" WHERE "id" = $1 AND "enabled" = TRUE', [parsed]);
-    return serviceAccount?.userId ?? null;
+    })();
+    const parsed = typeof candidateIdRaw === 'number' ? candidateIdRaw : parseInt(String(candidateIdRaw), 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+        // Primary path: auth id directly matches "User"."id"
+        const direct = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE "id" = $1', [parsed]);
+        if (direct?.id)
+            return direct.id;
+        // Compatibility fallback: token subject may be "ServiceAccounts"."id"
+        const serviceAccount = await (0, db_1.queryOne)('SELECT "userId" FROM "ServiceAccounts" WHERE "id" = $1 AND "enabled" = TRUE', [parsed]);
+        if (serviceAccount?.userId)
+            return serviceAccount.userId;
+    }
+    // Fallback path when token subject is non-numeric (UUID/email-based providers).
+    const rawEmail = typeof user === 'string'
+        ? (String(user).includes('@') ? user : '')
+        : (user && typeof user === 'object' ? String(user.email || '').trim() : '');
+    if (rawEmail) {
+        const byEmail = await (0, db_1.queryOne)('SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1) LIMIT 1', [rawEmail]);
+        if (byEmail?.id)
+            return byEmail.id;
+    }
+    return null;
 }
 function buildInsert(table, data) {
     const keys = Object.keys(data).filter((k) => data[k] !== undefined);
@@ -390,11 +446,12 @@ const getTicketById = async (id, viewer) => {
     t.attachments = attachments;
     t.history = history;
     t.sla = buildSlaSnapshot(t, tracking);
-    t.slaTimeLeft = t.sla?.resolution?.remainingLabel || '--:--';
+    t.slaTimeLeft = deriveSlaTimeLeft(t.sla);
     return t;
 };
 exports.getTicketById = getTicketById;
 const createTicket = async (payload, creator = 'system') => {
+    await ensureTicketOriginSchema();
     const ticketId = await getNextTicketTag();
     // auto-actions: compute priority from impact x urgency if not provided
     function computePriority(impact, urgency) {
@@ -442,6 +499,7 @@ const createTicket = async (payload, creator = 'system') => {
         subcategory: payload.subcategory,
         description: payload.description,
         slaStart: now,
+        createdFrom: String(payload.createdFrom || '').trim() || 'ITSM Platform',
     };
     if (category)
         data.category = category;
@@ -471,7 +529,7 @@ const createTicket = async (payload, creator = 'system') => {
     }
     const tracking = await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [created.id]);
     created.sla = buildSlaSnapshot(created, tracking);
-    created.slaTimeLeft = created.sla?.resolution?.remainingLabel || '--:--';
+    created.slaTimeLeft = deriveSlaTimeLeft(created.sla);
     return created;
 };
 exports.createTicket = createTicket;
@@ -486,11 +544,11 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
     const where = buildTicketWhere(ticketId, 't', 2);
     const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [toState, ...where.params]);
     const updated = updatedRows[0];
+    const changedById = await resolveChangedById(user);
     if (['Resolved', 'Closed'].includes(String(toState || ''))) {
         await ensureSlaTrackingSchema();
         await (0, db_1.query)('UPDATE "SlaTracking" SET "resolvedAt" = COALESCE("resolvedAt", NOW()), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2', ['resolved', t.id]);
     }
-    const changedById = await resolveChangedById(user);
     await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
         t.id,
         from,
@@ -505,6 +563,9 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
         user,
         meta: { from, to: toState },
     });
+    const tracking = await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id]);
+    updated.sla = buildSlaSnapshot(updated, tracking);
+    updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla);
     // notify requester/assignee
     try {
         const requester = updated.requesterId ? await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [updated.requesterId]) : null;
@@ -570,18 +631,19 @@ const addResponse = async (ticketId, opts) => {
         throw { status: 404, message: 'Ticket not found' };
     const attachmentRows = await resolveAttachmentRows(t.id, opts.attachmentIds || []);
     const messageWithAttachments = appendAttachmentSummary(opts.message, attachmentRows);
+    const persistedMessage = opts.sendEmail
+        ? `[EMAIL]\n${messageWithAttachments}`
+        : messageWithAttachments;
     const changedById = await resolveChangedById(opts.user);
     const rows = await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *', [
         t.id,
         t.status,
         t.status,
         changedById,
-        messageWithAttachments,
+        persistedMessage,
         false,
     ]);
     const created = rows[0];
-    await ensureSlaTrackingSchema();
-    await (0, db_1.query)('UPDATE "SlaTracking" SET "firstRespondedAt" = COALESCE("firstRespondedAt", NOW()), "status" = CASE WHEN "status" = \'resolved\' THEN "status" ELSE \'responded\' END, "updatedAt" = NOW() WHERE "ticketId" = $1', [t.id]);
     await (0, logger_1.auditLog)({
         action: 'respond',
         ticketId: t.ticketId,
@@ -606,6 +668,37 @@ const addResponse = async (ticketId, opts) => {
     return created;
 };
 exports.addResponse = addResponse;
+const markResponseSlaMet = async (ticketId, user = 'system') => {
+    const t = await getTicketRecord(ticketId);
+    if (!t)
+        throw { status: 404, message: 'Ticket not found' };
+    const changedById = await resolveChangedById(user);
+    const actorRole = String((user && typeof user === 'object' ? user.role : '') || '').trim().toUpperCase();
+    const hasAgentPrivileges = actorRole === 'AGENT' || actorRole === 'ADMIN';
+    const isInternalResponder = Boolean(changedById) && (hasAgentPrivileges ||
+        !t.requesterId ||
+        Number(changedById) !== Number(t.requesterId));
+    if (!isInternalResponder) {
+        throw { status: 403, message: 'Only internal agent actions can mark response SLA' };
+    }
+    await ensureSlaTrackingSchema();
+    await (0, db_1.query)('UPDATE "SlaTracking" SET "firstRespondedAt" = COALESCE("firstRespondedAt", NOW()), "firstRespondedById" = COALESCE("firstRespondedById", $2), "status" = CASE WHEN "status" = \'resolved\' THEN "status" ELSE \'responded\' END, "updatedAt" = NOW() WHERE "ticketId" = $1', [t.id, changedById]);
+    await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [t.id, t.status, t.status, changedById, 'Response SLA marked as responded', false]);
+    await (0, logger_1.auditLog)({
+        action: 'mark_response_sla',
+        ticketId: t.ticketId,
+        user,
+        meta: { changedById },
+    });
+    const updated = await getTicketRecord(ticketId);
+    const tracking = updated ? await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id]) : null;
+    if (!updated)
+        throw { status: 404, message: 'Ticket not found' };
+    updated.sla = buildSlaSnapshot(updated, tracking);
+    updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla);
+    return updated;
+};
+exports.markResponseSlaMet = markResponseSlaMet;
 const addPrivateNote = async (ticketId, opts) => {
     const t = await getTicketRecord(ticketId);
     if (!t)
@@ -732,6 +825,7 @@ const uploadTicketAttachments = async (ticketId, opts) => {
 };
 exports.uploadTicketAttachments = uploadTicketAttachments;
 const updateTicket = async (ticketId, payload, user) => {
+    await ensureTicketOriginSchema();
     const t = await getTicketRecord(ticketId);
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
@@ -748,6 +842,8 @@ const updateTicket = async (ticketId, payload, user) => {
         data.priority = payload.priority;
     if (payload.category !== undefined)
         data.category = payload.category;
+    if (payload.createdFrom !== undefined)
+        data.createdFrom = payload.createdFrom;
     if (payload.assigneeId !== undefined)
         data.assigneeId = payload.assigneeId || null;
     if (payload.requesterId !== undefined)
@@ -777,7 +873,7 @@ const updateTicket = async (ticketId, payload, user) => {
     await (0, logger_1.auditLog)({ action: 'update_ticket', ticketId: updated.ticketId, user, meta: { changes: data } });
     const tracking = await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id]);
     updated.sla = buildSlaSnapshot(updated, tracking);
-    updated.slaTimeLeft = updated.sla?.resolution?.remainingLabel || '--:--';
+    updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla);
     return updated;
 };
 exports.updateTicket = updateTicket;

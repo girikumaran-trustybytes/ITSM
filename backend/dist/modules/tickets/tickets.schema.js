@@ -24,6 +24,7 @@ exports.ticketsCreateBodySchema = zod_1.z.object({
     description: zod_1.z.string().min(1).optional(),
     requesterId: common_1.zId.optional(),
     requesterEmail: zod_1.z.string().email().optional(),
+    createdFrom: zod_1.z.string().min(1).optional(),
     assigneeId: common_1.zId.optional(),
     slaStart: zod_1.z.string().optional(),
 }).refine((val) => val.subject || val.summary, {
@@ -37,6 +38,7 @@ exports.ticketsUpdateBodySchema = zod_1.z.object({
     priority: zod_1.z.string().min(1).optional(),
     category: zod_1.z.string().min(1).optional(),
     description: zod_1.z.string().min(1).optional(),
+    createdFrom: zod_1.z.string().min(1).optional(),
     assigneeId: common_1.zId.optional(),
     requesterId: common_1.zId.optional(),
 });

@@ -161,7 +161,7 @@ export default function TicketsView() {
   const [showCannedMenu, setShowCannedMenu] = useState(false)
   const [showCannedModal, setShowCannedModal] = useState(false)
   const [cannedForm, setCannedForm] = useState({ name: '', html: '' })
-  const [actionStateByTicket, setActionStateByTicket] = useState<Record<string, { ackSent: boolean; supplierLogged: boolean }>>({})
+  const [actionStateByTicket, setActionStateByTicket] = useState<Record<string, { accepted: boolean; ackSent: boolean; supplierLogged: boolean }>>({})
   const [composerMode, setComposerMode] = useState<
     'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
   >('emailUser')
@@ -678,10 +678,14 @@ export default function TicketsView() {
   }, [])
 
   React.useEffect(() => {
+    if (String(user?.role || '').toUpperCase() !== 'ADMIN') {
+      setSlaPolicies([])
+      return
+    }
     listSlaConfigs()
       .then((rows: any) => setSlaPolicies(Array.isArray(rows) ? rows : []))
       .catch(() => setSlaPolicies([]))
-  }, [])
+  }, [user?.role])
 
   React.useEffect(() => {
     if (!showDetailView || !selectedTicket?.id || agents.length === 0) return
@@ -793,7 +797,6 @@ export default function TicketsView() {
   const defaultTicketTypeOptions = ['Fault', 'Live Chat', 'Problem', 'Change', 'Service Request']
   const defaultWorkflowOptions = ['Fault Workflow', 'Incident Management Workflow', 'Service Request Workflow', 'Change Workflow']
   const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Resolved', 'Closed']
-  const defaultTeamOptions = ['Automated Alerts', 'Support Desk', '2nd Line Support']
   const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
   const createdFromOptions = ['User portal', 'ITSM Platform']
 
@@ -801,7 +804,7 @@ export default function TicketsView() {
     Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)))
 
   const [ticketWorkflowValue, setTicketWorkflowValue] = useState('Incident Management Workflow')
-  const [ticketTeamValue, setTicketTeamValue] = useState('Support Desk')
+  const [ticketTeamValue, setTicketTeamValue] = useState('')
   const [createdFromValue, setCreatedFromValue] = useState('ITSM Platform')
   const [additionalStaffValue, setAdditionalStaffValue] = useState('')
   const [issueValue, setIssueValue] = useState('')
@@ -1226,7 +1229,7 @@ export default function TicketsView() {
     const status = String(selectedTicket.status || '')
     const statusKey = status.toLowerCase()
     const actionState = getTicketActionState(selectedTicket)
-    const acceptedDone = statusKey !== 'new'
+    const acceptedDone = actionState.accepted || statusKey !== 'new'
     const acknowledgedDone = actionState.ackSent || (acceptedDone && statusKey !== 'acknowledged')
     const buttons: { label: string; onClick: () => void; className?: string }[] = [{ label: 'Back', onClick: closeDetail }]
     const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
@@ -1390,13 +1393,15 @@ export default function TicketsView() {
   }
 
   const getTicketActionState = (ticket: Incident | null) => {
-    if (!ticket) return { ackSent: false, supplierLogged: false }
+    if (!ticket) return { accepted: false, ackSent: false, supplierLogged: false }
     const key = ticket.id
-    const base = actionStateByTicket[key] || { ackSent: false, supplierLogged: false }
+    const base = actionStateByTicket[key] || { accepted: false, ackSent: false, supplierLogged: false }
     const status = String(ticket.status || '').toLowerCase()
+    const inferredAccepted = status !== 'new'
     const inferredAck = ['in progress', 'resolved', 'closed', 'with supplier', 'awaiting approval'].includes(status)
     const inferredSupplier = status.includes('supplier')
     return {
+      accepted: base.accepted || inferredAccepted,
       ackSent: base.ackSent || inferredAck,
       supplierLogged: base.supplierLogged || inferredSupplier,
     }
@@ -1407,10 +1412,11 @@ export default function TicketsView() {
     setSelectedTicket((prev) => (prev ? { ...prev, status } : prev))
   }
 
-  const markTicketActionState = (ticketId: string, patch: Partial<{ ackSent: boolean; supplierLogged: boolean }>) => {
+  const markTicketActionState = (ticketId: string, patch: Partial<{ accepted: boolean; ackSent: boolean; supplierLogged: boolean }>) => {
     setActionStateByTicket((prev) => ({
       ...prev,
       [ticketId]: {
+        accepted: prev[ticketId]?.accepted || false,
         ackSent: prev[ticketId]?.ackSent || false,
         supplierLogged: prev[ticketId]?.supplierLogged || false,
         ...patch,
@@ -1718,7 +1724,7 @@ Click below to proceed:
 
     const status = (selectedTicket.status || '').toLowerCase()
     const actionState = getTicketActionState(selectedTicket)
-    const acceptedDone = status !== 'new'
+    const acceptedDone = actionState.accepted || status !== 'new'
     const acknowledgedDone = actionState.ackSent || (acceptedDone && status !== 'acknowledged')
     const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
     const buttons: { label: string; onClick: () => void; className?: string }[] = []
@@ -1734,7 +1740,19 @@ Click below to proceed:
       return buttons
     }
 
-    if (status === 'new') buttons.push({ label: 'Accept', onClick: handleAccept })
+    if (status === 'new' && !actionState.accepted) {
+      buttons.push({ label: 'Accept', onClick: handleAccept })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+      buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (status === 'acknowledged' && !actionState.ackSent) {
+      buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+      buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
 
     if (acceptedDone && !actionState.ackSent) buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
     buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
@@ -1894,7 +1912,6 @@ Click below to proceed:
   const teamOptions = React.useMemo(
     () =>
       uniqueOptions([
-        ...defaultTeamOptions,
         ...visibleTicketQueues.map((queue) => queue.label),
         selectedTicket?.team,
         selectedTicket?.category,
@@ -1940,11 +1957,17 @@ Click below to proceed:
 
   React.useEffect(() => {
     if (!selectedTicket) return
+    const fallbackTeam = String(
+      ticketQueues.find((queue) => {
+        if (!Array.isArray(queue.visibilityRoles) || queue.visibilityRoles.length === 0) return true
+        return queue.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+      })?.label || ''
+    ).trim()
     setEditingTicketField(null)
     setEditingEndUserField(null)
     setCreatedFromValue(String(selectedTicket.createdFrom || inferCreatedFrom(selectedTicket)))
     setTicketWorkflowValue(String(selectedTicket.workflow || 'Incident Management Workflow'))
-    setTicketTeamValue(String(selectedTicket.team || mapTeam(selectedTicket).team || selectedTicket.category || 'Support Desk'))
+    setTicketTeamValue(String(selectedTicket.team || mapTeam(selectedTicket).team || selectedTicket.category || fallbackTeam || ''))
     setAdditionalStaffValue(String((selectedTicket.additionalAgents || [])[0] || ''))
     setIssueValue(String(selectedTicket.category || ''))
     setIssueDetailValue(String(selectedTicket.issueDetail || ''))
@@ -1956,7 +1979,7 @@ Click below to proceed:
       site: String(endUser?.site || ''),
       accountManager: String(endUser?.accountManager || ''),
     })
-  }, [endUser?.accountManager, endUser?.email, endUser?.name, endUser?.phone, endUser?.site, selectedTicket?.id])
+  }, [endUser?.accountManager, endUser?.email, endUser?.name, endUser?.phone, endUser?.site, selectedTicket?.id, ticketQueues, user?.role])
 
   React.useEffect(() => {
     if (!endUser) return
@@ -2319,10 +2342,11 @@ Click below to proceed:
     if (!selectedTicket) return
     const assigneeName = getCurrentAgentName()
     const assigneeId = user?.id ? String(user.id) : assigneeName
-    setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: 'Acknowledged', assignedAgentId: assigneeId, assignedAgentName: assigneeName } : i))
-    setSelectedTicket(prev => prev ? { ...prev, status: 'Acknowledged', assignedAgentId: assigneeId, assignedAgentName: assigneeName } : prev)
+    const acceptStatus = isIncidentOrFault(selectedTicket.type) ? 'In Progress' : 'Assigned'
+    setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: acceptStatus, assignedAgentId: assigneeId, assignedAgentName: assigneeName } : i))
+    setSelectedTicket(prev => prev ? { ...prev, status: acceptStatus, assignedAgentId: assigneeId, assignedAgentName: assigneeName } : prev)
     addTicketComment(selectedTicket.id, `Accepted by ${assigneeName}`)
-    markTicketActionState(selectedTicket.id, { ackSent: false })
+    markTicketActionState(selectedTicket.id, { accepted: true, ackSent: false })
     const syncFromServer = (res: any) => {
       if (!res) return
       setSelectedTicket((prev) => prev ? {
@@ -2339,11 +2363,26 @@ Click below to proceed:
       } : i))
     }
     ;(async () => {
+      let canTransitionFromServerState = true
       try {
-        const transitioned = await ticketService.transitionTicket(selectedTicket.id, 'Acknowledged')
-        syncFromServer(transitioned)
+        const live = await ticketService.getTicket(selectedTicket.id)
+        syncFromServer(live)
+        const liveStatus = String(live?.status || '').trim().toLowerCase()
+        canTransitionFromServerState = liveStatus === 'new'
+      } catch {
+        // If live read fails, fall back to optimistic transition attempt.
+      }
+
+      try {
+        if (canTransitionFromServerState) {
+          const transitioned = await ticketService.transitionTicket(selectedTicket.id, acceptStatus)
+          syncFromServer(transitioned)
+        }
       } catch (err) {
-        console.warn('Acknowledge transition failed', err)
+        const statusCode = Number((err as any)?.response?.status || 0)
+        if (statusCode !== 400) {
+          console.warn('Accept transition failed', err)
+        }
       }
       if (user?.id) {
         ticketService.updateTicket(selectedTicket.id, { assigneeId: Number(user.id) }).then(syncFromServer).catch((err) => {
@@ -2376,11 +2415,36 @@ Click below to proceed:
     })()
   }
 
+  const renderIconGlyph = (icon: string, className: string) => {
+    const glyphMap: Record<string, string> = {
+      'arrow-left': '\u2190',
+      'circle-check-big': '\u2713',
+      check: '\u2713',
+      'sticky-note': '\u270E',
+      'circle-x': '\u2715',
+      mail: '\u2709',
+      package: '\u25A3',
+      'clipboard-check': '\u2611',
+      'mail-plus': '\u2709',
+      'phone-call': '\u260E',
+      'rotate-ccw': '\u21BA',
+      lock: 'L',
+      send: '\u27A4',
+      'refresh-ccw': '\u21BA',
+      'badge-check': '\u2714',
+      'messages-square': '\u25A6',
+      'square-plus': '+',
+      'square-minus': '\u2212',
+      'arrow-up': '\u2191',
+      'arrow-down': '\u2193',
+    }
+    return <span className={className} aria-hidden="true">{glyphMap[icon] || '\u2022'}</span>
+  }
+
   const renderActionIcon = (label: string) => {
     const icon = actionIconMap[label]
     if (!icon) return null
-    const src = `https://unpkg.com/lucide-static@latest/icons/${icon}.svg`
-    return <img className="action-icon" src={src} alt="" aria-hidden="true" />
+    return renderIconGlyph(icon, 'action-icon')
   }
 
   const formatAttachmentSize = (bytes: number) => {
@@ -3466,12 +3530,7 @@ Click below to proceed:
                     title={progressFilter}
                     aria-label="Progress filter"
                   >
-                    <img
-                      className="progress-icon-image"
-                      src="https://unpkg.com/lucide-static@latest/icons/messages-square.svg"
-                      alt=""
-                      aria-hidden="true"
-                    />
+                    {renderIconGlyph('messages-square', 'progress-icon-image')}
                   </button>
                   {showProgressFilterMenu && (
                     <div className="filter-menu progress-filter-menu">
@@ -3485,12 +3544,7 @@ Click below to proceed:
                             setShowProgressFilterMenu(false)
                           }}
                         >
-                          <img
-                            className="progress-filter-icon"
-                            src={`https://unpkg.com/lucide-static@latest/icons/${progressFilterIcons[option]}.svg`}
-                            alt=""
-                            aria-hidden="true"
-                          />
+                          {renderIconGlyph(progressFilterIcons[option], 'progress-filter-icon')}
                           {option}
                         </button>
                       ))}
@@ -3506,12 +3560,7 @@ Click below to proceed:
                   aria-label={progressExpanded ? 'Collapse All' : 'Expand All'}
                   onClick={() => setProgressExpanded((v) => !v)}
                 >
-                  <img
-                    className="progress-icon-image"
-                    src={`https://unpkg.com/lucide-static@latest/icons/${progressExpanded ? 'square-minus' : 'square-plus'}.svg`}
-                    alt=""
-                    aria-hidden="true"
-                  />
+                  {renderIconGlyph(progressExpanded ? 'square-minus' : 'square-plus', 'progress-icon-image')}
                 </button>
                 <button
                   type="button"
@@ -3520,12 +3569,7 @@ Click below to proceed:
                   aria-label={progressAtEnd ? 'Move to Top' : 'Move to Last'}
                   onClick={jumpProgressList}
                 >
-                  <img
-                    className="progress-icon-image"
-                    src={`https://unpkg.com/lucide-static@latest/icons/${progressAtEnd ? 'arrow-up' : 'arrow-down'}.svg`}
-                    alt=""
-                    aria-hidden="true"
-                  />
+                  {renderIconGlyph(progressAtEnd ? 'arrow-up' : 'arrow-down', 'progress-icon-image')}
                 </button>
               </div>
             </div>

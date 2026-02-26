@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
+exports.remove = exports.update = exports.create = exports.getOne = exports.listMine = exports.list = void 0;
 const svc = __importStar(require("./assets.service"));
 const logger_1 = require("../../common/logger/logger");
 function parseOptionalDate(value) {
@@ -114,11 +114,69 @@ async function list(_req, res) {
     const q = _req.query.q ? String(_req.query.q) : undefined;
     const status = _req.query.status ? String(_req.query.status) : undefined;
     const category = _req.query.category ? String(_req.query.category) : undefined;
-    const assignedToId = _req.query.assignedToId ? Number(_req.query.assignedToId) : undefined;
-    const items = await svc.listAssets({ page, pageSize, q, status, category, assignedToId });
+    const viewer = _req.user;
+    const viewerEmail = String(viewer?.email || '').trim().toLowerCase() || undefined;
+    const assignedToId = viewer?.role === 'USER'
+        ? Number(viewer?.id || 0) || undefined
+        : _req.query.assignedToId ? Number(_req.query.assignedToId) : undefined;
+    const assignedUserEmail = viewer?.role === 'USER'
+        ? viewerEmail
+        : _req.query.assignedUserEmail ? String(_req.query.assignedUserEmail).trim().toLowerCase() : undefined;
+    const items = await svc.listAssets({ page, pageSize, q, status, category, assignedToId, assignedUserEmail });
     res.json(items);
 }
 exports.list = list;
+async function listMine(req, res) {
+    const page = Number(req.query.page || 1);
+    const pageSize = Number(req.query.pageSize || 200);
+    const q = req.query.q ? String(req.query.q) : undefined;
+    const status = req.query.status ? String(req.query.status) : undefined;
+    const category = req.query.category ? String(req.query.category) : undefined;
+    const viewer = req.user;
+    const viewerIdRaw = Number(viewer?.id);
+    const viewerId = Number.isFinite(viewerIdRaw) && viewerIdRaw > 0 ? viewerIdRaw : undefined;
+    const viewerEmail = String(viewer?.email || '').trim().toLowerCase();
+    const viewerName = String(viewer?.name || '').trim().toLowerCase();
+    const norm = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const viewerEmailLocal = viewerEmail.includes('@') ? viewerEmail.split('@')[0] : viewerEmail;
+    const viewerNameNorm = norm(viewerName);
+    const viewerEmailNorm = norm(viewerEmail);
+    const viewerEmailLocalNorm = norm(viewerEmailLocal);
+    const raw = await svc.listAssets({ page: 1, pageSize: 2000, q, status, category });
+    const filtered = (Array.isArray(raw?.items) ? raw.items : []).filter((asset) => {
+        const assignedToId = Number(asset?.assignedToId || 0) || undefined;
+        const assignedUserEmail = String(asset?.assignedUserEmail || '').trim().toLowerCase();
+        const assignedToEmail = String(asset?.assignedTo?.email || '').trim().toLowerCase();
+        const assignedToName = String(asset?.assignedTo?.name || '').trim().toLowerCase();
+        const assetOwner = String(asset?.assetOwner || '').trim().toLowerCase();
+        const manager = String(asset?.manager || '').trim().toLowerCase();
+        const assignedToNameNorm = norm(assignedToName);
+        const ownerNorm = norm(assetOwner);
+        const managerNorm = norm(manager);
+        const assignedToEmailNorm = norm(assignedToEmail);
+        const assignedUserEmailNorm = norm(assignedUserEmail);
+        const fieldsNorm = [assignedToNameNorm, ownerNorm, managerNorm, assignedToEmailNorm, assignedUserEmailNorm].filter(Boolean);
+        if (viewerId && assignedToId && assignedToId === viewerId)
+            return true;
+        if (viewerEmail && (assignedUserEmail === viewerEmail || assignedToEmail === viewerEmail || assetOwner === viewerEmail || manager === viewerEmail))
+            return true;
+        if (viewerName && (assignedToName === viewerName || assetOwner === viewerName || manager === viewerName))
+            return true;
+        if (viewerEmailNorm && fieldsNorm.some((f) => f.includes(viewerEmailNorm) || viewerEmailNorm.includes(f)))
+            return true;
+        if (viewerEmailLocalNorm && fieldsNorm.some((f) => f.includes(viewerEmailLocalNorm) || viewerEmailLocalNorm.includes(f)))
+            return true;
+        if (viewerNameNorm && fieldsNorm.some((f) => f.includes(viewerNameNorm) || viewerNameNorm.includes(f)))
+            return true;
+        return false;
+    });
+    const safePage = Number.isFinite(page) && page > 0 ? page : 1;
+    const safeSize = Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 200;
+    const offset = (safePage - 1) * safeSize;
+    const paged = filtered.slice(offset, offset + safeSize);
+    res.json({ items: paged, total: filtered.length, page: safePage, pageSize: safeSize });
+}
+exports.listMine = listMine;
 async function getOne(req, res) {
     const id = Number(req.params.id);
     if (!id)
@@ -126,6 +184,14 @@ async function getOne(req, res) {
     const asset = await svc.getAssetById(id);
     if (!asset)
         return res.status(404).json({ error: 'Asset not found' });
+    const viewer = req.user;
+    const assignedEmail = String(asset?.assignedUserEmail || asset?.assignedTo?.email || '').trim().toLowerCase();
+    const viewerEmail = String(viewer?.email || '').trim().toLowerCase();
+    const assignedById = viewer?.id && Number(asset.assignedToId) === Number(viewer.id);
+    const assignedByEmail = Boolean(viewerEmail) && assignedEmail === viewerEmail;
+    if (viewer?.role === 'USER' && !assignedById && !assignedByEmail) {
+        return res.status(403).json({ error: 'Forbidden' });
+    }
     res.json(asset);
 }
 exports.getOne = getOne;

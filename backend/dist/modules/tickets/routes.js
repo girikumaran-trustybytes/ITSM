@@ -39,6 +39,7 @@ router.get('/', (0, validate_middleware_1.default)({ query: tickets_schema_1.tic
 router.get('/:id', (0, validate_middleware_1.default)({ params: tickets_schema_1.ticketIdParamsSchema }), ctrl.getTicket);
 router.post('/', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT', 'USER']), (0, validate_middleware_1.default)({ body: tickets_schema_1.ticketsCreateBodySchema }), ctrl.createTicket);
 router.post('/:id/transition', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, validate_middleware_1.default)({ params: tickets_schema_1.ticketIdParamsSchema, body: tickets_schema_1.ticketsTransitionBodySchema }), ctrl.transitionTicket);
+router.post('/:id/mark-responded', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, validate_middleware_1.default)({ params: tickets_schema_1.ticketIdParamsSchema }), ctrl.markResponded);
 // add timeline/history entry (note, internal action)
 router.post('/:id/history', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, validate_middleware_1.default)({ params: tickets_schema_1.ticketIdParamsSchema, body: tickets_schema_1.ticketsHistoryBodySchema }), ctrl.addHistory);
 router.post('/:id/respond', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, validate_middleware_1.default)({ params: tickets_schema_1.ticketIdParamsSchema, body: tickets_schema_1.ticketsRespondBodySchema }), ctrl.respond);

@@ -1,4 +1,4 @@
-﻿import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { getUserAvatarUrl, getUserInitials } from '../../utils/avatar'
 import { useEffect, useMemo, useState } from 'react'
@@ -15,8 +15,6 @@ export default function PortalAssets() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('All')
-  const [categoryFilter, setCategoryFilter] = useState('All Assets')
 
   const switchToAgentApp = () => {
     const map: Record<string, string> = {
@@ -107,31 +105,9 @@ export default function PortalAssets() {
     return () => { active = false }
   }, [user?.id, user?.email, user?.name])
 
-  const categoryOptions = useMemo(() => {
-    const set = new Set<string>()
-    assets.forEach((asset: any) => {
-      const c = String(asset?.category || asset?.assetType || '').trim()
-      if (c) set.add(c)
-    })
-    return ['All Assets', ...Array.from(set).sort((a, b) => a.localeCompare(b))]
-  }, [assets])
-
-  const statusOptions = useMemo(() => {
-    const set = new Set<string>()
-    assets.forEach((asset: any) => {
-      const s = String(asset?.status || '').trim()
-      if (s) set.add(s)
-    })
-    return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))]
-  }, [assets])
-
   const filteredAssets = useMemo(() => {
     const q = search.trim().toLowerCase()
     return assets.filter((asset: any) => {
-      const status = String(asset?.status || '').trim()
-      const category = String(asset?.category || asset?.assetType || '').trim()
-      if (statusFilter !== 'All' && status !== statusFilter) return false
-      if (categoryFilter !== 'All Assets' && category !== categoryFilter) return false
       if (!q) return true
       const haystack = [
         asset?.name,
@@ -145,7 +121,7 @@ export default function PortalAssets() {
       ].map((v) => String(v || '').toLowerCase()).join(' ')
       return haystack.includes(q)
     })
-  }, [assets, categoryFilter, search, statusFilter])
+  }, [assets, search])
 
   const getStatusTone = (status: string) => {
     const s = String(status || '').trim().toLowerCase()
@@ -186,19 +162,12 @@ export default function PortalAssets() {
       </header>
 
       <section className="portal-page">
-        <div className="portal-page-header">
-          <button className="portal-back-btn" onClick={() => navigate('/portal/home')} aria-label="Back">&larr;</button>
-          <h1>My Assets</h1>
-        </div>
-
-        <div className="portal-assets-toolbar">
-          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-            {categoryOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            {statusOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-          </select>
-          <div className="portal-assets-search">
+        <div className="portal-page-toolbar portal-page-toolbar-header">
+          <div className="portal-toolbar-title-group">
+            <button className="portal-back-btn" onClick={() => navigate('/portal/home')} aria-label="Back">&larr;</button>
+            <h1>My Assets</h1>
+          </div>
+          <div className="portal-assets-search portal-toolbar-search">
             <span aria-hidden="true">Search</span>
             <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" />
           </div>
@@ -237,7 +206,6 @@ export default function PortalAssets() {
                 </div>
 
                 <div className="portal-asset-actions">
-                  <button type="button" className="portal-asset-action primary">View</button>
                   <button type="button" className="portal-asset-action" onClick={() => navigate('/portal/new-ticket')}>Report Issue</button>
                 </div>
               </div>
@@ -272,3 +240,4 @@ export default function PortalAssets() {
     </div>
   )
 }
+

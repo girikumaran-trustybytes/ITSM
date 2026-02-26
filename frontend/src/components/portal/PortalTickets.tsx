@@ -70,9 +70,11 @@ export default function PortalTickets() {
       </header>
 
       <section className="portal-page">
-        <div className="portal-page-header">
-          <button className="portal-back-btn" onClick={() => navigate('/portal/home')} aria-label="Back">←</button>
-          <h1>My Tickets</h1>
+        <div className="portal-page-toolbar portal-page-toolbar-header">
+          <div className="portal-toolbar-title-group">
+            <button className="portal-back-btn" onClick={() => navigate('/portal/home')} aria-label="Back">&larr;</button>
+            <h1>My Tickets</h1>
+          </div>
         </div>
         <div className="portal-page-toolbar">
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
