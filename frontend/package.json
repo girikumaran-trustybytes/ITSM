@@ -1,0 +1,42 @@
+{
+  "name": "itsm-frontend",
+  "version": "1.0.67",
+  "private": true,
+  "homepage": "https://girikumaran-trustybytes.github.io/ITSM",
+  "scripts": {
+    "dev": "vite",
+    "prebuild": "node -e \"const fs=require('fs');const p='package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));const v=String(j.version||'1.0.0').split('.').map(Number);if(v.length<3||v.some(Number.isNaN)){throw new Error('Invalid version format')}const minor=Math.max(0,v[1]||0);const patch=Math.max(0,v[2]||0)+1;j.version=['1',String(minor),String(patch)].join('.');fs.writeFileSync(p,JSON.stringify(j,null,2)+'\\n');console.log('ITSM v'+j.version);\"",
+    "build": "vite build",
+    "build:android-web": "vite build --base ./",
+    "android:add": "npx cap add android",
+    "android:sync": "npm run build:android-web && npx cap sync android",
+    "android:open": "npx cap open android",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@hookform/resolvers": "^2.9.11",
+    "@mui/material": "^5.14.10",
+    "axios": "^1.4.0",
+    "lucide-react": "^0.452.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-hook-form": "^7.45.0",
+    "react-router-dom": "^6.14.1",
+    "zod": "^3.21.4"
+  },
+  "devDependencies": {
+    "@types/react": "18.0.28",
+    "@types/react-dom": "18.0.11",
+    "@vitejs/plugin-react": "4.0.0",
+    "gh-pages": "^5.0.0",
+    "typescript": "5.1.6",
+    "vite": "4.4.9"
+  }
+}

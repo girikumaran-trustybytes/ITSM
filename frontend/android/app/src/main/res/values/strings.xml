@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TB ITSM</string>
+    <string name="title_activity_main">TB ITSM</string>
+    <string name="package_name">in.trustybytes.itsm</string>
+    <string name="custom_url_scheme">in.trustybytes.itsm</string>
+</resources>
