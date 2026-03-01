@@ -11,7 +11,6 @@ import { getRowsPerPage } from '../utils/pagination'
 import { loadLeftPanelConfig, type QueueRule, type TicketQueueConfig } from '../utils/leftPanelConfig'
 import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, toPresenceClass, type PresenceStatus } from '../utils/presence'
 import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../utils/avatar'
-import SubmitTicketForm from './shared/SubmitTicketForm'
 const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
 const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
@@ -89,24 +88,21 @@ export default function TicketsView() {
   const { ticketId } = useParams()
   const navigate = useNavigate()
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
-  const [isMobileView, setIsMobileView] = useState(() => {
-    if (typeof window === 'undefined') return false
-    const viewportWidth = window.visualViewport?.width ?? window.innerWidth
-    return viewportWidth <= 900
-  })
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [filterType, setFilterType] = useState('Open Tickets')
   const [queueFilter, setQueueFilter] = useState<{ type: 'all' | 'unassigned' | 'supplier' | 'agent' | 'team' | 'teamUnassigned' | 'teamAgent' | 'ticketType' | 'status' | 'myList'; agentId?: string; agentName?: string; value?: string; team?: string }>({ type: 'all' })
   const [queueView, setQueueView] = useState<'all' | 'team' | 'staff' | 'type' | 'status' | 'myLists'>('team')
   const [expandedTeams, setExpandedTeams] = useState<string[]>([])
   const [showFilterMenu, setShowFilterMenu] = useState(false)
-  const [showBulkActionMenu, setShowBulkActionMenu] = useState(false)
   const [showSearchBar, setShowSearchBar] = useState(false)
   const [page, setPage] = useState(1)
   const rowsPerPage = getRowsPerPage()
+  const [selectAll, setSelectAll] = useState(false)
   const [selectedTickets, setSelectedTickets] = useState<string[]>([])
   const [globalSearch, setGlobalSearch] = useState('')
   const [showNewIncidentModal, setShowNewIncidentModal] = useState(false)
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([])
   const [selectedTicket, setSelectedTicket] = useState<Incident | null>(null)
   const [showDetailView, setShowDetailView] = useState(false)
   const [endUser, setEndUser] = useState<any>(null)
@@ -127,7 +123,7 @@ export default function TicketsView() {
   })
   const [showActionComposer, setShowActionComposer] = useState(false)
   const [showInternalNoteEditor, setShowInternalNoteEditor] = useState(false)
-  const [internalNoteVisibility, setInternalNoteVisibility] = useState<'public' | 'private'>('private')
+  const [internalNoteVisibility, setInternalNoteVisibility] = useState<'internal' | 'private'>('private')
   const [slaPolicies, setSlaPolicies] = useState<any[]>([])
   const [slaApplying, setSlaApplying] = useState(false)
   const [slaPolicyMenuOpen, setSlaPolicyMenuOpen] = useState(false)
@@ -142,9 +138,6 @@ export default function TicketsView() {
   const composerFileInputRef = React.useRef<HTMLInputElement | null>(null)
   const internalNoteFileInputRef = React.useRef<HTMLInputElement | null>(null)
   const composerEditorRef = React.useRef<HTMLDivElement | null>(null)
-  const selectAllCheckboxRef = React.useRef<HTMLInputElement | null>(null)
-  const filterMenuRef = React.useRef<HTMLDivElement | null>(null)
-  const bulkActionMenuRef = React.useRef<HTMLDivElement | null>(null)
   const slaPolicyMenuRef = React.useRef<HTMLDivElement | null>(null)
   const slaPriorityMenuRef = React.useRef<HTMLDivElement | null>(null)
   const progressFilterMenuRef = React.useRef<HTMLDivElement | null>(null)
@@ -200,7 +193,7 @@ export default function TicketsView() {
     timeMinutes: '01',
   })
 
-  const openInternalNoteEditor = (mode: 'public' | 'private') => {
+  const openInternalNoteEditor = (mode: 'internal' | 'private') => {
     setInternalNoteVisibility(mode)
     setShowInternalNoteEditor(true)
   }
@@ -213,6 +206,19 @@ export default function TicketsView() {
   })
   const [ticketMyListRules, setTicketMyListRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().ticketsMyLists)
   const [ticketQueues, setTicketQueues] = useState<TicketQueueConfig[]>(() => loadLeftPanelConfig().ticketQueues)
+  const [newIncidentForm, setNewIncidentForm] = useState({
+    ticketType: 'Incident',
+    teamId: '',
+    cc: '',
+    subject: '',
+    description: '',
+    asset: '',
+    priority: '' as const,
+    classification: '',
+    staffId: '',
+    startDate: '',
+    endDate: '',
+  })
 
   const inferInboundEndUser = (ticketData: any) => {
     const requester = ticketData?.requester
@@ -385,12 +391,6 @@ export default function TicketsView() {
       if (progressFilterMenuRef.current && !progressFilterMenuRef.current.contains(target)) {
         setShowProgressFilterMenu(false)
       }
-      if (filterMenuRef.current && !filterMenuRef.current.contains(target)) {
-        setShowFilterMenu(false)
-      }
-      if (bulkActionMenuRef.current && !bulkActionMenuRef.current.contains(target)) {
-        setShowBulkActionMenu(false)
-      }
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
@@ -464,8 +464,7 @@ export default function TicketsView() {
     if (noteRaw.startsWith('[email]')) return 'Email+Note'
     if (note.includes('inbound email reply received')) return 'Conversation'
     if (internal && note.startsWith('private:')) return 'Private Note'
-    if (note.startsWith('public:')) return 'Public Note'
-    if (internal) return 'Public Note'
+    if (internal) return 'Internal Note'
     if (fromStatus || toStatus) {
       const toKey = toStatus.toLowerCase()
       if (toKey === 'acknowledged') return 'Accept Ticket'
@@ -758,12 +757,6 @@ export default function TicketsView() {
           return next
         })
       }
-      if (detail.action === 'toggle-left-panel') {
-        setQueueCollapsed((v) => !v)
-      }
-      if (detail.action === 'refresh') {
-        loadTickets()
-      }
     }
     window.addEventListener('shared-toolbar-action', handler as EventListener)
     return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
@@ -807,8 +800,53 @@ export default function TicketsView() {
     Infrastructure: ['Power', 'Data Connection', 'Router', 'Server', 'Printer'],
     'Infrastructure>Power': ['Switch', 'Socket']
   }
-  const defaultTicketTypeOptions = ['Fault', 'Live Chat', 'Problem', 'Change', 'Service Request']
+  const defaultTicketTypeOptions = ['Incident', 'Service request', 'HR request', 'Task', 'New starter']
   const defaultWorkflowOptions = ['Fault Workflow', 'Incident Management Workflow', 'Service Request Workflow', 'Change Workflow']
+
+  const createTicketTypeOptions = ['Incident', 'Service request', 'HR request', 'Task', 'New starter']
+  const createTeamOptions = [
+    { key: 'helpdesk', label: 'Support Desk' },
+    { key: 'l1', label: 'Helpdesk (Line1)' },
+    { key: 'l2', label: 'L2' },
+    { key: 'l3', label: 'L3' },
+    { key: 'hr', label: 'HR' },
+    { key: 'supplier', label: 'Supplier' },
+  ]
+  const classificationOptions = ['', 'Hardware', 'Software', 'Access', 'Network', 'General']
+  const selectedCreateType = String(newIncidentForm.ticketType || '').trim().toLowerCase()
+  const isIncidentType = selectedCreateType === 'incident'
+  const isServiceRequestType = selectedCreateType === 'service request'
+  const isHrRequestType = selectedCreateType === 'hr request'
+  const isTaskType = selectedCreateType === 'task'
+  const isNewStarterType = selectedCreateType === 'new starter'
+  const selectedCreateTeamLabel = createTeamOptions.find((team) => team.key === newIncidentForm.teamId)?.label || ''
+  const taskStaffOptions = React.useMemo(() => {
+    return agents
+      .map((agent) => ({
+        id: String(agent?.id || ''),
+        label: String(agent?.name || agent?.email || agent?.username || '').trim(),
+      }))
+      .filter((option) => option.id && option.label)
+  }, [agents])
+
+  React.useEffect(() => {
+    if (isServiceRequestType && newIncidentForm.teamId !== 'helpdesk') {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: 'helpdesk' }))
+      return
+    }
+    if (isHrRequestType && newIncidentForm.teamId !== 'hr') {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: 'hr' }))
+      return
+    }
+    if (isNewStarterType) {
+      const starterTemplate =
+        'New Starter Name,\nJob Title,\nStart Date,\nLine Manager,\nSoftware Access Required,\nGoogle workspace account,\nGoogle Drive Access Required,\nAdd To Google Drive User Group(s),\nHardware Required'
+      const updates: any = {}
+      if (newIncidentForm.teamId !== 'hr') updates.teamId = 'hr'
+      if (!String(newIncidentForm.description || '').trim()) updates.description = starterTemplate
+      if (Object.keys(updates).length > 0) setNewIncidentForm((prev) => ({ ...prev, ...updates }))
+    }
+  }, [isServiceRequestType, isHrRequestType, isNewStarterType, newIncidentForm.teamId, newIncidentForm.description])
   const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Resolved', 'Closed']
   const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
   const createdFromOptions = ['User portal', 'ITSM Platform']
@@ -936,16 +974,13 @@ export default function TicketsView() {
   }
 
   const handleSelectAll = () => {
-    const filteredIds = filteredIncidents.map((i) => i.id)
-    if (filteredIds.length === 0) return
-    const visibleSet = new Set(filteredIds)
-    const allVisibleSelected = filteredIds.every((id) => selectedTickets.includes(id))
-    setSelectedTickets((prev) => {
-      if (allVisibleSelected) return prev.filter((id) => !visibleSet.has(id))
-      const merged = new Set(prev)
-      filteredIds.forEach((id) => merged.add(id))
-      return Array.from(merged)
-    })
+    if (selectAll) {
+      setSelectedTickets([])
+      setSelectAll(false)
+    } else {
+      setSelectedTickets(incidents.map(i => i.id))
+      setSelectAll(true)
+    }
   }
 
   const handleSelectTicket = (ticketId: string) => {
@@ -957,9 +992,109 @@ export default function TicketsView() {
       }
     })
   }
-  const handleTicketCreated = async () => {
-    setShowNewIncidentModal(false)
-    await loadTickets()
+  const handleCreateIncident = () => {
+    const typeValue = String(newIncidentForm.ticketType || '').trim()
+    const subjectValue = String(newIncidentForm.subject || '').trim()
+    const descriptionValue = String(newIncidentForm.description || '').trim()
+    if (!typeValue || !subjectValue || !descriptionValue) {
+      alert('Please fill in all required fields: Ticket Type, Subject, and Description')
+      return
+    }
+    if ((isIncidentType || isTaskType || isNewStarterType) && !String(newIncidentForm.priority || '').trim()) {
+      alert('Priority is required for this ticket type')
+      return
+    }
+    if ((isIncidentType || isTaskType) && !String(newIncidentForm.teamId || '').trim()) {
+      alert('Team is required for this ticket type')
+      return
+    }
+    if (isTaskType) {
+      if (!String(newIncidentForm.staffId || '').trim()) {
+        alert('Staff is required for Task tickets')
+        return
+      }
+      if (!String(newIncidentForm.startDate || '').trim() || !String(newIncidentForm.endDate || '').trim()) {
+        alert('Start Date and End Date are required for Task tickets')
+        return
+      }
+    }
+
+    const teamIdValue = String(newIncidentForm.teamId || '').trim()
+    const teamLabelValue = createTeamOptions.find((team) => team.key === teamIdValue)?.label || ''
+    const staffLabelValue = taskStaffOptions.find((staff) => staff.id === String(newIncidentForm.staffId || ''))?.label || ''
+    const metaLines: string[] = []
+    if (String(newIncidentForm.cc || '').trim()) metaLines.push(`CC: ${String(newIncidentForm.cc).trim()}`)
+    if (String(newIncidentForm.asset || '').trim()) metaLines.push(`Assets: ${String(newIncidentForm.asset).trim()}`)
+    if (isIncidentType && String(newIncidentForm.classification || '').trim()) metaLines.push(`Classifications: ${String(newIncidentForm.classification).trim()}`)
+    if (teamLabelValue) metaLines.push(`Team: ${teamLabelValue}`)
+    if (isTaskType && staffLabelValue) metaLines.push(`Staff: ${staffLabelValue}`)
+    if (isTaskType && String(newIncidentForm.startDate || '').trim()) metaLines.push(`Start Date: ${String(newIncidentForm.startDate).trim()}`)
+    if (isTaskType && String(newIncidentForm.endDate || '').trim()) metaLines.push(`End Date: ${String(newIncidentForm.endDate).trim()}`)
+    const finalDescription = metaLines.length > 0 ? `${descriptionValue}\n\n${metaLines.join('\n')}` : descriptionValue
+
+    // call backend createTicket
+    (async () => {
+      try {
+        const payload = {
+          type: typeValue,
+          priority: String(newIncidentForm.priority || '').trim() || undefined,
+          category: teamLabelValue || selectedCreateTeamLabel || undefined,
+          description: finalDescription,
+          subject: subjectValue,
+          createdFrom: 'ITSM Platform',
+          requesterId: user?.id ? Number(user.id) : undefined,
+          requesterEmail: user?.email || undefined,
+          assigneeId: isTaskType && String(newIncidentForm.staffId || '').trim() ? Number(newIncidentForm.staffId) : undefined,
+          teamId: teamIdValue || undefined,
+        }
+        const created: any = await ticketService.createTicket(payload)
+        const newId = created.ticketId || `#${String(created.id).padStart(6,'0')}`
+        const newIncident: Incident = {
+          id: newId,
+          slaTimeLeft: '00:00',
+          subject: created.subject || created.description || subjectValue,
+          category: created.category || teamLabelValue || '',
+          priority: (created.priority || newIncidentForm.priority || 'Low') as Incident['priority'],
+          status: created.status || 'New',
+          type: created.type,
+          endUser: '',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'ITSM Platform',
+          dateReported: new Date(created.createdAt).toLocaleString(),
+          lastAction: 'Created',
+          lastActionTime: new Date().toLocaleString()
+        }
+
+        setIncidents([newIncident, ...incidents])
+        setShowNewIncidentModal(false)
+        setNewIncidentForm({ ticketType: 'Incident', teamId: '', cc: '', subject: '', description: '', asset: '', priority: '', classification: '', staffId: '', startDate: '', endDate: '' })
+        // Refresh from DB to ensure persisted view is accurate
+        await loadTickets()
+      } catch (e) {
+        alert('Failed to create ticket')
+        // fallback to local demo behavior
+        const lastId = incidents[0]?.id
+        const numericPart = typeof lastId === 'string' ? parseInt(lastId.replace(/[^0-9]/g, ''), 10) : (typeof lastId === 'number' ? lastId : 0)
+        const nextNum = (numericPart || 0) + 1
+        const newId = '#' + String(nextNum).padStart(6, '0')
+        const newIncident: Incident = {
+          id: newId,
+          slaTimeLeft: '00:00',
+          subject: subjectValue,
+          category: teamLabelValue || '',
+          priority: (newIncidentForm.priority || 'Low') as Incident['priority'],
+          status: 'New',
+          type: typeValue,
+          endUser: '',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'ITSM Platform',
+          dateReported: new Date().toLocaleString(),
+          lastAction: 'Created',
+          lastActionTime: new Date().toLocaleString()
+        }
+        setIncidents([newIncident, ...incidents])
+        setShowNewIncidentModal(false)
+        setNewIncidentForm({ ticketType: 'Incident', teamId: '', cc: '', subject: '', description: '', asset: '', priority: '', classification: '', staffId: '', startDate: '', endDate: '' })
+      }
+    })()
   }
   const handleSearchChange = (column: string, value: string) => {
     setSearchValues(prev => ({
@@ -1173,7 +1308,7 @@ export default function TicketsView() {
     const buttons: { label: string; onClick: () => void; className?: string }[] = [{ label: 'Back', onClick: closeDetail }]
     const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
     if (acknowledgedDone && !responseMarked) buttons.push({ label: 'Mark as responsed', onClick: handleMarkAsResponsed })
-    buttons.push({ label: 'Public note', onClick: () => openInternalNoteEditor('public') })
+    buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
     buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
     const go = (to: string, note?: string) => () => applyStatus(to, note || `Status updated to ${to}`)
 
@@ -1673,7 +1808,7 @@ Click below to proceed:
 
     if (status === 'closed') {
       buttons.push({ label: 'Re-open', onClick: () => applyStatus('In Progress', 'Re-opened') })
-      buttons.push({ label: 'Public note', onClick: () => openInternalNoteEditor('public') })
+      buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
       buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
       buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
       return buttons
@@ -1703,7 +1838,7 @@ Click below to proceed:
       buttons.push({ label: 'Call Back Supplier', onClick: () => openComposer('callbackSupplier') })
     }
 
-    buttons.push({ label: 'Public note', onClick: () => openInternalNoteEditor('public') })
+    buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
     buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
     buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
     if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
@@ -1716,7 +1851,7 @@ Click below to proceed:
     Back: 'arrow-left',
     Accept: 'circle-check-big',
     Acknowledge: 'check',
-    'Public note': 'sticky-note',
+    'Internal note': 'sticky-note',
     'Private note': 'sticky-note',
     Close: 'circle-x',
     'Email User': 'mail',
@@ -2430,11 +2565,7 @@ Click below to proceed:
       reader.readAsDataURL(file)
     })
 
-  const uploadSelectedAttachments = async (
-    ticketId: string,
-    localFiles: LocalAttachment[],
-    opts?: { note?: string; internal?: boolean }
-  ) => {
+  const uploadSelectedAttachments = async (ticketId: string, localFiles: LocalAttachment[]) => {
     if (!localFiles.length) return []
     const total = localFiles.reduce((sum, a) => sum + a.file.size, 0)
     if (total > MAX_ATTACHMENT_BYTES) {
@@ -2450,11 +2581,7 @@ Click below to proceed:
           contentBase64: await readFileAsBase64(a.file),
         }))
       )
-      const uploaded = await ticketService.uploadAttachments(ticketId, {
-        files: filesPayload,
-        ...(opts?.note ? { note: opts.note } : {}),
-        ...(typeof opts?.internal === 'boolean' ? { internal: opts.internal } : {}),
-      })
+      const uploaded = await ticketService.uploadAttachments(ticketId, { files: filesPayload })
       return Array.isArray(uploaded?.items) ? uploaded.items : []
     } finally {
       setIsUploadingAttachments(false)
@@ -2486,9 +2613,9 @@ Click below to proceed:
     const note = window.prompt('Enter note to add to ticket:')
     if (!note) return
     // optimistic UI update
-    addTicketComment(selectedTicket.id, `Public: ${note}`, { internal: false, kind: 'public' })
-    // try to persist to backend as a public note
-    ticketService.createHistory(selectedTicket.id, { note: `Public: ${note}` }).catch(() => {
+    addTicketComment(selectedTicket.id, note)
+    // try to persist to backend as a private note
+    ticketService.privateNote(selectedTicket.id, { note }).catch(() => {
       // ignore errors — kept in UI as demo
     })
   }
@@ -2604,40 +2731,30 @@ Click below to proceed:
   const handleSaveInternalNote = async () => {
     if (!selectedTicket) return
     const note = internalNoteForm.body.trim()
-    const noteTypeLabel = internalNoteVisibility === 'public' ? 'public note' : 'private note'
+    const noteTypeLabel = internalNoteVisibility === 'internal' ? 'internal note' : 'private note'
     if (!note) {
       alert(`Please enter ${noteTypeLabel}`)
       return
     }
-    const normalizedText = internalNoteVisibility === 'public'
-      ? (/^public:/i.test(note) ? note : `Public: ${note}`)
+    const normalizedText = internalNoteVisibility === 'internal'
+      ? (/^internal:/i.test(note) ? note : `Internal: ${note}`)
       : (/^private:/i.test(note) ? note : `Private: ${note}`)
-    const isPrivateNote = internalNoteVisibility === 'private'
     addTicketComment(selectedTicket.id, normalizedText, {
-      internal: isPrivateNote,
-      kind: isPrivateNote ? 'private' : 'public',
+      internal: true,
+      kind: internalNoteVisibility,
       changedById: Number(user?.id || 0) || null
     })
     try {
-      if (isPrivateNote) {
-        const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, internalNoteAttachments)
-        const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
-        await ticketService.privateNote(selectedTicket.id, { note: normalizedText, attachmentIds })
-      } else if (internalNoteAttachments.length) {
-        await uploadSelectedAttachments(selectedTicket.id, internalNoteAttachments, {
-          note: normalizedText,
-          internal: false,
-        })
-      } else {
-        await ticketService.createHistory(selectedTicket.id, { note: normalizedText })
-      }
+      const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, internalNoteAttachments)
+      const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
+      await ticketService.privateNote(selectedTicket.id, { note: normalizedText, attachmentIds })
       if (internalNoteForm.status && internalNoteForm.status !== selectedTicket.status) {
         await ticketSvc.transitionTicket(selectedTicket.id, internalNoteForm.status).catch(() => undefined)
         updateTicketStatusLocal(selectedTicket.id, internalNoteForm.status)
       }
       setInternalNoteAttachments([])
     } catch (e: any) {
-      alert(e?.response?.data?.error || e?.message || 'Failed to save note')
+      alert(e?.response?.data?.error || e?.message || 'Failed to save internal note')
     }
     setShowInternalNoteEditor(false)
   }
@@ -2849,59 +2966,6 @@ Click below to proceed:
   React.useEffect(() => {
     if (page !== safePage) setPage(safePage)
   }, [page, safePage])
-
-  React.useEffect(() => {
-    const incidentIds = new Set(incidents.map((i) => i.id))
-    setSelectedTickets((prev) => prev.filter((id) => incidentIds.has(id)))
-  }, [incidents])
-
-  React.useEffect(() => {
-    if (selectedTickets.length === 0) setShowBulkActionMenu(false)
-  }, [selectedTickets.length])
-
-  const filteredTicketIds = filteredIncidents.map((i) => i.id)
-  const allFilteredSelected = filteredTicketIds.length > 0 && filteredTicketIds.every((id) => selectedTickets.includes(id))
-  const someFilteredSelected = filteredTicketIds.some((id) => selectedTickets.includes(id))
-
-  React.useEffect(() => {
-    if (!selectAllCheckboxRef.current) return
-    selectAllCheckboxRef.current.indeterminate = !allFilteredSelected && someFilteredSelected
-  }, [allFilteredSelected, someFilteredSelected])
-
-  const handleBulkAction = async (action: string) => {
-    if (!selectedTickets.length) return
-    setShowBulkActionMenu(false)
-    const selectedSet = new Set(selectedTickets)
-
-    if (action === 'changeStatus') {
-      const toStatus = String(window.prompt('Enter status (New, In Progress, Awaiting Approval, With Supplier, On Hold, Closed):', 'In Progress') || '').trim()
-      if (!toStatus) return
-      await Promise.allSettled(selectedTickets.map((id) => ticketSvc.transitionTicket(id, toStatus)))
-      setIncidents((prev) => prev.map((i) => (selectedSet.has(i.id) ? { ...i, status: toStatus } : i)))
-      return
-    }
-
-    if (action === 'changePriority') {
-      const toPriority = String(window.prompt('Enter priority (Low, Medium, High, Critical):', 'Medium') || '').trim()
-      if (!toPriority) return
-      await Promise.allSettled(selectedTickets.map((id) => ticketService.updateTicket(id, { priority: toPriority })))
-      setIncidents((prev) => prev.map((i) => (selectedSet.has(i.id) ? { ...i, priority: toPriority as Incident['priority'] } : i)))
-      return
-    }
-
-    const labels: Record<string, string> = {
-      markRead: 'Marked as read',
-      markUnread: 'Marked as unread',
-      flag: 'Flagged',
-      unflag: 'Unflagged',
-      merge: 'Merge requested',
-      clone: 'Clone requested',
-      reassign: 'Reassign requested',
-      privateNote: 'Private note action opened',
-      publicNote: 'Public note action opened',
-    }
-    alert(`${labels[action] || 'Action applied'} for ${selectedTickets.length} ticket(s).`)
-  }
 
   React.useEffect(() => {
     setPage(1)
@@ -3475,32 +3539,13 @@ Click below to proceed:
     }
   }, [])
 
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return undefined
-    const syncMobileView = () => {
-      const viewportWidth = window.visualViewport?.width ?? window.innerWidth
-      setIsMobileView(viewportWidth <= 900)
-    }
-    syncMobileView()
-    window.addEventListener('resize', syncMobileView)
-    window.visualViewport?.addEventListener('resize', syncMobileView)
-    return () => {
-      window.removeEventListener('resize', syncMobileView)
-      window.visualViewport?.removeEventListener('resize', syncMobileView)
-    }
-  }, [])
-
-  React.useEffect(() => {
-    if (isMobileView) setQueueCollapsed(true)
-  }, [isMobileView])
-
   const mainContent = showDetailView && selectedTicket ? (
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
       <div className="work-main">
         <div className="detail-view-container">
         <div className="detail-action-bar">
         <div className="action-toolbar">
-          {!isMobileView && queueCollapsed && (
+          {queueCollapsed && (
             <button
               className="pill-icon-btn"
               title="Show side panel"
@@ -3892,7 +3937,7 @@ Click below to proceed:
                     <div className="compose-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
                     <div>
                     <div className="compose-user">{getCurrentAgentName()}</div>
-                    <div className="compose-mode">{internalNoteVisibility === 'public' ? 'Public Note' : 'Private Note'}</div>
+                    <div className="compose-mode">{internalNoteVisibility === 'internal' ? 'Internal Note' : 'Private Note'}</div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -4337,9 +4382,9 @@ Click below to proceed:
       <div className="work-main">
         <div className="tickets-tool-bar">
           <div className="tool-bar-left">
-            {!isMobileView && queueCollapsed && (
+            {queueCollapsed && (
               <button
-                className="table-icon-btn mobile-queue-toggle"
+                className="table-icon-btn"
                 title="Show Menu"
                 onClick={() => {
                   setQueueCollapsed(false)
@@ -4352,46 +4397,13 @@ Click below to proceed:
                 </svg>
               </button>
             )}
-            {selectedTickets.length > 0 && (
-              <div className="filter-dropdown bulk-action-dropdown" ref={bulkActionMenuRef}>
-                <button
-                  className="filter-button bulk-edit-button"
-                  onClick={() => {
-                    setShowFilterMenu(false)
-                    setShowBulkActionMenu((v) => !v)
-                  }}
-                >
-                  Edit({selectedTickets.length})
-                  <span className="dropdown-icon">▼</span>
-                </button>
-                {showBulkActionMenu && (
-                  <div className="filter-menu bulk-action-menu">
-                    <div className="filter-option" onClick={() => handleBulkAction('markRead')}>Mark as read</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('markUnread')}>Mark as unread</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('flag')}>Flag</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('unflag')}>Unflag</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('merge')}>Merge Ticket(s)</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('clone')}>Clone Ticket(s)</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('reassign')}>Re-assign</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('privateNote')}>Add Private Note</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('publicNote')}>Add Public Note</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('changeStatus')}>Change Status</div>
-                    <div className="filter-option" onClick={() => handleBulkAction('changePriority')}>Change Priority</div>
-                  </div>
-                )}
-              </div>
-            )}
-            <div className={`filter-dropdown${isMobileView ? ' tickets-filter-mobile' : ''}`} ref={filterMenuRef}>
-              {isMobileView && <span className="tickets-mobile-view-label">View</span>}
+            <div className="filter-dropdown">
               <button 
                 className="filter-button"
-                onClick={() => {
-                  setShowBulkActionMenu(false)
-                  setShowFilterMenu(!showFilterMenu)
-                }}
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
               >
-                {isMobileView ? `${filterType} (${totalTickets})` : filterType}
-                <span className="dropdown-icon">▼</span>
+                {filterType}
+                <span className="dropdown-icon">?</span>
               </button>
               {showFilterMenu && (
                 <div className="filter-menu">
@@ -4410,20 +4422,6 @@ Click below to proceed:
                 </div>
               )}
             </div>
-            {isMobileView && (
-              <button
-                className="table-icon-btn mobile-sub-sidebar-btn"
-                title="More options"
-                aria-label="Open sub sidebar"
-                onClick={() => setQueueCollapsed((v) => !v)}
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                  <circle cx="12" cy="5" r="1.8" />
-                  <circle cx="12" cy="12" r="1.8" />
-                  <circle cx="12" cy="19" r="1.8" />
-                </svg>
-              </button>
-            )}
             <div className="global-search tickets-search">
               <input 
                 type="text" 
@@ -4494,58 +4492,10 @@ Click below to proceed:
             </button>
           </div>
         </div>
-        {isMobileView ? (
-          <div className="tickets-mobile-cards">
-            {pageItems.map((incident) => {
-              const isClosed = String(incident.status || '').trim().toLowerCase() === 'closed'
-              const slaVisual = getTableSlaVisual(incident)
-              return (
-                <article key={incident.id} className="tickets-mobile-card">
-                  <div className="tickets-mobile-card-head">
-                    <label className="tickets-mobile-select">
-                      <input
-                        type="checkbox"
-                        checked={selectedTickets.includes(incident.id)}
-                        onChange={() => handleSelectTicket(incident.id)}
-                        aria-label={`Select ${incident.id}`}
-                      />
-                      <span>{incident.id}</span>
-                    </label>
-                    <span className={`status-badge ${statusClass(incident.status)}`}>{incident.status || '-'}</span>
-                  </div>
-                  <button type="button" className="tickets-mobile-subject" onClick={() => handleTicketClick(incident)}>
-                    {incident.subject || '-'}
-                  </button>
-                  {!isClosed && (
-                    <div className={`sla-table-track${slaVisual.breached ? ' is-breached' : ''}`}>
-                      <div
-                        className="sla-table-fill"
-                        style={{
-                          width: `${slaVisual.breached ? 100 : slaVisual.elapsedPercent}%`,
-                          background: slaVisual.breached ? '#8B0000' : slaVisual.color,
-                        }}
-                      />
-                      <span className="sla-table-text">{slaVisual.label}</span>
-                    </div>
-                  )}
-                  <div className="tickets-mobile-meta">
-                    <span><strong>Priority:</strong> {incident.priority || '-'}</span>
-                    <span><strong>Type:</strong> {incident.type || '-'}</span>
-                    <span><strong>Client:</strong> {incident.endUser || '-'}</span>
-                    <span><strong>Created:</strong> {incident.dateReported || '-'}</span>
-                  </div>
-                </article>
-              )
-            })}
-            {pageItems.length === 0 && (
-              <div className="table-empty">No tickets found.</div>
-            )}
-          </div>
-        ) : (
         <div className="incidents-table" ref={tableRef}>
           <div className="table-header" style={ticketsGridStyle}>
             <div className="col-checkbox col-header">
-              <input ref={selectAllCheckboxRef} type="checkbox" checked={allFilteredSelected} onChange={handleSelectAll} aria-label="Select all tickets" />
+              <input type="checkbox" checked={selectAll} onChange={handleSelectAll} aria-label="Select all tickets" />
               <span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'checkbox')} />
             </div>
             <div className="col-status col-header">Status<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')} /></div>
@@ -4640,7 +4590,6 @@ Click below to proceed:
             <div className="table-empty">No tickets found.</div>
           )}
         </div>
-        )}
       </div>
     </div>
   )
@@ -4809,23 +4758,173 @@ Click below to proceed:
 
       {showNewIncidentModal && (
         <div className="modal-overlay" onClick={() => setShowNewIncidentModal(false)}>
-          <div className="modal-content ticket-submit-modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="ticket-submit-modal-close" onClick={() => setShowNewIncidentModal(false)} aria-label="Close">x</button>
-            <SubmitTicketForm
-              className="agent-submit-ticket-form"
-              createdFrom="ITSM Platform"
-              requesterId={user?.id}
-              requesterEmail={user?.email}
-              submitLabel="Submit"
-              onSubmitted={handleTicketCreated}
-              onDiscard={() => setShowNewIncidentModal(false)}
-            />
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Ticket details</h2>
+              <button className="modal-close" onClick={() => setShowNewIncidentModal(false)}>✕</button>
+            </div>
+
+            <div className="modal-body">
+              <div className="form-section">
+                <label className="form-label">Ticket Type *</label>
+                <select 
+                  value={newIncidentForm.ticketType}
+                  onChange={(e) => setNewIncidentForm({...newIncidentForm, ticketType: e.target.value})}
+                  className="form-select"
+                >
+                  <option value="" disabled>Select Ticket Type</option>
+                  {createTicketTypeOptions.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              {(isIncidentType || isTaskType) && (
+                <div className="form-section">
+                  <label className="form-label">Team *</label>
+                  <select
+                    value={newIncidentForm.teamId}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, teamId: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Team</option>
+                    {createTeamOptions.map((team) => (
+                      <option key={team.key} value={team.key}>{team.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">Staff *</label>
+                  <select
+                    value={newIncidentForm.staffId}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, staffId: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Staff</option>
+                    {taskStaffOptions.map((staff) => (
+                      <option key={staff.id} value={staff.id}>{staff.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="form-section">
+                <label className="form-label">Email CC List (Separate by ; )</label>
+                <input
+                  type="text"
+                  placeholder="Email CC List"
+                  value={newIncidentForm.cc}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, cc: e.target.value })}
+                  className="form-input"
+                />
+              </div>
+
+              <div className="form-section">
+                <label className="form-label">Subject *</label>
+                <input 
+                  type="text" 
+                  placeholder="Enter subject"
+                  value={newIncidentForm.subject}
+                  onChange={(e) => setNewIncidentForm({...newIncidentForm, subject: e.target.value})}
+                  className="form-input"
+                />
+              </div>
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">Start Date *</label>
+                  <input
+                    type="date"
+                    value={newIncidentForm.startDate}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, startDate: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">End Date *</label>
+                  <input
+                    type="date"
+                    value={newIncidentForm.endDate}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, endDate: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
+              <div className="form-section">
+                <label className="form-label">Description *</label>
+                <textarea 
+                  placeholder={isNewStarterType ? 'Complete the New Starter fields' : 'Please provide a detailed description and include screenshots where possible.'}
+                  value={newIncidentForm.description}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, description: e.target.value })}
+                  className="form-textarea"
+                />
+              </div>
+
+              {(isIncidentType || isServiceRequestType || isHrRequestType || isTaskType) && (
+                <div className="form-section">
+                  <label className="form-label">Assets</label>
+                  <input
+                    type="text"
+                    placeholder="Add Asset"
+                    value={newIncidentForm.asset}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, asset: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
+              {(isIncidentType || isTaskType || isNewStarterType) && (
+                <div className="form-section">
+                  <label className="form-label">Priority *</label>
+                  <select 
+                    value={newIncidentForm.priority}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, priority: e.target.value as any })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Priority</option>
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                  </select>
+                </div>
+              )}
+
+              {isIncidentType && (
+                <div className="form-section">
+                  <label className="form-label">Classifications</label>
+                  <select
+                    value={newIncidentForm.classification}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, classification: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="">Select Classification</option>
+                    {classificationOptions.filter(Boolean).map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn-cancel" onClick={() => setShowNewIncidentModal(false)}>Cancel</button>
+              <button className="btn-submit" onClick={handleCreateIncident}>Create Ticket</button>
+            </div>
           </div>
         </div>
-      )}
+      )}
     </div>
   )
 }
+
 
 
 
