@@ -207,11 +207,17 @@ export default function TicketsView() {
   const [ticketMyListRules, setTicketMyListRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().ticketsMyLists)
   const [ticketQueues, setTicketQueues] = useState<TicketQueueConfig[]>(() => loadLeftPanelConfig().ticketQueues)
   const [newIncidentForm, setNewIncidentForm] = useState({
-    ticketType: 'Fault',
+    ticketType: 'Incident',
+    teamId: '',
+    cc: '',
     subject: '',
-    category: '',
+    description: '',
+    asset: '',
     priority: '' as const,
-    description: ''
+    classification: '',
+    staffId: '',
+    startDate: '',
+    endDate: '',
   })
 
   const inferInboundEndUser = (ticketData: any) => {
@@ -794,8 +800,53 @@ export default function TicketsView() {
     Infrastructure: ['Power', 'Data Connection', 'Router', 'Server', 'Printer'],
     'Infrastructure>Power': ['Switch', 'Socket']
   }
-  const defaultTicketTypeOptions = ['Fault', 'Live Chat', 'Problem', 'Change', 'Service Request']
+  const defaultTicketTypeOptions = ['Incident', 'Service request', 'HR request', 'Task', 'New starter']
   const defaultWorkflowOptions = ['Fault Workflow', 'Incident Management Workflow', 'Service Request Workflow', 'Change Workflow']
+
+  const createTicketTypeOptions = ['Incident', 'Service request', 'HR request', 'Task', 'New starter']
+  const createTeamOptions = [
+    { key: 'helpdesk', label: 'Support Desk' },
+    { key: 'l1', label: 'Helpdesk (Line1)' },
+    { key: 'l2', label: 'L2' },
+    { key: 'l3', label: 'L3' },
+    { key: 'hr', label: 'HR' },
+    { key: 'supplier', label: 'Supplier' },
+  ]
+  const classificationOptions = ['', 'Hardware', 'Software', 'Access', 'Network', 'General']
+  const selectedCreateType = String(newIncidentForm.ticketType || '').trim().toLowerCase()
+  const isIncidentType = selectedCreateType === 'incident'
+  const isServiceRequestType = selectedCreateType === 'service request'
+  const isHrRequestType = selectedCreateType === 'hr request'
+  const isTaskType = selectedCreateType === 'task'
+  const isNewStarterType = selectedCreateType === 'new starter'
+  const selectedCreateTeamLabel = createTeamOptions.find((team) => team.key === newIncidentForm.teamId)?.label || ''
+  const taskStaffOptions = React.useMemo(() => {
+    return agents
+      .map((agent) => ({
+        id: String(agent?.id || ''),
+        label: String(agent?.name || agent?.email || agent?.username || '').trim(),
+      }))
+      .filter((option) => option.id && option.label)
+  }, [agents])
+
+  React.useEffect(() => {
+    if (isServiceRequestType && newIncidentForm.teamId !== 'helpdesk') {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: 'helpdesk' }))
+      return
+    }
+    if (isHrRequestType && newIncidentForm.teamId !== 'hr') {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: 'hr' }))
+      return
+    }
+    if (isNewStarterType) {
+      const starterTemplate =
+        'New Starter Name,\nJob Title,\nStart Date,\nLine Manager,\nSoftware Access Required,\nGoogle workspace account,\nGoogle Drive Access Required,\nAdd To Google Drive User Group(s),\nHardware Required'
+      const updates: any = {}
+      if (newIncidentForm.teamId !== 'hr') updates.teamId = 'hr'
+      if (!String(newIncidentForm.description || '').trim()) updates.description = starterTemplate
+      if (Object.keys(updates).length > 0) setNewIncidentForm((prev) => ({ ...prev, ...updates }))
+    }
+  }, [isServiceRequestType, isHrRequestType, isNewStarterType, newIncidentForm.teamId, newIncidentForm.description])
   const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Resolved', 'Closed']
   const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
   const createdFromOptions = ['User portal', 'ITSM Platform']
@@ -942,32 +993,68 @@ export default function TicketsView() {
     })
   }
   const handleCreateIncident = () => {
-    if (!newIncidentForm.ticketType.trim() || !newIncidentForm.priority.trim() || !newIncidentForm.subject.trim()) {
-      alert('Please fill in all required fields: Ticket Type, Priority, and Subject')
+    const typeValue = String(newIncidentForm.ticketType || '').trim()
+    const subjectValue = String(newIncidentForm.subject || '').trim()
+    const descriptionValue = String(newIncidentForm.description || '').trim()
+    if (!typeValue || !subjectValue || !descriptionValue) {
+      alert('Please fill in all required fields: Ticket Type, Subject, and Description')
       return
     }
+    if ((isIncidentType || isTaskType || isNewStarterType) && !String(newIncidentForm.priority || '').trim()) {
+      alert('Priority is required for this ticket type')
+      return
+    }
+    if ((isIncidentType || isTaskType) && !String(newIncidentForm.teamId || '').trim()) {
+      alert('Team is required for this ticket type')
+      return
+    }
+    if (isTaskType) {
+      if (!String(newIncidentForm.staffId || '').trim()) {
+        alert('Staff is required for Task tickets')
+        return
+      }
+      if (!String(newIncidentForm.startDate || '').trim() || !String(newIncidentForm.endDate || '').trim()) {
+        alert('Start Date and End Date are required for Task tickets')
+        return
+      }
+    }
+
+    const teamIdValue = String(newIncidentForm.teamId || '').trim()
+    const teamLabelValue = createTeamOptions.find((team) => team.key === teamIdValue)?.label || ''
+    const staffLabelValue = taskStaffOptions.find((staff) => staff.id === String(newIncidentForm.staffId || ''))?.label || ''
+    const metaLines: string[] = []
+    if (String(newIncidentForm.cc || '').trim()) metaLines.push(`CC: ${String(newIncidentForm.cc).trim()}`)
+    if (String(newIncidentForm.asset || '').trim()) metaLines.push(`Assets: ${String(newIncidentForm.asset).trim()}`)
+    if (isIncidentType && String(newIncidentForm.classification || '').trim()) metaLines.push(`Classifications: ${String(newIncidentForm.classification).trim()}`)
+    if (teamLabelValue) metaLines.push(`Team: ${teamLabelValue}`)
+    if (isTaskType && staffLabelValue) metaLines.push(`Staff: ${staffLabelValue}`)
+    if (isTaskType && String(newIncidentForm.startDate || '').trim()) metaLines.push(`Start Date: ${String(newIncidentForm.startDate).trim()}`)
+    if (isTaskType && String(newIncidentForm.endDate || '').trim()) metaLines.push(`End Date: ${String(newIncidentForm.endDate).trim()}`)
+    const finalDescription = metaLines.length > 0 ? `${descriptionValue}\n\n${metaLines.join('\n')}` : descriptionValue
 
     // call backend createTicket
     (async () => {
       try {
         const payload = {
-          type: newIncidentForm.ticketType,
-          priority: newIncidentForm.priority,
-          category: newIncidentForm.category,
-          description: newIncidentForm.description,
-          subject: newIncidentForm.subject,
+          type: typeValue,
+          priority: String(newIncidentForm.priority || '').trim() || undefined,
+          category: teamLabelValue || selectedCreateTeamLabel || undefined,
+          description: finalDescription,
+          subject: subjectValue,
           createdFrom: 'ITSM Platform',
           requesterId: user?.id ? Number(user.id) : undefined,
           requesterEmail: user?.email || undefined,
+          assigneeId: isTaskType && String(newIncidentForm.staffId || '').trim() ? Number(newIncidentForm.staffId) : undefined,
+          teamId: teamIdValue || undefined,
         }
         const created: any = await ticketService.createTicket(payload)
         const newId = created.ticketId || `#${String(created.id).padStart(6,'0')}`
         const newIncident: Incident = {
           id: newId,
           slaTimeLeft: '00:00',
-          subject: created.subject || created.description || newIncidentForm.subject,
-          category: created.category || newIncidentForm.category,
-          priority: created.priority || (newIncidentForm.priority as Incident['priority']),
+          subject: created.subject || created.description || subjectValue,
+          category: created.category || teamLabelValue || '',
+          priority: (created.priority || newIncidentForm.priority || 'Low') as Incident['priority'],
           status: created.status || 'New',
           type: created.type,
           endUser: '',
@@ -979,7 +1066,7 @@ export default function TicketsView() {
 
         setIncidents([newIncident, ...incidents])
         setShowNewIncidentModal(false)
-        setNewIncidentForm({ ticketType: 'Fault', subject: '', category: '', priority: '', description: '' })
+        setNewIncidentForm({ ticketType: 'Incident', teamId: '', cc: '', subject: '', description: '', asset: '', priority: '', classification: '', staffId: '', startDate: '', endDate: '' })
         // Refresh from DB to ensure persisted view is accurate
         await loadTickets()
       } catch (e) {
@@ -992,11 +1079,11 @@ export default function TicketsView() {
         const newIncident: Incident = {
           id: newId,
           slaTimeLeft: '00:00',
-          subject: newIncidentForm.subject,
-          category: newIncidentForm.category,
+          subject: subjectValue,
+          category: teamLabelValue || '',
           priority: (newIncidentForm.priority || 'Low') as Incident['priority'],
           status: 'New',
-          type: newIncidentForm.ticketType,
+          type: typeValue,
           endUser: '',
           createdFrom: user?.role === 'USER' ? 'User portal' : 'ITSM Platform',
           dateReported: new Date().toLocaleString(),
@@ -1005,7 +1092,7 @@ export default function TicketsView() {
         }
         setIncidents([newIncident, ...incidents])
         setShowNewIncidentModal(false)
-        setNewIncidentForm({ ticketType: 'Fault', subject: '', category: '', priority: '', description: '' })
+        setNewIncidentForm({ ticketType: 'Incident', teamId: '', cc: '', subject: '', description: '', asset: '', priority: '', classification: '', staffId: '', startDate: '', endDate: '' })
       }
     })()
   }
@@ -1036,19 +1123,6 @@ export default function TicketsView() {
   }
 
   const statusClass = (s: string) => s.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '')
-
-  const toggleCategoryExpand = (category: string) => {
-    setExpandedCategories(prev => 
-      prev.includes(category) 
-        ? prev.filter(c => c !== category)
-        : [...prev, category]
-    )
-  }
-
-  const handleCategorySelect = (category: string) => {
-    setNewIncidentForm({...newIncidentForm, category})
-    setShowCategoryDropdown(false)
-  }
 
   const handleTicketClick = (ticket: Incident) => {
     setSelectedTicket(ticket)
@@ -4686,7 +4760,7 @@ Click below to proceed:
         <div className="modal-overlay" onClick={() => setShowNewIncidentModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Incident Details</h2>
+              <h2>Ticket details</h2>
               <button className="modal-close" onClick={() => setShowNewIncidentModal(false)}>✕</button>
             </div>
 
@@ -4699,13 +4773,53 @@ Click below to proceed:
                   className="form-select"
                 >
                   <option value="" disabled>Select Ticket Type</option>
-                  <option value="Fault">Fault</option>
-                  <option value="HR request">HR request</option>
-                  <option value="Change request">Change request</option>
-                  <option value="Return request">Return request</option>
-                  <option value="Incident">Incident</option>
-                  <option value="Task">Task</option>
+                  {createTicketTypeOptions.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
                 </select>
+              </div>
+
+              {(isIncidentType || isTaskType) && (
+                <div className="form-section">
+                  <label className="form-label">Team *</label>
+                  <select
+                    value={newIncidentForm.teamId}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, teamId: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Team</option>
+                    {createTeamOptions.map((team) => (
+                      <option key={team.key} value={team.key}>{team.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">Staff *</label>
+                  <select
+                    value={newIncidentForm.staffId}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, staffId: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Staff</option>
+                    {taskStaffOptions.map((staff) => (
+                      <option key={staff.id} value={staff.id}>{staff.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="form-section">
+                <label className="form-label">Email CC List (Separate by ; )</label>
+                <input
+                  type="text"
+                  placeholder="Email CC List"
+                  value={newIncidentForm.cc}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, cc: e.target.value })}
+                  className="form-input"
+                />
               </div>
 
               <div className="form-section">
@@ -4719,119 +4833,85 @@ Click below to proceed:
                 />
               </div>
 
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">Start Date *</label>
+                  <input
+                    type="date"
+                    value={newIncidentForm.startDate}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, startDate: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">End Date *</label>
+                  <input
+                    type="date"
+                    value={newIncidentForm.endDate}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, endDate: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
               <div className="form-section">
-                <label className="form-label">Description</label>
+                <label className="form-label">Description *</label>
                 <textarea 
-                  placeholder="Please provide a detailed description and include screenshots where possible."
+                  placeholder={isNewStarterType ? 'Complete the New Starter fields' : 'Please provide a detailed description and include screenshots where possible.'}
                   value={newIncidentForm.description}
-                  onChange={(e) => setNewIncidentForm({...newIncidentForm, description: e.target.value})}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, description: e.target.value })}
                   className="form-textarea"
                 />
               </div>
 
-              <div className="form-section">
-                <label className="form-label">Category</label>
-                <div className="custom-category-dropdown">
-                  <div 
-                    className="category-select-input"
-                    onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                  >
-                    {newIncidentForm.category || 'Select Category'}
-                    <span className="dropdown-arrow">▼</span>
-                  </div>
-                  
-                  {showCategoryDropdown && (
-                    <div className="category-dropdown-menu">
-                      <div className="category-list">
-                        {Object.keys(categoryOptions).filter(key => !key.includes('>')).map((category) => (
-                          <div key={category} className="category-item">
-                            <div className="category-header">
-                              {categoryOptions[category as keyof typeof categoryOptions]?.length > 0 ? (
-                                <button 
-                                  className="expand-btn"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    toggleCategoryExpand(category)
-                                  }}
-                                >
-                                  {expandedCategories.includes(category) ? '▼' : '▶'}
-                                </button>
-                              ) : (
-                                <span className="expand-placeholder"></span>
-                              )}
-                              <span 
-                                className="category-name"
-                                onClick={() => handleCategorySelect(category)}
-                              >
-                                {category}
-                              </span>
-                            </div>
-                            
-                            {expandedCategories.includes(category) && (
-                              <div className="subcategories-list">
-                                {categoryOptions[category as keyof typeof categoryOptions]?.map((subcat) => (
-                                  <div key={subcat} className="subcategory-item">
-                                    <div className="subcategory-header">
-                                      {categoryOptions[`${category}>${subcat}` as keyof typeof categoryOptions]?.length > 0 ? (
-                                        <button 
-                                          className="expand-btn"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            toggleCategoryExpand(`${category}>${subcat}`)
-                                          }}
-                                        >
-                                          {expandedCategories.includes(`${category}>${subcat}`) ? '▼' : '▶'}
-                                        </button>
-                                      ) : (
-                                        <span className="expand-placeholder"></span>
-                                      )}
-                                      <span 
-                                        className="subcategory-name"
-                                        onClick={() => handleCategorySelect(`${category}>${subcat}`)}
-                                      >
-                                        {subcat}
-                                      </span>
-                                    </div>
-                                    
-                                    {expandedCategories.includes(`${category}>${subcat}`) && categoryOptions[`${category}>${subcat}` as keyof typeof categoryOptions]?.length > 0 && (
-                                      <div className="leaf-items">
-                                        {categoryOptions[`${category}>${subcat}` as keyof typeof categoryOptions]?.map((item) => (
-                                          <div 
-                                            key={item} 
-                                            className="leaf-item"
-                                            onClick={() => handleCategorySelect(`${category}>${subcat}>${item}`)}
-                                          >
-                                            {item}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+              {(isIncidentType || isServiceRequestType || isHrRequestType || isTaskType) && (
+                <div className="form-section">
+                  <label className="form-label">Assets</label>
+                  <input
+                    type="text"
+                    placeholder="Add Asset"
+                    value={newIncidentForm.asset}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, asset: e.target.value })}
+                    className="form-input"
+                  />
                 </div>
-              </div>
+              )}
 
-              <div className="form-section">
-                <label className="form-label">Priority *</label>
-                <select 
-                  value={newIncidentForm.priority}
-                  onChange={(e) => setNewIncidentForm({...newIncidentForm, priority: e.target.value as any})}
-                  className="form-select"
-                >
-                  <option value="" disabled>Select Priority</option>
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                  <option value="Critical">Critical</option>
-                </select>
-              </div>
+              {(isIncidentType || isTaskType || isNewStarterType) && (
+                <div className="form-section">
+                  <label className="form-label">Priority *</label>
+                  <select 
+                    value={newIncidentForm.priority}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, priority: e.target.value as any })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Priority</option>
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                  </select>
+                </div>
+              )}
+
+              {isIncidentType && (
+                <div className="form-section">
+                  <label className="form-label">Classifications</label>
+                  <select
+                    value={newIncidentForm.classification}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, classification: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="">Select Classification</option>
+                    {classificationOptions.filter(Boolean).map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="modal-footer">
@@ -4844,6 +4924,7 @@ Click below to proceed:
     </div>
   )
 }
+
 
 
 
