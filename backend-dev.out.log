@@ -1,739 +1,1089 @@
 
-> itsm-backend@1.0.11 dev
+> itsm-backend@1.0.12 dev
 > ts-node-dev --respawn --transpile-only src/index.ts
 
-[INFO] 12:50:31 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.1.6)
+[INFO] 22:17:52 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.1.6)
 [INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T12:50:35.113Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T12:50:35.117Z"}
-[0mGET /health [32m200[0m 3.530 ms - 15[0m
-[0mPOST /api/auth/login [33m401[0m 406.136 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 251.633 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 243.675 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 243.843 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 4.140 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 1.525 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 1.353 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 1.209 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 3.095 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 4.326 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 3.390 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 4.234 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 1.339 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 3.177 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 1.065 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 3.353 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 3.149 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 1.673 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 2.714 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 4.036 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 2.647 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 3.996 ms - 31[0m
-[0mPOST /api/auth/login [33m401[0m 1.170 ms - 31[0m
-[0mPOST /api/auth/login [32m200[0m 313.231 ms - 538[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 108.513 ms - 25560[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 33.487 ms - -[0m
-[0mGET /api/users?limit=500 [32m200[0m 678.557 ms - 1476[0m
-[0mPOST /api/auth/change-password [32m200[0m 480.001 ms - 11[0m
-[0mGET /api/auth/google/config [36m304[0m 0.563 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 0.239 ms - -[0m
-[0mPOST /api/auth/login [32m200[0m 240.117 ms - 538[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 158.846 ms - 25560[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 9.657 ms - 25560[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 56.226 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 2.893 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 425.813 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 430.880 ms - -[0m
-[0mGET /api/users?q=&limit=500 [32m200[0m 477.004 ms - 1476[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 371.137 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 383.514 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 353.949 ms - -[0m
-[0mGET /api/sla [32m200[0m 2.700 ms - 419[0m
-[0mGET /api/sla [36m304[0m 1.690 ms - -[0m
-[INFO] 13:01:26 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:01:27.944Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:01:27.948Z"}
-[0mGET /api/sla [36m304[0m 9.877 ms - -[0m
-[0mGET /api/sla [36m304[0m 5.623 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.818 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.523 ms - -[0m
-{"action":"create_sla","entity":"sla","entityId":3,"level":"info","message":"audit","meta":{"name":"Critical SLA"},"timestamp":"2026-02-17T13:06:44.291Z","user":5}
-[0mPOST /api/sla [32m201[0m 26.961 ms - 209[0m
-[0mGET /api/sla [32m200[0m 2.548 ms - 629[0m
-{"action":"create_sla","entity":"sla","entityId":4,"level":"info","message":"audit","meta":{"name":"High SLA"},"timestamp":"2026-02-17T13:06:47.453Z","user":5}
-[0mPOST /api/sla [32m201[0m 11.117 ms - 201[0m
-[0mGET /api/sla [32m200[0m 1.469 ms - 831[0m
-[0mGET /api/sla [36m304[0m 3.718 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.849 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.226 ms - -[0m
-{"action":"delete_sla","entity":"sla","entityId":4,"level":"info","message":"audit","meta":{"name":"High SLA"},"timestamp":"2026-02-17T13:10:16.508Z","user":5}
-[0mDELETE /api/sla/4 [32m200[0m 4.497 ms - 228[0m
-[0mGET /api/sla [32m200[0m 2.038 ms - 629[0m
-{"action":"delete_sla","entity":"sla","entityId":3,"level":"info","message":"audit","meta":{"name":"Critical SLA"},"timestamp":"2026-02-17T13:10:19.030Z","user":5}
-[0mDELETE /api/sla/3 [32m200[0m 9.481 ms - 236[0m
-[0mGET /api/sla [32m200[0m 1.138 ms - 419[0m
-{"action":"delete_sla","entity":"sla","entityId":2,"level":"info","message":"audit","meta":{"name":"Default SLA"},"timestamp":"2026-02-17T13:10:21.319Z","user":5}
-[0mDELETE /api/sla/2 [32m200[0m 5.316 ms - 234[0m
-[0mGET /api/sla [32m200[0m 4.238 ms - 211[0m
-{"action":"delete_sla","entity":"sla","entityId":1,"level":"info","message":"audit","meta":{"name":"Default SLA"},"timestamp":"2026-02-17T13:10:23.512Z","user":5}
-[0mDELETE /api/sla/1 [32m200[0m 3.096 ms - 236[0m
-[0mGET /api/sla [32m200[0m 1.116 ms - 2[0m
-[0mGET /api/sla [36m304[0m 124.476 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 155.104 ms - 25560[0m
-[0mGET /api/users?limit=500 [36m304[0m 715.540 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.763 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.097 ms - 25560[0m
-[0mGET /api/users?limit=500 [36m304[0m 445.616 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=20&q= [36m304[0m 10.060 ms - -[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 21.911 ms - 1770[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 29.658 ms - 1770[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 5.543 ms - 1770[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.822 ms - 25560[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 6.809 ms - 1770[0m
-{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"assigneeId":5}},"ticketId":"TB#00014","timestamp":"2026-02-17T13:10:40.851Z","user":5}
-[0mPATCH /api/tickets/TB%2300014 [32m200[0m 38.896 ms - 1061[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.135 ms - 2625[0m
-{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"assigneeId":5}},"ticketId":"TB#00014","timestamp":"2026-02-17T13:10:44.036Z","user":5}
-[0mPATCH /api/tickets/TB%2300014 [32m200[0m 20.272 ms - 1061[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 5.709 ms - 2781[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.144 ms - 26260[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 2.551 ms - 2781[0m
-{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Thank you raising"},"ticketId":"TB#00014","timestamp":"2026-02-17T13:10:58.789Z","user":5}
-[0mPOST /api/tickets/TB%2300014/respond [32m201[0m 3725.212 ms - 158[0m
-{"action":"transition","level":"info","message":"audit","meta":{"from":"New","to":"In Progress"},"ticketId":"TB#00014","timestamp":"2026-02-17T13:11:02.825Z","user":5}
-{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Thank you raising"},"ticketId":"TB#00014","timestamp":"2026-02-17T13:11:05.020Z","user":5}
-{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Thank you raising"},"ticketId":"TB#00014","timestamp":"2026-02-17T13:11:07.837Z","user":5}
-[0mPOST /api/tickets/TB%2300014/respond [32m201[0m 3392.759 ms - 174[0m
-[0mPOST /api/tickets/TB%2300014/transition [33m400[0m 1.631 ms - 62[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.077 ms - 3474[0m
-[0mPOST /api/tickets/TB%2300014/transition [32m200[0m 6873.221 ms - 686[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 2.385 ms - 3474[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.353 ms - 26294[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.252 ms - 3474[0m
-{"action":"respond","level":"info","message":"audit","meta":{"attachmentIds":[],"message":"Inbound email reply received.\nMailbox: girikumaran@trustybytes.in\nFrom: girikumaran@trustybytes.in\nSubject: [ITSM] Ticket status updated: TB#00014\nMessage-Id: <291e0c14-07f9-156d-c01c-a41bc90741b4@trustybytes.in>\nDate: Tue, 17 Feb 2026 13:11:06 +0000"},"ticketId":"TB#00014","timestamp":"2026-02-17T13:11:10.451Z","user":"mail_ingest"}
-{"from":"girikumaran@trustybytes.in","level":"info","mailbox":"INBOX","message":"mail_ticket_updated","subject":"[ITSM] Ticket status updated: TB#00014","ticketId":"TB#00014","timestamp":"2026-02-17T13:11:10.943Z","uid":"425"}
-[0mPOST /api/tickets/TB%2300014/respond [32m201[0m 3174.617 ms - 174[0m
-[0mPOST /api/tickets/TB%2300014/transition [33m400[0m 1.124 ms - 62[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.096 ms - 3890[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.375 ms - 26294[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.308 ms - 3890[0m
-[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 5.031 ms - 26294[0m
-[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 17.466 ms - 26294[0m
-[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 127.803 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 3.558 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 583.295 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 530.130 ms - -[0m
-[0mGET /api/suppliers [32m200[0m 300.603 ms - 2[0m
-[0mGET /api/suppliers [36m304[0m 10.499 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.890 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 466.478 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 404.436 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 411.733 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 381.694 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.772 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.787 ms - -[0m
-[0mGET /api/sla [33m401[0m 0.842 ms - 36[0m
-[0mPOST /api/auth/refresh [32m200[0m 17.261 ms - 266[0m
-[0mGET /api/sla [36m304[0m 1.915 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 64.252 ms - 26294[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 15.504 ms - 26294[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 71.925 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 3.369 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.822 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 13.908 ms - 26294[0m
-[0mGET /api/sla [36m304[0m 3.677 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 2.607 ms - 26294[0m
-[0mGET /api/users?limit=500 [36m304[0m 520.285 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 388.843 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 378.255 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 420.887 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 3.390 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 2.687 ms - -[0m
-[0mGET /api/users [32m200[0m 489.056 ms - 1476[0m
-[0mGET /api/suppliers?q= [33m400[0m 207.401 ms - 95[0m
-[0mGET /api/suppliers?q= [33m400[0m 11.401 ms - 95[0m
-[0mGET /api/users [36m304[0m 481.518 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 5.272 ms - 26294[0m
-[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 5.117 ms - 26294[0m
-[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 6.113 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 6.444 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 514.852 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 543.553 ms - -[0m
-[0mGET /api/suppliers [36m304[0m 230.446 ms - -[0m
-[0mGET /api/suppliers?q= [33m400[0m 4.057 ms - 95[0m
-[0mGET /api/suppliers [36m304[0m 3.686 ms - -[0m
-[0mGET /api/suppliers?q= [33m400[0m 4.531 ms - 95[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 2.110 ms - -[0m
-[0mGET /api/users [36m304[0m 564.250 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.730 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 5.347 ms - 26294[0m
-[0mGET /api/users [36m304[0m 541.462 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 3.613 ms - 26294[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 8.383 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 2.694 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 511.887 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 472.343 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.895 ms - 26294[0m
-[0mGET /api/sla [36m304[0m 11.288 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.662 ms - 26294[0m
-[0mGET /api/sla [36m304[0m 1.074 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 484.119 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 467.278 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 5.386 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.615 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 1.209 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 0.253 ms - -[0m
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T22:17:59.753Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T22:17:59.777Z"}
+[0mGET /api/auth/google/config [32m200[0m 4.698 ms - 53[0m
+[0mGET /api/auth/sso/config [32m200[0m 1.082 ms - 178[0m
+[0mGET /api/auth/google/config [36m304[0m 0.685 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.494 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 554.175 ms - 841322[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 32.254 ms - 31242[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.570 ms - -[0m
+[0mGET /api/notifications/state [32m200[0m 160.473 ms - 1228[0m
+[0mGET /api/notifications/state [36m304[0m 3.374 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.316 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 955.525 ms - 25312915[0m
+[0mGET /api/users/me/presence [32m200[0m 979.314 ms - 22[0m
+[0mGET /api/users/me/presence [36m304[0m 15.508 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 884.866 ms - 25312915[0m
+[0mGET /api/assets?pageSize=500 [32m200[0m 384.129 ms - 1687498[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 1099.297 ms - 25312915[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 647.738 ms - 1687497[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 1003.826 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 926.330 ms - 25312915[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 1438.188 ms - 25312915[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 285.946 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 2014.834 ms - 25312915[0m
+[0mGET /api/assets?page=1&pageSize=500 [32m200[0m 37.935 ms - 1687498[0m
+[0mGET /api/users?limit=500 [32m200[0m 4434.476 ms - 842495[0m
+[0mGET /api/suppliers [32m200[0m 4967.044 ms - 2[0m
+[0mGET /api/users/5/permissions [32m200[0m 4992.599 ms - 57882[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 33.786 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 1119.874 ms - 25312915[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 1091.069 ms - 25312915[0m
+[0mGET /api/users?limit=500 [36m304[0m 2289.604 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 2290.292 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1991.882 ms - -[0m
+[0mGET /api/users/5/permissions [32m200[0m 2038.297 ms - 57882[0m
+[0mGET /api/users?limit=500 [36m304[0m 864.263 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 836.389 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 609.565 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 718.609 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 5.936 ms - -[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 122.965 ms - -[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 101.030 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 757.826 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 475.482 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.487 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 12.705 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.827 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.233 ms - -[0m
+[0mPOST /api/auth/login [33m401[0m 1.969 ms - 31[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.716 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.160 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.598 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.423 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.965 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.752 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.582 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.719 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.787 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.200 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.266 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.680 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.410 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.933 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 369.027 ms - 25312975[0m
+[0mGET /api/assets?page=1&pageSize=500 [32m200[0m 127.094 ms - 1687502[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 574.592 ms - 25312975[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 34.648 ms - -[0m
+[0mGET /api/users?limit=500 [32m200[0m 749.794 ms - 842495[0m
+[0mGET /api/users?limit=500 [36m304[0m 624.822 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 635.888 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 3.655 ms - -[0m
+[0mGET /api/users/me/presence [32m200[0m 9.808 ms - 22[0m
+[0mGET /api/notifications/state [32m200[0m 11.860 ms - 1228[0m
+[0mGET /api/users/me/presence [32m200[0m 11.972 ms - 22[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 5.210 ms - 31242[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 10.297 ms - 31242[0m
+[0mGET /api/notifications/state [32m200[0m 76.365 ms - 1228[0m
+[0mGET /api/notifications/state [36m304[0m 2.810 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.300 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.170 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.886 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.696 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.308 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.421 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 0.632 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 22.677 ms - 266[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.558 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.378 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.082 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.052 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.608 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.371 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.243 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.706 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.589 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.244 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.013 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.932 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.746 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 103.108 ms - 1687501[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 41.459 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 373.455 ms - 25312975[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 909.394 ms - 25312975[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 707.407 ms - 25312975[0m
+[0mGET /api/users?limit=500 [36m304[0m 2194.537 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 683.875 ms - 25312975[0m
+[0mGET /api/assets?pageSize=500 [32m200[0m 242.786 ms - 1687502[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 48.118 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 496.754 ms - 25312975[0m
+[0mGET /api/users?limit=500 [36m304[0m 1720.112 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 44.087 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 944.299 ms - 25312975[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 27.163 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1486.669 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 838.017 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 1530.331 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 817.878 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1820.713 ms - -[0m
+[0mGET /api/users/5/permissions [32m200[0m 2429.739 ms - 57872[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.345 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 633.725 ms - 25312975[0m
+[0mGET /api/users?limit=500 [36m304[0m 1313.947 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 764.215 ms - 25312975[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 45.094 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 136.849 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1260.887 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 187.187 ms - -[0m
+[0mGET /api/users/5/permissions [32m200[0m 3296.859 ms - 57872[0m
+[0mGET /api/users?limit=500 [36m304[0m 649.296 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 603.885 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 37.844 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 29.170 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 775.008 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 5.613 ms - -[0m
+[0mGET /api/users/5/permissions [32m200[0m 1421.697 ms - 57872[0m
+[0mGET /api/users/5/permissions [32m200[0m 696.848 ms - 57872[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 591.779 ms - 25312975[0m
+[0mGET /api/users?limit=500 [36m304[0m 1371.683 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 1128.368 ms - 25312975[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 1048.855 ms - 25312975[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 544.365 ms - 25312975[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 166.779 ms - -[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 27.995 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1750.143 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 462.241 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 455.970 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.284 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.613 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 270.211 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 292.903 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 418.520 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 784.006 ms - 25312975[0m
+[0mGET /api/notifications/state [32m200[0m 8.068 ms - 1228[0m
+[0mGET /api/users/me/presence [32m200[0m 18.427 ms - 22[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 11.482 ms - 31242[0m
+[0mGET /api/users/me/presence [36m304[0m 13.172 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 2.351 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.410 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 485.817 ms - 25312975[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 10.232 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 10.067 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.791 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.273 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 502.442 ms - 25312975[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 34.366 ms - -[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 75.323 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 689.173 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 497.517 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 3.103 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 3.932 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.344 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.985 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 4.303 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 3.647 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.637 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.062 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.814 ms - -[0m
+[0mGET /api/notifications/state [32m200[0m 228.424 ms - 1228[0m
+[0mGET /api/users/me/presence [32m200[0m 256.454 ms - 22[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 387.618 ms - 31242[0m
+[0mGET /api/notifications/state [32m200[0m 7.655 ms - 1228[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 9.974 ms - 31242[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 5.003 ms - 31242[0m
+[0mGET /api/notifications/state [32m200[0m 9.129 ms - 1228[0m
+[0mGET /api/users/me/presence [32m200[0m 536.063 ms - 22[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.824 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 735.438 ms - 25312975[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 1227.501 ms - 25312975[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 34.362 ms - -[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 30.293 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 897.831 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 725.637 ms - -[0m
+[0mGET /api/system/database/config [32m200[0m 2.054 ms - 126[0m
+[0mGET /api/mail/config [32m200[0m 2.118 ms - 338[0m
+[0mGET /api/users?limit=500 [36m304[0m 691.757 ms - -[0m
+[0mGET /api/mail/config [36m304[0m 1.370 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 525.814 ms - -[0m
+[0mGET /api/sla [32m200[0m 19.887 ms - 6211[0m
+[0mGET /api/users?q=&limit=500 [32m200[0m 393.994 ms - 842495[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 421.713 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 403.868 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 464.015 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 10.021 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.477 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 0.779 ms - 36[0m
+[0mPOST /api/auth/refresh [33m401[0m 4.090 ms - 33[0m
+[0mGET /api/auth/google/config [32m200[0m 0.283 ms - 53[0m
+[0mGET /api/auth/sso/config [32m200[0m 0.452 ms - 178[0m
+[0mGET /api/auth/google/config [36m304[0m 0.439 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.220 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 287.121 ms - 841322[0m
+[0mGET /api/users/me/presence [36m304[0m 3.200 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.324 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.261 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 12.095 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 3.055 ms - -[0m
 [0mGET /api/auth/google/config [36m304[0m 0.216 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 0.488 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 1.238 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 0.211 ms - -[0m
-[0mGET /api/suppliers?q= [33m400[0m 6.533 ms - 95[0m
-[0mGET /api/suppliers?q= [33m400[0m 5.827 ms - 95[0m
-[0mGET /api/users [36m304[0m 456.810 ms - -[0m
-[0mGET /api/users [36m304[0m 497.013 ms - -[0m
-[0mGET /api/sla [36m304[0m 3.318 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.538 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.012 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.371 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.719 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.764 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.516 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.016 ms - -[0m
-[0mGET /api/sla [33m401[0m 1.000 ms - 36[0m
-[0mPOST /api/auth/refresh [32m200[0m 9.480 ms - 266[0m
-[0mGET /api/sla [36m304[0m 1.695 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 188.063 ms - 26295[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 6.571 ms - 26295[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 5.819 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 2.178 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 625.974 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 70.675 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.796 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 611.269 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 2.422 ms - -[0m
-[0mGET /api/users [36m304[0m 629.615 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.764 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 9.577 ms - 26295[0m
-[0mGET /api/sla [36m304[0m 6.732 ms - -[0m
-[0mGET /api/users [36m304[0m 663.810 ms - -[0m
-[0mGET /api/sla [36m304[0m 3.440 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.711 ms - 26295[0m
-[0mGET /api/users?limit=500 [36m304[0m 835.049 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 563.477 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=20&q= [36m304[0m 5.996 ms - -[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 5.858 ms - 3891[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 7.441 ms - 3891[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 6.322 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 2.508 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 13.395 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.134 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 8.561 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 5.466 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 7.976 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 15.526 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 9.856 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.540 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 3.852 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.473 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 11.559 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 72.373 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 10.354 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 59.103 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 27.529 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 77.725 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 29.707 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 80.087 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 22.191 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 43.284 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 35.900 ms - 3891[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.891 ms - 26295[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.454 ms - 3891[0m
-[0mGET /api/sla [36m304[0m 3.817 ms - -[0m
-[0mGET /api/sla [33m401[0m 0.943 ms - 36[0m
-[0mPOST /api/auth/refresh [32m200[0m 10.350 ms - 266[0m
-[0mGET /api/sla [36m304[0m 1.575 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.765 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.527 ms - -[0m
-[INFO] 13:52:09 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\sla\sla.service.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:52:11.052Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:52:11.060Z"}
-[INFO] 13:52:28 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\sla\sla.service.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:52:29.417Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:52:29.424Z"}
-[INFO] 13:52:39 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:52:41.832Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:52:41.836Z"}
-[INFO] 13:53:00 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:53:03.278Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:53:03.290Z"}
-[INFO] 13:53:13 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:53:15.546Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:53:15.552Z"}
-[INFO] 13:54:01 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:54:02.920Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:54:02.927Z"}
-[0mGET /api/sla [36m304[0m 30.125 ms - -[0m
-[INFO] 13:57:41 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\routes\index.ts has been modified
-[INFO] SLA job initialized (interval 60000ms)
-{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-17T13:57:43.087Z"}
-{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-17T13:57:43.107Z"}
-[0mGET /api/notifications?limit=120 [32m200[0m 30.213 ms - 19082[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 19.182 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.361 ms - -[0m
-[0mGET /api/sla [36m304[0m 11.911 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.216 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.693 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.228 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.180 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.221 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 966.118 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 623.282 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 518.645 ms - -[0m
-[0mGET /api/sla [36m304[0m 5.012 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 606.641 ms - -[0m
-[0mGET /api/sla [36m304[0m 10.104 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.441 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.159 ms - -[0m
-[0mGET /api/notifications?limit=120 [33m401[0m 0.955 ms - 36[0m
-[0mGET /api/notifications?limit=120 [33m401[0m 0.383 ms - 36[0m
-[0mGET /api/notifications?limit=120 [33m401[0m 0.377 ms - 36[0m
-[0mPOST /api/auth/refresh [32m200[0m 37.347 ms - 266[0m
-[0mPOST /api/auth/refresh [32m200[0m 82.597 ms - 266[0m
-[0mGET /api/notifications?limit=120 [33m401[0m 1.294 ms - 36[0m
-[0mPOST /api/auth/refresh [32m200[0m 2.438 ms - 266[0m
-[0mGET /api/notifications?limit=120 [33m401[0m 0.340 ms - 36[0m
-[0mPOST /api/auth/refresh [32m200[0m 4.257 ms - 266[0m
-[0mPOST /api/auth/refresh [32m200[0m 3.441 ms - 266[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 24.757 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.753 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.693 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.231 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.658 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.707 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.268 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.018 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.802 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.946 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 534.872 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 404.762 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 467.583 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 460.696 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 480.578 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 438.879 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 433.365 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 434.489 ms - -[0m
-[0mGET /api/sla [36m304[0m 5.119 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.324 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.105 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.595 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.842 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.467 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.510 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.978 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.966 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.173 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 80.416 ms - 26295[0m
-[0mGET /api/sla [36m304[0m 2.504 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 95.747 ms - 26295[0m
-[0mGET /api/sla [36m304[0m 3.571 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 621.550 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 422.825 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.283 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 455.305 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 389.268 ms - -[0m
-[0mGET /api/sla [36m304[0m 4.745 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 397.777 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 470.231 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.668 ms - -[0m
-{"action":"create_sla","entity":"sla","entityId":5,"level":"info","message":"audit","meta":{"name":"Default"},"timestamp":"2026-02-17T14:09:24.650Z","user":5}
-[0mPOST /api/sla [32m201[0m 37.206 ms - 780[0m
-{"action":"create_sla","entity":"sla","entityId":6,"level":"info","message":"audit","meta":{"name":"Default"},"timestamp":"2026-02-17T14:09:24.904Z","user":5}
-[0mPOST /api/sla [32m201[0m 23.965 ms - 776[0m
-{"action":"create_sla","entity":"sla","entityId":7,"level":"info","message":"audit","meta":{"name":"Default"},"timestamp":"2026-02-17T14:09:24.983Z","user":5}
-[0mPOST /api/sla [32m201[0m 6.962 ms - 779[0m
-{"action":"create_sla","entity":"sla","entityId":8,"level":"info","message":"audit","meta":{"name":"Default"},"timestamp":"2026-02-17T14:09:25.239Z","user":5}
-[0mPOST /api/sla [32m201[0m 18.349 ms - 777[0m
-[0mGET /api/sla [32m200[0m 1.217 ms - 3117[0m
-[0mGET /api/notifications?limit=120 [32m200[0m 1.995 ms - 19694[0m
-[0mGET /api/sla [36m304[0m 1.203 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 7.072 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 7.255 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.002 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.804 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.741 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.023 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 8.171 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.188 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.260 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.246 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.028 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.455 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.465 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.560 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.092 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.329 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.138 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.289 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 8.960 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.550 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.557 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.980 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.118 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 9.371 ms - -[0m
-[0mGET /api/notifications?limit=120 [33m401[0m 0.807 ms - 36[0m
-[0mPOST /api/auth/refresh [32m200[0m 9.211 ms - 266[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.587 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.968 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.094 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.678 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.036 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.663 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.540 ms - -[0m
-[0mGET /api/notifications?limit=300 [32m200[0m 1.675 ms - 19694[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.795 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.356 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.813 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.698 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 11.764 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 8.454 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.367 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 4.944 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.921 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.847 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.783 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 2.548 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.230 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.774 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 2.796 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 3.942 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.989 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 3.742 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.875 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 3.364 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 2.167 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 3.565 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 2.534 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 3.858 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.611 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.690 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.526 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.512 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.343 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.279 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.959 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.510 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 2.202 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.604 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 7.085 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 8.268 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.675 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.680 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.595 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.005 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.659 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.970 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.979 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.795 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.933 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.688 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.682 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 3.257 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.761 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.293 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.854 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.800 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.179 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.496 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.119 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.689 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.404 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.903 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.816 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.392 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.955 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.869 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 5.094 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.728 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.102 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.981 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.429 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.668 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.197 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.461 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.093 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.866 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.883 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.976 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.607 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.190 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.786 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.010 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.433 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.485 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.247 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.855 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 807.341 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 633.077 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 647.696 ms - -[0m
-[0mGET /api/sla [36m304[0m 498.961 ms - -[0m
-[0mGET /api/users?q=&limit=500 [36m304[0m 598.319 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 6.775 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 1.897 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.590 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.794 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.280 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.703 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.384 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.157 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.567 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 0.533 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.324 ms - -[0m
-[0mGET /api/auth/google/config [36m304[0m 0.199 ms - -[0m
-[0mPOST /api/auth/login [33m401[0m 246.509 ms - 31[0m
-[0mPOST /api/auth/login [32m200[0m 253.430 ms - 538[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 176.757 ms - 26298[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.579 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 8.132 ms - 26298[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 48.590 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.083 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 6.021 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 455.670 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 362.935 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 4.924 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 11.384 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.228 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 2.729 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 92.498 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.510 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 258.617 ms - 841322[0m
+[0mGET /api/users/me/presence [36m304[0m 3.902 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.212 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.877 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.225 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 10.713 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 3.261 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.266 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.297 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.225 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 2.245 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 249.666 ms - 841322[0m
+[0mGET /api/users/me/presence [36m304[0m 3.105 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.233 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.229 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 7.800 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.997 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.224 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.287 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 2.472 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.193 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 165.643 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 270.107 ms - 841322[0m
+[0mGET /api/users/me/presence [36m304[0m 6.404 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 2.581 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 83.612 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 2.473 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 94.432 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.594 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.539 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 356.247 ms - 25313035[0m
+[0mGET /api/tickets?pageSize=500 [32m200[0m 458.577 ms - 25313035[0m
+[0mGET /api/assets?pageSize=500 [32m200[0m 134.636 ms - 1687506[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 29.937 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 669.570 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 685.245 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 410.270 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 397.507 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 397.112 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 384.856 ms - -[0m
+[0mGET /api/users/5/permissions [32m200[0m 416.431 ms - 57872[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.957 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.743 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.900 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.063 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 10.001 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.029 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.568 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.534 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.959 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.913 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.582 ms - -[0m
+{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-28T23:05:30.178Z","user":5}
+[0mPATCH /api/users/5 [32m200[0m 67.624 ms - 841478[0m
+[0mGET /api/users?q=&limit=500 [32m200[0m 455.980 ms - 842459[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 2.211 ms - 31178[0m
 [0mGET /api/notifications?limit=120 [36m304[0m 3.872 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.852 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.915 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 2.400 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 5.955 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.422 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.735 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.976 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 3.258 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 6.943 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.902 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 8.361 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 12.007 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.366 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.680 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.532 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.566 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.616 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.873 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.380 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.978 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 0.873 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 13.190 ms - 266[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 2.891 ms - 31242[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.889 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.715 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.468 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.031 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.557 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.898 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.163 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.587 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.879 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.662 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.283 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.236 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.550 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.012 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.131 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.763 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.525 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.204 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.471 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 0.729 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 7.066 ms - 266[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.257 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.835 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.710 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.740 ms - -[0m
+[0mGET /api/sla [33m403[0m 3.308 ms - 21[0m
+[0mGET /api/sla [33m403[0m 1.148 ms - 21[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 1327.650 ms - 25313035[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 52.363 ms - 1687505[0m
+[0mGET /api/users?limit=500 [32m200[0m 2045.497 ms - 842459[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 548.728 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 1369.112 ms - 25313035[0m
+[0mGET /api/users?limit=500 [36m304[0m 1648.298 ms - -[0m
+[INFO] 23:33:36 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:33:38.812Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:33:38.819Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 20.472 ms - -[0m
+[INFO] 23:33:54 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\tickets.schema.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:33:56.182Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:33:56.191Z"}
+[INFO] 23:34:08 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\assets\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:34:10.370Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:34:10.377Z"}
+[INFO] 23:34:20 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\events\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:34:23.176Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:34:23.188Z"}
+[INFO] 23:34:32 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\notifications\notifications.routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:34:34.635Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:34:34.639Z"}
+[INFO] 23:34:56 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:34:58.973Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:34:58.981Z"}
+[INFO] 23:35:12 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\suppliers\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:35:15.311Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:35:15.317Z"}
+[INFO] 23:35:28 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\approvals\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:35:31.136Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:35:31.143Z"}
+[0mGET /api/notifications?limit=120 [32m200[0m 20.874 ms - 31242[0m
+[INFO] 23:35:40 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tasks\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:35:42.774Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:35:42.781Z"}
+[INFO] 23:35:56 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\incidents\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:35:58.789Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:35:58.795Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 42.286 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 550.352 ms - 25313035[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 986.103 ms - 25313035[0m
+[0mGET /api/assets?page=1&pageSize=500 [32m200[0m 445.755 ms - 1687506[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 54.484 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 653.039 ms - 25313035[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 1033.837 ms - 25313035[0m
+[0mGET /api/users?limit=500 [36m304[0m 2472.165 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 542.387 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 545.553 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 43.931 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1142.640 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 1167.728 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 684.553 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 616.097 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 549.538 ms - 25313035[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 42.167 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 904.973 ms - 25313035[0m
+[0mGET /api/suppliers [36m304[0m 1934.448 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1972.147 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 30.599 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 1016.378 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1051.505 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 1042.033 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1070.918 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 5.966 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 661.578 ms - 25313035[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 36.270 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=500 [32m200[0m 698.312 ms - 25313035[0m
+[0mGET /api/assets?page=1&pageSize=500 [36m304[0m 35.897 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 1230.382 ms - -[0m
+[0mGET /api/users?limit=500 [36m304[0m 672.921 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 671.294 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 6.951 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.974 ms - -[0m
+[INFO] 23:37:38 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:37:40.911Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:37:40.924Z"}
+[0mGET /api/notifications?limit=120 [32m200[0m 19.738 ms - 31242[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 798.769 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 657.876 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 612.932 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 620.122 ms - -[0m
+[0mPATCH /api/users/10 [33m403[0m 1.775 ms - 21[0m
+[INFO] 23:38:37 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:38:40.991Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:38:40.999Z"}
+[INFO] 23:39:03 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:39:05.739Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:39:05.746Z"}
+[0mGET /api/notifications?limit=120 [32m200[0m 15.195 ms - 31242[0m
+[INFO] 23:39:20 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:39:22.722Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:39:22.730Z"}
+[INFO] 23:39:28 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:39:30.910Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:39:30.919Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 29.118 ms - -[0m
+[INFO] 23:39:58 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:40:01.334Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:40:01.342Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 17.644 ms - -[0m
+[INFO] 23:40:16 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.controller.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:40:19.519Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:40:19.534Z"}
+[INFO] 23:40:38 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tasks\tasks.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:40:41.236Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:40:41.245Z"}
+[INFO] 23:40:55 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tasks\tasks.controller.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:40:57.719Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:40:57.727Z"}
+[0mGET /api/system/database/config [33m403[0m 9.300 ms - 21[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 14.468 ms - 31242[0m
+[0mGET /api/mail/config [33m403[0m 2.207 ms - 21[0m
+[0mGET /api/users?limit=500 [36m304[0m 644.438 ms - -[0m
+[0mGET /api/mail/config [33m403[0m 1.170 ms - 21[0m
+[0mGET /api/users?limit=500 [36m304[0m 555.122 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.706 ms - -[0m
+[0mGET /api/sla [33m403[0m 1.575 ms - 21[0m
+[INFO] 23:42:02 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\approvals\approvals.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:42:04.534Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:42:04.543Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 21.066 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.791 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.928 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.496 ms - -[0m
+[INFO] 23:44:48 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\approvals\approvals.controller.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:44:50.276Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:44:50.280Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 31.778 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 904.042 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 481.734 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 527.726 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 610.042 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.671 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 2.249 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 18.350 ms - 266[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.890 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 119.090 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 6.831 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 89.639 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.207 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 863.163 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 690.281 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 9.080 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 6.259 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.167 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.517 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 769.251 ms - -[0m
+[0mGET /api/users?q=&limit=500 [36m304[0m 635.694 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.767 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.375 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 4.312 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 80.016 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.226 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.203 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.688 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.294 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 12.160 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 86.719 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 88.114 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.445 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.732 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.449 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.683 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.135 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.602 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 9.266 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 73.132 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 85.890 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.458 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.601 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.682 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.010 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 9.530 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 73.946 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 77.412 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.072 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.100 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 9.770 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 106.199 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 116.668 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.628 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.985 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.569 ms - -[0m
+[INFO] 23:55:54 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\assets\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-02-28T23:55:55.973Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-02-28T23:55:56.000Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 23.335 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.552 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.157 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.103 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.181 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 40.977 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 91.834 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 120.794 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.329 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.457 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.076 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.110 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 1.114 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 28.032 ms - 266[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.660 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.169 ms - -[0m
+[INFO] 00:01:17 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:01:19.820Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:01:19.828Z"}
+[INFO] 00:01:57 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:01:59.375Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:01:59.381Z"}
+[INFO] 00:02:22 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:02:23.947Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:02:23.953Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 22.462 ms - -[0m
+[INFO] 00:03:27 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\middleware\rbac.middleware.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:03:29.297Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:03:29.301Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 25.101 ms - -[0m
+[INFO] 00:03:52 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\middleware\authorize.middleware.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:03:53.842Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:03:53.849Z"}
+[INFO] 00:04:14 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:04:16.357Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:04:16.363Z"}
+[INFO] 00:04:26 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.controller.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:04:28.374Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:04:28.381Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 20.190 ms - -[0m
+[INFO] 00:04:39 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\tickets\ticket.controller.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:04:40.879Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:04:40.887Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 24.328 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.734 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.894 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.303 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.683 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.299 ms - -[0m
+[INFO] 00:11:11 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\app.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:11:13.492Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:11:13.501Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 13.791 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.396 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.443 ms - -[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRole":"AGENT","method":"GET","path":"/api/users/9/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T00:13:05.699Z","user":5}
+[0mGET /api/users/9/permissions [33m403[0m 10.654 ms - 21[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.663 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 14.523 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.174 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.939 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.502 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 1.983 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 18.045 ms - 266[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.664 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.333 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.933 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.090 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.050 ms - -[0m
+[INFO] 00:20:16 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:20:17.958Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:20:17.969Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 14.675 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.257 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.892 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.900 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.330 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.200 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.223 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.776 ms - -[0m
+{"action":"create_ticket","level":"info","message":"audit","meta":{"payload":{"category":"Helpdesk","description":"Auto-created from inbound email.\nMailbox: girikumaran@trustybytes.in\nMessage-Id: <1772324887073.3a3ca769-2eb4-4c7a-a63e-c31b839d2c17@21532664m.render.com>\nFrom: hello@render.com\nDate: Sat, 28 Feb 2026 19:28:07 -0500","status":"New","subcategory":"Email","subject":"Ready to ship with Render?","type":"Incident"}},"ticketId":"TB#00044","timestamp":"2026-03-01T00:28:10.792Z","user":"mail_ingest"}
+{"from":"hello@render.com","level":"info","mailbox":"INBOX","message":"mail_ticket_created","subject":"Ready to ship with Render?","ticketId":"TB#00044","timestamp":"2026-03-01T00:28:11.273Z","uid":"514"}
+[0mGET /api/notifications?limit=120 [32m200[0m 6.148 ms - 31579[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.655 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.575 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 1.255 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 19.203 ms - 266[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 2.695 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.629 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.751 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.592 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.344 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.400 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.495 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.904 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.316 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.778 ms - -[0m
+[INFO] 00:41:00 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\users.controller.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:41:02.016Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:41:02.024Z"}
+[INFO] 00:41:08 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\routes.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T00:41:09.748Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T00:41:09.751Z"}
+[INFO] 00:41:18 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.routes.ts has been modified
+[ERROR] 00:41:19 Error: Route.post() requires a callback function but got a [object Undefined]
+[INFO] 01:06:32 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.controller.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T01:06:34.433Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T01:06:34.439Z"}
+[0mGET /api/notifications?limit=120 [33m401[0m 6.198 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 20.685 ms - 266[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 9.494 ms - 31579[0m
+[INFO] 01:07:28 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T01:07:30.908Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T01:07:30.913Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 23.902 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.487 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.095 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.287 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 3.086 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.965 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.756 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.258 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.074 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.154 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.193 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.565 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.843 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.944 ms - -[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 1.062 ms - 36[0m
+[0mPOST /api/auth/refresh [33m401[0m 19.132 ms - 33[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.475 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.403 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.267 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.249 ms - -[0m
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:29:31.839Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:29:41.849Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:29:51.856Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:30:01.862Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:30:11.870Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:30:21.870Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:30:31.878Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:30:41.879Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:30:51.893Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:31:01.896Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:31:11.899Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:31:21.901Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:31:31.904Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:31:41.907Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:31:51.918Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:32:01.928Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:32:11.937Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:32:21.948Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:32:31.960Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:32:41.973Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:32:51.973Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T01:33:01.988Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:00:43.071Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:00:53.073Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:01:03.076Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:01:13.081Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:01:23.083Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:01:33.085Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:01:43.085Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:01:53.097Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:02:03.100Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:02:13.112Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:02:23.113Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:02:33.126Z"}
+{"error":"getaddrinfo ENOTFOUND imap.gmail.com","level":"warn","message":"mail_ticket_job_failed","timestamp":"2026-03-01T02:02:43.138Z"}
+[0mGET /api/auth/google/config [36m304[0m 0.324 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.236 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.255 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.258 ms - -[0m
+[INFO] 04:21:03 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:21:06.030Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:21:06.043Z"}
+[0mPOST /api/auth/login [33m401[0m 1159.375 ms - 44[0m
+[INFO] 04:21:17 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:21:19.620Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:21:19.627Z"}
+[0mPOST /api/auth/login [33m401[0m 14.669 ms - 44[0m
+[0mPOST /api/auth/login [33m401[0m 2.400 ms - 44[0m
+[0mPOST /api/auth/login [33m401[0m 2.878 ms - 44[0m
+[INFO] 04:21:36 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:21:39.102Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:21:39.107Z"}
+[INFO] 04:21:48 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:21:50.445Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:21:50.453Z"}
+[INFO] 04:21:56 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:21:58.536Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:21:58.546Z"}
+[INFO] 04:22:24 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:22:26.794Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:22:26.802Z"}
+[INFO] 04:23:04 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\middleware\auth.middleware.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:23:06.224Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:23:06.232Z"}
+[INFO] 04:23:51 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\middleware\rbac.middleware.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:23:53.715Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:23:53.722Z"}
+[INFO] 04:25:10 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\authz\policy.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:25:13.644Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:25:13.652Z"}
+[0mPOST /api/auth/login [32m200[0m 432.285 ms - 841434[0m
+[0mGET /api/notifications/state [36m304[0m 21.101 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 25.345 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 7.302 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.622 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 69.188 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 15.321 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 3.449 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 152.977 ms - 86[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 17.661 ms - 57[0m
+[INFO] 04:25:22 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\middleware\permission.middleware.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:25:24.506Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:25:24.515Z"}
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 60.423 ms - 1687544[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 35.418 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 42.491 ms - -[0m
+[INFO] 04:26:09 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\middleware\authorize.middleware.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:26:11.005Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:26:11.011Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 41.275 ms - -[0m
+[INFO] 04:26:30 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\users.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:26:32.453Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:26:32.459Z"}
+[INFO] 04:26:40 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\users.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:26:41.891Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:26:41.898Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 34.161 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 137.836 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 155.513 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 272.007 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 292.332 ms - -[0m
+[0mGET /api/users/me/presence [32m200[0m 10.753 ms - 22[0m
+[0mGET /api/notifications/state [32m200[0m 18.552 ms - 1228[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 13.491 ms - 31579[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 81.245 ms - 1687544[0m
+[0mGET /api/notifications/state [36m304[0m 5.106 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 9.943 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.819 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 34.572 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.371 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 7.930 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.025 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.049 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.738 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 15.860 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 383.129 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 419.152 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 415.661 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 425.171 ms - -[0m
+[0mGET /api/notifications/state [32m200[0m 5.127 ms - 1228[0m
+[0mGET /api/users/me/presence [32m200[0m 15.460 ms - 22[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 44.770 ms - 1687544[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 11.348 ms - 31579[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 37.507 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 3.520 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 6.175 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.721 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.058 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 3.887 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.046 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.237 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.169 ms - -[0m
+[INFO] 04:29:18 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\invitations.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:29:20.915Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:29:20.922Z"}
+[INFO] 04:29:32 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\invitations.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:29:34.904Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:29:34.911Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 47.604 ms - -[0m
+[INFO] 04:29:44 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:29:46.425Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:29:46.432Z"}
+[INFO] 04:30:03 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:30:05.400Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:30:05.407Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 23.880 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 23.107 ms - -[0m
+[INFO] 04:31:02 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\common\middleware\authorize.middleware.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:31:04.388Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:31:04.394Z"}
+[0mGET /api/notifications?limit=120 [36m304[0m 39.580 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 14.142 ms - -[0m
+[INFO] 04:31:48 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\invitations.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:31:50.952Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:31:50.959Z"}
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:31:58.928Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 16.112 ms - 21[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:31:58.960Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 3.614 ms - 21[0m
+[0mGET /api/suppliers [32m200[0m 81.274 ms - 2[0m
+[0mGET /api/suppliers [36m304[0m 8.410 ms - -[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:32:00.338Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 9.027 ms - 21[0m
+[0mGET /api/suppliers [36m304[0m 18.243 ms - -[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:32:00.372Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 2.506 ms - 21[0m
+[0mGET /api/suppliers [36m304[0m 7.504 ms - -[0m
+[0mGET /api/users [31m500[0m 686.243 ms - 106[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 25.234 ms - 57[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 122.050 ms - 57[0m
+[0mGET /api/users [31m500[0m 741.452 ms - 106[0m
+[0mGET /api/users?limit=500 [31m500[0m 1284.505 ms - 106[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 11.091 ms - 57[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 184.510 ms - 57[0m
+[0mGET /api/users?limit=500 [31m500[0m 802.838 ms - 106[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 12.901 ms - -[0m
+[INFO] 04:32:48 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\invitations.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:32:50.944Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:32:50.951Z"}
+[INFO] 04:33:05 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\invitations.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:33:07.948Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:33:07.958Z"}
+[INFO] 04:33:17 Restarting: C:\Users\girim\Desktop\ITSM\backend\src\modules\users\invitations.service.ts has been modified
+[INFO] SLA job initialized (interval 60000ms)
+{"level":"info","message":"Server running on http://localhost:5000","timestamp":"2026-03-01T04:33:19.752Z"}
+{"intervalMs":10000,"level":"info","message":"mail_ticket_job_started","timestamp":"2026-03-01T04:33:19.759Z"}
+[0mGET /api/tickets?pageSize=500 [33m401[0m 12.538 ms - 36[0m
+[0mGET /api/users/me/presence [33m401[0m 1.725 ms - 36[0m
+[0mGET /api/notifications/state [33m401[0m 1.150 ms - 36[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 0.814 ms - 36[0m
+[0mGET /api/tickets?pageSize=500 [33m401[0m 1.094 ms - 36[0m
+[0mGET /api/users/me/presence [33m401[0m 1.126 ms - 36[0m
+[0mGET /api/notifications/state [33m401[0m 1.167 ms - 36[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 1.056 ms - 36[0m
+[0mPOST /api/auth/refresh [32m200[0m 89.691 ms - 330[0m
+[0mPOST /api/auth/refresh [32m200[0m 15.782 ms - 330[0m
+[0mPOST /api/auth/refresh [32m200[0m 16.144 ms - 330[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 23.325 ms - 57[0m
+[0mPOST /api/auth/refresh [32m200[0m 336.037 ms - 330[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.432 ms - -[0m
+[0mPOST /api/auth/refresh [32m200[0m 444.114 ms - 330[0m
+[0mPOST /api/auth/refresh [32m200[0m 422.303 ms - 330[0m
+[0mPOST /api/auth/refresh [32m200[0m 478.322 ms - 330[0m
+[0mGET /api/users/me/presence [36m304[0m 22.900 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 250.959 ms - -[0m
+[0mPOST /api/auth/refresh [32m200[0m 503.383 ms - 330[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 19.390 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 23.120 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 10.191 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 10.296 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 22.761 ms - 86[0m
+[0mGET /api/users/me/presence [33m401[0m 0.818 ms - 36[0m
+[0mGET /api/notifications/state [33m401[0m 0.849 ms - 36[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 1.466 ms - 36[0m
+[0mGET /api/users/me/presence [33m401[0m 1.206 ms - 36[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 0.692 ms - 36[0m
+[0mGET /api/notifications/state [33m401[0m 0.917 ms - 36[0m
+[0mPOST /api/auth/refresh [33m401[0m 1.676 ms - 33[0m
+[0mPOST /api/auth/refresh [33m401[0m 1.182 ms - 33[0m
+[0mPOST /api/auth/refresh [33m401[0m 1.819 ms - 33[0m
+[0mPOST /api/auth/refresh [33m401[0m 0.748 ms - 33[0m
+[0mPOST /api/auth/refresh [33m401[0m 1.525 ms - 33[0m
+[0mPOST /api/auth/refresh [33m401[0m 0.840 ms - 33[0m
+[0mGET /api/notifications/state [33m401[0m 0.681 ms - 36[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 0.676 ms - 36[0m
+[0mGET /api/auth/google/config [32m200[0m 1.214 ms - 53[0m
+[0mGET /api/auth/sso/config [32m200[0m 1.965 ms - 178[0m
+[0mGET /api/auth/google/config [36m304[0m 1.221 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.592 ms - -[0m
+[0mPOST /api/auth/login [33m401[0m 18.536 ms - 31[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 49.209 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 642.540 ms - 841434[0m
+[0mGET /api/notifications/state [32m200[0m 11.292 ms - 1228[0m
+[0mGET /api/notifications/state [36m304[0m 5.120 ms - -[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 115.603 ms - 31579[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 97.876 ms - 86[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.702 ms - -[0m
+[0mGET /api/users/me/presence [32m200[0m 133.953 ms - 22[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.231 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 14.678 ms - 86[0m
+[0mGET /api/users/me/presence [36m304[0m 234.599 ms - -[0m
+[0mGET /api/users [31m500[0m 1196.142 ms - 106[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:43:42.171Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 4.842 ms - 21[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:43:42.201Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 2.736 ms - 21[0m
+[0mGET /api/suppliers [32m200[0m 47.667 ms - 2[0m
+[0mGET /api/suppliers [36m304[0m 6.577 ms - -[0m
+[0mGET /api/users [31m500[0m 985.371 ms - 106[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:43:46.045Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 5.257 ms - 21[0m
+{"action":"access_denied","entity":"authorization","level":"info","message":"audit","meta":{"actualRoles":["AGENT"],"method":"GET","path":"/api/users/5/permissions","requiredRoles":["ADMIN"]},"timestamp":"2026-03-01T04:43:46.064Z","user":5}
+[0mGET /api/users/5/permissions [33m403[0m 2.724 ms - 21[0m
+[0mGET /api/suppliers [36m304[0m 32.100 ms - -[0m
+[0mGET /api/suppliers [36m304[0m 6.688 ms - -[0m
+[0mGET /api/users [31m500[0m 1186.164 ms - 106[0m
+[0mGET /api/users [31m500[0m 901.582 ms - 106[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 44.017 ms - 1687540[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 31.978 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 12.001 ms - 57[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 8.599 ms - 57[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 75.411 ms - -[0m
+[0mGET /api/users?limit=500 [31m500[0m 893.184 ms - 106[0m
+[0mGET /api/users?limit=500 [31m500[0m 792.525 ms - 106[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 9.089 ms - 57[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 86.396 ms - 57[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 25.344 ms - 57[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 100.542 ms - 57[0m
+[0mGET /api/users?limit=500 [31m500[0m 927.708 ms - 106[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 217.339 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 47.334 ms - -[0m
+[0mGET /api/users?limit=500 [31m500[0m 568.003 ms - 106[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.629 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 7.349 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 15.251 ms - 57[0m
+[0mGET /api/notifications/state [36m304[0m 7.124 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 7.495 ms - -[0m
+[0mGET /api/tickets?pageSize=500 [31m500[0m 10.892 ms - 57[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 264.880 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 213.345 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 23.699 ms - 57[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 235.065 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 257.835 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 14.584 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.712 ms - -[0m
+[0mGET /api/tickets?page=1&pageSize=200 [31m500[0m 348.428 ms - 86[0m
+[0mGET /api/users?limit=500 [31m500[0m 893.782 ms - 106[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 212.332 ms - 1687540[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 60.373 ms - -[0m
+[0mGET /api/users?limit=500 [31m500[0m 662.331 ms - 106[0m
+[0mGET /api/users [31m500[0m 761.516 ms - 106[0m
+[0mGET /api/users [31m500[0m 773.469 ms - 106[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 20.893 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.581 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.562 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 17.582 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.914 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.223 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 15.671 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 12.662 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.755 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 4.429 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 18.237 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.949 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.732 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.155 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.121 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 7.900 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.984 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.274 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.950 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 198.627 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 20.708 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 120.563 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 13.902 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.389 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.592 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 8.555 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 165.597 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 2.697 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 213.340 ms - 1687540[0m
+[0mGET /api/notifications/state [36m304[0m 214.767 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 229.668 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 9.377 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 56.831 ms - -[0m
+[0mGET /api/notifications/state [36m304[0m 31.957 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 39.550 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.127 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.827 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.949 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.244 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 11.096 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 12.566 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.601 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 14.618 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 16.119 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.306 ms - -[0m
 [0mGET /api/notifications?limit=120 [36m304[0m 8.892 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 2.258 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.158 ms - -[0m
-[0mGET /api/notifications?limit=300 [36m304[0m 6.483 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.908 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 7.161 ms - 26298[0m
-[0mGET /api/sla [36m304[0m 7.023 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.271 ms - 26298[0m
-[0mGET /api/sla [36m304[0m 1.001 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 386.168 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 380.727 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=20&q= [36m304[0m 2.532 ms - -[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.495 ms - 3893[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 14.458 ms - 3893[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.010 ms - 3893[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 8.830 ms - 26298[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 8.263 ms - 3893[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.892 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.300 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.578 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.612 ms - 26298[0m
-[0mGET /api/sla [36m304[0m 7.331 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 9.695 ms - 26298[0m
-[0mGET /api/sla [36m304[0m 1.114 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 409.486 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 3.262 ms - 26298[0m
-[0mGET /api/users?limit=500 [36m304[0m 426.211 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 14.521 ms - 26298[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 218.734 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 15.666 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 378.518 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 339.844 ms - -[0m
-[0mGET /api/sla [36m304[0m 4.099 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 19.324 ms - 26298[0m
-[0mGET /api/sla [36m304[0m 2.258 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 2.975 ms - 26298[0m
-[0mGET /api/users?limit=500 [36m304[0m 388.742 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 339.479 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 3.118 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 3.176 ms - -[0m
-[0mGET /api/users [36m304[0m 379.506 ms - -[0m
-[0mGET /api/users [36m304[0m 441.997 ms - -[0m
-[0mGET /api/suppliers?q= [33m400[0m 209.402 ms - 95[0m
-[0mGET /api/suppliers?q= [33m400[0m 4.097 ms - 95[0m
-[0mGET /api/users [36m304[0m 385.555 ms - -[0m
-[0mGET /api/users [36m304[0m 357.663 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 8.829 ms - -[0m
-{"action":"update_user","entity":"user","entityId":5,"level":"info","message":"audit","timestamp":"2026-02-17T14:32:37.553Z","user":5}
-[0mPATCH /api/users/5 [32m200[0m 27.298 ms - 639[0m
-[0mGET /api/users [32m200[0m 335.783 ms - 1467[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 6.673 ms - 26289[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 5.678 ms - 26289[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 93.786 ms - -[0m
-[0mGET /api/sla [36m304[0m 4.442 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 23.556 ms - 26289[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 1.513 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.711 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.786 ms - 26289[0m
-[0mGET /api/users?limit=500 [32m200[0m 356.685 ms - 1467[0m
-[0mGET /api/users?limit=500 [36m304[0m 367.058 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 357.852 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 373.389 ms - -[0m
-[0mGET /api/notifications?limit=120 [32m200[0m 2.993 ms - 19833[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 12.724 ms - 26289[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 9.377 ms - 26289[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.268 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.736 ms - 26289[0m
-[0mGET /api/sla [36m304[0m 2.194 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 153.522 ms - 26289[0m
-[0mGET /api/sla [36m304[0m 2.553 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 466.798 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 14.996 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.354 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 498.904 ms - -[0m
-[0mGET /api/users [36m304[0m 433.664 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.243 ms - 26289[0m
-[0mGET /api/users [36m304[0m 452.253 ms - -[0m
-[0mGET /api/sla [36m304[0m 9.808 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 99.057 ms - 26289[0m
-[0mGET /api/sla [36m304[0m 2.764 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 7.501 ms - 26289[0m
-[0mGET /api/users?limit=500 [36m304[0m 433.078 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 10.165 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 34.774 ms - 26289[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 1.369 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 358.580 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 2.727 ms - 26289[0m
-[0mGET /api/users?limit=500 [36m304[0m 426.028 ms - -[0m
-[0mGET /api/sla [36m304[0m 7.260 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 12.602 ms - 26289[0m
-[0mGET /api/sla [36m304[0m 1.172 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 357.768 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 354.282 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 4.973 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.557 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 417.891 ms - -[0m
-[0mGET /api/users [36m304[0m 418.122 ms - -[0m
-[0mGET /api/suppliers?q= [33m400[0m 90.693 ms - 95[0m
-[0mGET /api/users [36m304[0m 357.117 ms - -[0m
-[0mGET /api/suppliers?q= [33m400[0m 352.859 ms - 95[0m
-[0mGET /api/suppliers?q= [33m400[0m 5.963 ms - 95[0m
-[0mGET /api/suppliers?q= [33m400[0m 8.704 ms - 95[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 1.906 ms - -[0m
-[0mGET /api/users [36m304[0m 457.388 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=50&q= [36m304[0m 6.223 ms - -[0m
-[0mGET /api/users [36m304[0m 338.535 ms - -[0m
-[0mGET /api/sla [36m304[0m 10.666 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 41.796 ms - 26289[0m
-[0mGET /api/sla [36m304[0m 0.989 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.257 ms - 26289[0m
-[0mGET /api/users?limit=500 [36m304[0m 477.118 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 319.512 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 6.363 ms - 26289[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 8.967 ms - -[0m
-[0mGET /api/tickets?pageSize=500 [32m200[0m 13.164 ms - 26289[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 6.088 ms - -[0m
-[0mGET /api/assets?pageSize=500 [36m304[0m 3.524 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 364.427 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 381.771 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.695 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.763 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 7.198 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 60.382 ms - 26289[0m
-[0mGET /api/sla [36m304[0m 3.720 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 129.997 ms - 26289[0m
-[0mGET /api/sla [36m304[0m 3.520 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 670.840 ms - -[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 8.923 ms - 2135[0m
-[0mGET /api/assets?page=1&pageSize=20&q= [36m304[0m 4.479 ms - -[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 2.431 ms - 2135[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 11.480 ms - 2135[0m
-[0mGET /api/users?limit=500 [36m304[0m 454.726 ms - -[0m
-{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00011","timestamp":"2026-02-17T14:35:11.591Z","user":5}
-[0mPATCH /api/tickets/TB%2300011 [32m200[0m 143.791 ms - 1091[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 4.079 ms - 2284[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 3.072 ms - 2284[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.261 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 8.556 ms - 2284[0m
-[0mGET /api/notifications?limit=120 [32m200[0m 5.827 ms - 20035[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 2.941 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 7.486 ms - 2284[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 5.444 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 3.247 ms - 2284[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.140 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 7.292 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 13.111 ms - 2284[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.776 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 7.028 ms - 2284[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.196 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 6.636 ms - 2284[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 5.920 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.638 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 4.163 ms - 2284[0m
-{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Medium"}},"ticketId":"TB#00011","timestamp":"2026-02-17T14:37:01.375Z","user":5}
-[0mPATCH /api/tickets/TB%2300011 [32m200[0m 44.403 ms - 1094[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 2.259 ms - 2443[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 3.169 ms - 2443[0m
-{"action":"update_ticket","level":"info","message":"audit","meta":{"changes":{"priority":"Low"}},"ticketId":"TB#00011","timestamp":"2026-02-17T14:37:04.917Z","user":5}
-[0mPATCH /api/tickets/TB%2300011 [32m200[0m 89.975 ms - 1091[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 2.812 ms - 2596[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.167 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 3.292 ms - 2596[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 2.051 ms - 2596[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.165 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 2.549 ms - 2596[0m
-[0mGET /api/notifications?limit=120 [32m200[0m 2.179 ms - 20442[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.931 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 3.339 ms - 2596[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.353 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 2.087 ms - 2596[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.814 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 3.575 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 2.074 ms - 2596[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 5.787 ms - 26282[0m
-[0mGET /api/tickets/TB%2300011 [32m200[0m 4.933 ms - 2596[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 1.985 ms - -[0m
-[0mGET /api/sla [36m304[0m 1.392 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.111 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.666 ms - -[0m
-[0mGET /api/notifications?limit=120 [36m304[0m 2.173 ms - -[0m
-{"action":"create_sla","entity":"sla","entityId":9,"level":"info","message":"audit","meta":{"name":"TrustyBytes"},"timestamp":"2026-02-17T14:39:56.489Z","user":5}
-[0mPOST /api/sla [32m201[0m 23.214 ms - 771[0m
-{"action":"create_sla","entity":"sla","entityId":10,"level":"info","message":"audit","meta":{"name":"TrustyBytes"},"timestamp":"2026-02-17T14:39:56.723Z","user":5}
-[0mPOST /api/sla [32m201[0m 5.140 ms - 772[0m
-{"action":"create_sla","entity":"sla","entityId":11,"level":"info","message":"audit","meta":{"name":"TrustyBytes"},"timestamp":"2026-02-17T14:39:56.804Z","user":5}
-[0mPOST /api/sla [32m201[0m 4.709 ms - 773[0m
-{"action":"create_sla","entity":"sla","entityId":12,"level":"info","message":"audit","meta":{"name":"TrustyBytes"},"timestamp":"2026-02-17T14:39:57.068Z","user":5}
-[0mPOST /api/sla [32m201[0m 22.164 ms - 774[0m
-[0mGET /api/sla [32m200[0m 1.264 ms - 6211[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 85.104 ms - 26282[0m
-[0mGET /api/sla [36m304[0m 2.697 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 67.307 ms - 26282[0m
-[0mGET /api/sla [36m304[0m 3.840 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 568.187 ms - -[0m
-[0mGET /api/assets?page=1&pageSize=20&q= [36m304[0m 8.883 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 515.091 ms - -[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 9.504 ms - 3884[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 4.526 ms - 3884[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 5.559 ms - 3884[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 5.315 ms - 26282[0m
-[0mGET /api/assets?page=1&pageSize=20&q= [36m304[0m 1.774 ms - -[0m
-[0mGET /api/sla [36m304[0m 2.131 ms - -[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 82.276 ms - 3884[0m
-[0mGET /api/users?limit=500 [36m304[0m 407.985 ms - -[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 12.282 ms - 3884[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 2.273 ms - 3884[0m
-[0mGET /api/notifications?limit=120 [32m200[0m 3.023 ms - 21073[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.684 ms - 26282[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 3.966 ms - 3884[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 4.951 ms - 26282[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 3.697 ms - 3884[0m
-[0mGET /api/sla [36m304[0m 5.083 ms - -[0m
-[0mGET /api/tickets?page=1&pageSize=200 [32m200[0m 6.709 ms - 26282[0m
-[0mGET /api/tickets/TB%2300014 [32m200[0m 149.984 ms - 3884[0m
-[0mGET /api/sla [36m304[0m 4.655 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 764.474 ms - -[0m
-[0mGET /api/users?limit=500 [36m304[0m 740.053 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 15.622 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 9.735 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.589 ms - -[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 273.795 ms - 31579[0m
+[0mGET /api/notifications/state [32m200[0m 299.822 ms - 1228[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 339.501 ms - 1687540[0m
+[0mGET /api/notifications/state [32m200[0m 6.242 ms - 1228[0m
+[0mGET /api/users/me/presence [32m200[0m 403.533 ms - 22[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 15.903 ms - 31579[0m
+[0mGET /api/notifications/state [36m304[0m 2.553 ms - -[0m
+[0mGET /api/users/me/presence [32m200[0m 445.121 ms - 22[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 6.845 ms - -[0m
+[0mGET /api/assets?page=1&pageSize=50&q= [32m200[0m 503.552 ms - 1687540[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 12.025 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.817 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 1.449 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.317 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.281 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 739.726 ms - 841441[0m
+[0mGET /api/notifications/state [36m304[0m 7.703 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 14.687 ms - -[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 7.006 ms - 31944[0m
+[0mGET /api/notifications/state [36m304[0m 5.730 ms - -[0m
+[0mGET /api/users/me/presence [36m304[0m 3.115 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 12.514 ms - -[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 5.703 ms - -[0m
+{"action":"list_tickets","level":"info","message":"audit","meta":{"page":1,"pageSize":500,"q":"","role":"ADMIN","total":53},"timestamp":"2026-03-01T04:58:31.405Z","user":5}
+[0mGET /api/tickets?pageSize=500 [32m200[0m 564.969 ms - 25315489[0m
+[0mGET /api/assets?pageSize=500 [32m200[0m 49.231 ms - 1687545[0m
+{"action":"list_tickets","level":"info","message":"audit","meta":{"page":1,"pageSize":500,"q":"","role":"ADMIN","total":53},"timestamp":"2026-03-01T04:58:32.341Z","user":5}
+[0mGET /api/tickets?pageSize=500 [32m200[0m 630.988 ms - 25315489[0m
+[0mGET /api/assets?pageSize=500 [36m304[0m 36.325 ms - -[0m
+[0mGET /api/users?limit=500 [31m500[0m 1041.816 ms - 106[0m
+[0mGET /api/users?limit=500 [31m500[0m 518.411 ms - 106[0m
+[0mGET /api/notifications?limit=120 [33m401[0m 2.753 ms - 36[0m
+[0mPOST /api/auth/refresh [33m401[0m 8.403 ms - 33[0m
+[0mGET /api/auth/google/config [36m304[0m 0.418 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.433 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.379 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.358 ms - -[0m
+[0mGET /api/notifications?limit=120 [32m200[0m 11.317 ms - 31940[0m
+[0mGET /api/notifications?limit=120 [36m304[0m 17.662 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.365 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.260 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.585 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.248 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.828 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.297 ms - -[0m
+[0mGET /api/auth/google/config [36m304[0m 0.295 ms - -[0m
+[0mGET /api/auth/sso/config [36m304[0m 0.274 ms - -[0m
+[0mPOST /api/auth/login [32m200[0m 402.120 ms - 841441[0m

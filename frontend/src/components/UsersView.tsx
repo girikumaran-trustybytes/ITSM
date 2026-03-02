@@ -9,7 +9,6 @@ type UserRow = {
   id: number
   name?: string | null
   email: string
-  personalEmail?: string | null
   workEmail?: string | null
   phone?: string | null
   employeeId?: string | null
@@ -21,6 +20,7 @@ type UserRow = {
   workMode?: string | null
   role: 'ADMIN' | 'AGENT' | 'USER'
   status?: string | null
+  inviteStatus?: string | null
   createdAt?: string
 }
 
@@ -33,7 +33,7 @@ function getInitials(name: string) {
   return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase()
 }
 
-function formatDate(value?: string) {
+function formatDate(value?: string | null) {
   if (!value) return '-'
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return '-'
@@ -68,6 +68,7 @@ export default function UsersView({
   const [loading, setLoading] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [invitingUserId, setInvitingUserId] = useState<number | null>(null)
   const [editingUser, setEditingUser] = useState<UserRow | null>(null)
   const [internalPage, setInternalPage] = useState(1)
   const rowsPerPage = getRowsPerPage()
@@ -84,7 +85,6 @@ export default function UsersView({
   const [selectedProject, setSelectedProject] = useState('all')
   const [filters, setFilters] = useState({
     name: '',
-    personalEmail: '',
     phone: '',
     employeeId: '',
     workEmail: '',
@@ -99,7 +99,6 @@ export default function UsersView({
   const exportMenuRef = useRef<HTMLDivElement | null>(null)
   const [newUser, setNewUser] = useState({
     name: '',
-    personalEmail: '',
     workEmail: '',
     phone: '',
     employeeId: '',
@@ -111,7 +110,7 @@ export default function UsersView({
     designation: '',
   })
   const { widths: colWidths, startResize } = useColumnResize({
-    initialWidths: [30, 180, 160, 120, 120, 180, 140, 160, 160, 140, 140, 120, 90],
+    initialWidths: [30, 180, 120, 120, 180, 140, 160, 160, 140, 140, 120, 90],
     minWidth: 0,
   })
 
@@ -197,18 +196,16 @@ export default function UsersView({
       alert('Full Name is required.')
       return
     }
-    if (!newUser.workEmail.trim() && !newUser.personalEmail.trim()) {
-      alert('Work Email or Personal Email is required.')
+    if (!newUser.workEmail.trim()) {
+      alert('Work Email is required.')
       return
     }
     setIsSaving(true)
     try {
       const workEmail = newUser.workEmail.trim()
-      const personalEmail = newUser.personalEmail.trim()
       await userService.createUser({
         name: newUser.name.trim() || undefined,
-        email: workEmail || personalEmail,
-        personalEmail: personalEmail || undefined,
+        email: workEmail,
         workEmail: workEmail || undefined,
         phone: newUser.phone.trim() || undefined,
         employeeId: newUser.employeeId.trim() || undefined,
@@ -223,7 +220,6 @@ export default function UsersView({
       setShowAddModal(false)
       setNewUser({
         name: '',
-        personalEmail: '',
         workEmail: '',
         phone: '',
         employeeId: '',
@@ -246,7 +242,6 @@ export default function UsersView({
     setEditingUser(u)
     setNewUser({
       name: u.name || '',
-      personalEmail: u.personalEmail || '',
       workEmail: u.workEmail || u.email || '',
       phone: u.phone || '',
       employeeId: u.employeeId || '',
@@ -266,18 +261,16 @@ export default function UsersView({
       alert('Full Name is required.')
       return
     }
-    if (!newUser.workEmail.trim() && !newUser.personalEmail.trim()) {
-      alert('Work Email or Personal Email is required.')
+    if (!newUser.workEmail.trim()) {
+      alert('Work Email is required.')
       return
     }
     setIsSaving(true)
     try {
       const workEmail = newUser.workEmail.trim()
-      const personalEmail = newUser.personalEmail.trim()
       const updated = await userService.updateUser(editingUser.id, {
         name: newUser.name.trim() || undefined,
-        email: workEmail || personalEmail,
-        personalEmail: personalEmail || undefined,
+        email: workEmail,
         workEmail: workEmail || undefined,
         phone: newUser.phone.trim() || undefined,
         employeeId: newUser.employeeId.trim() || undefined,
@@ -289,13 +282,12 @@ export default function UsersView({
         designation: newUser.designation.trim() || undefined,
       })
       setUsers((prev) =>
-        prev.map((u) => (u.id === editingUser.id ? { ...u, ...updated, email: updated?.email || workEmail || personalEmail } : u))
+        prev.map((u) => (u.id === editingUser.id ? { ...u, ...updated, email: updated?.email || workEmail } : u))
       )
       setShowAddModal(false)
       setEditingUser(null)
       setNewUser({
         name: '',
-        personalEmail: '',
         workEmail: '',
         phone: '',
         employeeId: '',
@@ -330,6 +322,32 @@ export default function UsersView({
     }
   }
 
+  const getInviteMode = (u: UserRow): 'invite' | 'reinvite' => {
+    const raw = String(u.inviteStatus || u.status || '').trim().toLowerCase()
+    if (!raw) return 'invite'
+    if (raw === 'active' || raw === 'accepted' || raw.includes('invited') || raw.includes('invite_')) return 'reinvite'
+    return 'invite'
+  }
+
+  const handleInviteAction = async (u: UserRow) => {
+    const mode = getInviteMode(u)
+    setInvitingUserId(u.id)
+    try {
+      if (mode === 'reinvite') {
+        await userService.reinviteUser(u.id)
+        alert(`Re-invite sent to ${u.workEmail || u.email || 'user'}.`)
+      } else {
+        await userService.sendUserInvite(u.id)
+        alert(`Invite sent to ${u.workEmail || u.email || 'user'}.`)
+      }
+      await loadUsers()
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || `Failed to ${mode} user`)
+    } finally {
+      setInvitingUserId(null)
+    }
+  }
+
   const filtered = useMemo(() => {
     const match = (value: string | undefined | null, q: string) =>
       String(value || '').toLowerCase().includes(q.toLowerCase())
@@ -338,7 +356,6 @@ export default function UsersView({
         if (String(u.department || '').toLowerCase() !== selectedProject.toLowerCase()) return false
       }
       if (filters.name && !match(u.name, filters.name) && !match(u.email, filters.name)) return false
-      if (filters.personalEmail && !match(u.personalEmail, filters.personalEmail)) return false
       if (filters.phone && !match(u.phone, filters.phone)) return false
       if (filters.employeeId && !match(u.employeeId, filters.employeeId)) return false
       if (filters.workEmail && !match(u.workEmail || u.email, filters.workEmail)) return false
@@ -426,7 +443,6 @@ export default function UsersView({
 
   const exportFields = [
     { key: 'name', label: 'Full Name' },
-    { key: 'personalEmail', label: 'Personal Email' },
     { key: 'phone', label: 'Phone Number' },
     { key: 'employeeId', label: 'Employee ID' },
     { key: 'workEmail', label: 'Work Email' },
@@ -440,7 +456,6 @@ export default function UsersView({
 
   const normalizeRow = (u: UserRow) => ({
     name: u.name || '',
-    personalEmail: u.personalEmail || '',
     phone: u.phone || '',
     employeeId: u.employeeId || '',
     workEmail: u.workEmail || u.email || '',
@@ -807,17 +822,16 @@ export default function UsersView({
                   <input type="checkbox" aria-label="Select all" checked={allPageSelected} onChange={toggleSelectAll} />
                 </th>
                 <th className="users-col name"><span className="col-resize-handle" onMouseDown={(e) => startResize(1, e)} />Full name</th>
-                <th className="users-col personalEmail"><span className="col-resize-handle" onMouseDown={(e) => startResize(2, e)} />Personal Email</th>
-                <th className="users-col phone"><span className="col-resize-handle" onMouseDown={(e) => startResize(3, e)} />Phone</th>
-                <th className="users-col employeeId"><span className="col-resize-handle" onMouseDown={(e) => startResize(4, e)} />Employee ID</th>
-                <th className="users-col workEmail"><span className="col-resize-handle" onMouseDown={(e) => startResize(5, e)} />Work Email</th>
-                <th className="users-col designation"><span className="col-resize-handle" onMouseDown={(e) => startResize(6, e)} />Designation</th>
-                <th className="users-col department"><span className="col-resize-handle" onMouseDown={(e) => startResize(7, e)} />Department/Project</th>
-                <th className="users-col manager"><span className="col-resize-handle" onMouseDown={(e) => startResize(8, e)} />Reporting Manager</th>
-                <th className="users-col doj"><span className="col-resize-handle" onMouseDown={(e) => startResize(9, e)} />Date of Joining</th>
-                <th className="users-col employmentType"><span className="col-resize-handle" onMouseDown={(e) => startResize(10, e)} />Employment Type</th>
-                <th className="users-col workMode"><span className="col-resize-handle" onMouseDown={(e) => startResize(11, e)} />Work Mode</th>
-                <th className="users-col actions"><span className="col-resize-handle" onMouseDown={(e) => startResize(12, e)} />Actions</th>
+                <th className="users-col phone"><span className="col-resize-handle" onMouseDown={(e) => startResize(2, e)} />Phone</th>
+                <th className="users-col employeeId"><span className="col-resize-handle" onMouseDown={(e) => startResize(3, e)} />Employee ID</th>
+                <th className="users-col workEmail"><span className="col-resize-handle" onMouseDown={(e) => startResize(4, e)} />Work Email</th>
+                <th className="users-col designation"><span className="col-resize-handle" onMouseDown={(e) => startResize(5, e)} />Designation</th>
+                <th className="users-col department"><span className="col-resize-handle" onMouseDown={(e) => startResize(6, e)} />Department/Project</th>
+                <th className="users-col manager"><span className="col-resize-handle" onMouseDown={(e) => startResize(7, e)} />Reporting Manager</th>
+                <th className="users-col doj"><span className="col-resize-handle" onMouseDown={(e) => startResize(8, e)} />Date of Joining</th>
+                <th className="users-col employmentType"><span className="col-resize-handle" onMouseDown={(e) => startResize(9, e)} />Employment Type</th>
+                <th className="users-col workMode"><span className="col-resize-handle" onMouseDown={(e) => startResize(10, e)} />Work Mode</th>
+                <th className="users-col actions"><span className="col-resize-handle" onMouseDown={(e) => startResize(11, e)} />Actions</th>
               </tr>
               {showFilters && (
                 <tr className="users-filter-row">
@@ -827,7 +841,6 @@ export default function UsersView({
                       onClick={() => {
                         setFilters({
                           name: '',
-                          personalEmail: '',
                           phone: '',
                           employeeId: '',
                           workEmail: '',
@@ -850,9 +863,6 @@ export default function UsersView({
                   </th>
                   <th className="users-col name">
                     <input className="table-filter-input" value={filters.name} onChange={(e) => setFilters({ ...filters, name: e.target.value })} />
-                  </th>
-                  <th className="users-col personalEmail">
-                    <input className="table-filter-input" value={filters.personalEmail} onChange={(e) => setFilters({ ...filters, personalEmail: e.target.value })} />
                   </th>
                   <th className="users-col phone">
                     <input className="table-filter-input" value={filters.phone} onChange={(e) => setFilters({ ...filters, phone: e.target.value })} />
@@ -888,7 +898,7 @@ export default function UsersView({
             <tbody>
               {loading && (
                 <tr>
-                  <td className="users-empty" colSpan={13}>Loading users...</td>
+                  <td className="users-empty" colSpan={12}>Loading users...</td>
                 </tr>
               )}
               {!loading && pageItems.map((u) => (
@@ -907,7 +917,6 @@ export default function UsersView({
                       <div className="users-user-name">{u.name || 'Unknown'}</div>
                     </div>
                   </td>
-                  <td className="users-col personalEmail">{u.personalEmail || '-'}</td>
                   <td className="users-col phone">{u.phone || '-'}</td>
                   <td className="users-col employeeId">{u.employeeId || '-'}</td>
                   <td className="users-col workEmail">{u.workEmail || u.email || '-'}</td>
@@ -919,13 +928,20 @@ export default function UsersView({
                   <td className="users-col workMode">{u.workMode || '-'}</td>
                   <td className="users-col actions">
                     <button className="users-action-btn" onClick={() => openEdit(u)}>Edit</button>
+                    <button
+                      className="users-action-btn"
+                      onClick={() => handleInviteAction(u)}
+                      disabled={invitingUserId === u.id}
+                    >
+                      {invitingUserId === u.id ? 'Sending...' : (getInviteMode(u) === 'reinvite' ? 'Reinvite' : 'Invite')}
+                    </button>
                     <button className="users-action-btn" onClick={() => handleDeleteUser(u)}>Delete</button>
                   </td>
                 </tr>
               ))}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td className="users-empty" colSpan={13}>No users found.</td>
+                  <td className="users-empty" colSpan={12}>No users found.</td>
                 </tr>
               )}
             </tbody>
@@ -946,7 +962,6 @@ export default function UsersView({
                 </div>
               </div>
               <div className="users-card-body">
-                <div><strong>Personal Email:</strong> {u.personalEmail || '-'}</div>
                 <div><strong>Phone:</strong> {u.phone || '-'}</div>
                 <div><strong>Employee ID:</strong> {u.employeeId || '-'}</div>
                 <div><strong>Designation:</strong> {u.designation || '-'}</div>
@@ -958,6 +973,13 @@ export default function UsersView({
               </div>
               <div className="users-card-actions">
                 <button className="users-action-btn" onClick={() => openEdit(u)}>Edit</button>
+                <button
+                  className="users-action-btn"
+                  onClick={() => handleInviteAction(u)}
+                  disabled={invitingUserId === u.id}
+                >
+                  {invitingUserId === u.id ? 'Sending...' : (getInviteMode(u) === 'reinvite' ? 'Reinvite' : 'Invite')}
+                </button>
                 <button className="users-action-btn" onClick={() => handleDeleteUser(u)}>Delete</button>
               </div>
             </div>
@@ -987,24 +1009,6 @@ export default function UsersView({
                   />
                 </div>
                 <div className="form-section">
-                  <label className="form-label">Personal Email ID</label>
-                  <input
-                    className="form-input"
-                    value={newUser.personalEmail}
-                    onChange={(e) => setNewUser({ ...newUser, personalEmail: e.target.value })}
-                    placeholder="name@example.com"
-                  />
-                </div>
-                <div className="form-section">
-                  <label className="form-label">Phone Number</label>
-                  <input
-                    className="form-input"
-                    value={newUser.phone}
-                    onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
-                    placeholder="+1 555 000 0000"
-                  />
-                </div>
-                <div className="form-section">
                   <label className="form-label">Employee ID</label>
                   <input
                     className="form-input"
@@ -1014,7 +1018,7 @@ export default function UsersView({
                   />
                 </div>
                 <div className="form-section">
-                  <label className="form-label">Work Email ID</label>
+                  <label className="form-label">Work Email</label>
                   <input
                     className="form-input"
                     value={newUser.workEmail}
@@ -1032,12 +1036,12 @@ export default function UsersView({
                   />
                 </div>
                 <div className="form-section">
-                  <label className="form-label">Department/Project</label>
+                  <label className="form-label">Department</label>
                   <input
                     className="form-input"
                     value={newUser.department}
                     onChange={(e) => setNewUser({ ...newUser, department: e.target.value })}
-                    placeholder="Department or project"
+                    placeholder="Department"
                   />
                 </div>
                 <div className="form-section">
@@ -1071,7 +1075,7 @@ export default function UsersView({
                   </select>
                 </div>
                 <div className="form-section">
-                  <label className="form-label">Work mode</label>
+                  <label className="form-label">Work Mode</label>
                   <select
                     className="form-select"
                     value={newUser.workMode}
@@ -1081,6 +1085,15 @@ export default function UsersView({
                     <option value="Remote">Remote</option>
                     <option value="Hybrid">Hybrid</option>
                   </select>
+                </div>
+                <div className="form-section">
+                  <label className="form-label">Phone Number</label>
+                  <input
+                    className="form-input"
+                    value={newUser.phone}
+                    onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                    placeholder="+1 555 000 0000"
+                  />
                 </div>
               </div>
             </div>

@@ -52,6 +52,11 @@ export async function resetPassword(token: string, password: string) {
   return res.data
 }
 
+export async function acceptInvite(token: string, password: string, name?: string) {
+  const res = await api.post('/auth/accept-invite', { token, password, name })
+  return res.data
+}
+
 export async function verifyMfa(challengeToken: string, code: string, rememberMe = true) {
   const res = await api.post('/auth/mfa/verify', { challengeToken, code })
   const data = res.data
@@ -74,7 +79,23 @@ export function getCurrentUser() {
     const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
     if (!token) return null
     const payload = JSON.parse(atob(token.split('.')[1]))
-    return { id: payload.sub, role: payload.role, name: payload.name, email: payload.email }
+    const roles = Array.isArray(payload.roles)
+      ? payload.roles.map((role: any) => String(role || '').toUpperCase()).filter((role: string) => role.length > 0)
+      : []
+    const role = String(payload.role || roles[0] || '').toUpperCase()
+    if (role && !roles.includes(role)) roles.unshift(role)
+    const permissions = Array.isArray(payload.permissions)
+      ? payload.permissions.map((permission: any) => String(permission || '')).filter((permission: string) => permission.length > 0)
+      : []
+    return {
+      id: payload.sub,
+      role,
+      roles,
+      permissions,
+      tenantId: Number(payload.tenantId || 1),
+      name: payload.name,
+      email: payload.email,
+    }
   } catch {
     return null
   }

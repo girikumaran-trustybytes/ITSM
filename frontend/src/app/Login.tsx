@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { getGoogleConfig, getSsoConfig, login, loginWithGoogle, requestPasswordReset, resetPassword, storeAuthTokens, verifyMfa } from '../services/auth.service'
+import { acceptInvite, getCurrentUser, getGoogleConfig, getSsoConfig, login, loginWithGoogle, requestPasswordReset, resetPassword, storeAuthTokens, verifyMfa } from '../services/auth.service'
 import { buildApiUrl } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
+import { getDefaultItsmRoute } from '../security/policy'
 
 declare global {
   interface Window {
@@ -10,7 +11,7 @@ declare global {
   }
 }
 
-type Mode = 'login' | 'forgot' | 'reset' | 'mfa'
+type Mode = 'login' | 'forgot' | 'reset' | 'mfa' | 'activate'
 type SsoProvider = 'google' | 'zoho' | 'outlook'
 type SsoProviderConfig = { provider: SsoProvider; enabled: boolean; label: string; loginUrl?: string }
 const REMEMBER_ME_STORAGE_KEY = 'rememberMe'
@@ -33,21 +34,37 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [forgotEmail, setForgotEmail] = useState('')
+  const [resetEmail, setResetEmail] = useState('')
   const [resetPasswordValue, setResetPasswordValue] = useState('')
   const [confirmPasswordValue, setConfirmPasswordValue] = useState('')
   const [mfaCode, setMfaCode] = useState('')
   const [mfaChallengeToken, setMfaChallengeToken] = useState('')
+  const [activationName, setActivationName] = useState('')
+  const [activationPassword, setActivationPassword] = useState('')
+  const [activationConfirmPassword, setActivationConfirmPassword] = useState('')
 
   const mode = useMemo<Mode>(() => {
+    if (location.pathname.toLowerCase() === '/auth/account/confirmemail') return 'activate'
     if (location.pathname === '/reset-password') return 'reset'
     const value = searchParams.get('mode')
     if (value === 'forgot' || value === 'reset' || value === 'mfa') return value
     return 'login'
   }, [location.pathname, searchParams])
   const resetToken = searchParams.get('token') || ''
-  const isPortalLogin = location.pathname === '/portal/login'
-  const loginRoute = isPortalLogin ? '/portal/login' : '/login'
-  const postLoginRoute = isPortalLogin ? '/portal/home' : '/dashboard'
+  const resetEmailParam = searchParams.get('email') || ''
+  const activationToken = searchParams.get('token') || ''
+  const activationEmail = searchParams.get('email') || ''
+  const loginRoute = location.pathname === '/portal/login' ? '/portal/login' : '/login'
+
+  const getRoleBasedPostLoginRoute = (authPayload?: any) => {
+    const payloadUser = authPayload?.user || authPayload || {}
+    const tokenUser = (getCurrentUser() || {}) as { role?: unknown; roles?: unknown; permissions?: unknown }
+    return getDefaultItsmRoute({
+      role: payloadUser?.role || tokenUser?.role,
+      roles: payloadUser?.roles || tokenUser?.roles,
+      permissions: payloadUser?.permissions || tokenUser?.permissions,
+    })
+  }
 
   useEffect(() => {
     try {
@@ -61,6 +78,15 @@ export default function Login() {
       // ignore storage access issues
     }
   }, [])
+
+  useEffect(() => {
+    if (mode !== 'reset') return
+    if (resetEmailParam) {
+      setResetEmail(resetEmailParam)
+      return
+    }
+    if (forgotEmail.trim()) setResetEmail(forgotEmail.trim())
+  }, [mode, resetEmailParam, forgotEmail])
 
   const persistRememberChoice = (checked: boolean, emailValue = '') => {
     try {
@@ -117,7 +143,7 @@ export default function Login() {
       const remember = String(searchParams.get('rememberMe') || '1').trim() !== '0'
       storeAuthTokens(accessToken, refreshToken, remember)
       refreshUser()
-      navigate(postLoginRoute, { replace: true })
+      navigate(getRoleBasedPostLoginRoute(), { replace: true })
       return
     }
 
@@ -127,7 +153,7 @@ export default function Login() {
       setMfaChallengeToken(challengeToken)
       if (mfaPreview) setInfo(`MFA code (dev preview): ${mfaPreview}`)
     }
-  }, [navigate, postLoginRoute, refreshUser, searchParams])
+  }, [navigate, refreshUser, searchParams])
 
   async function finishAuth(data: any) {
     if (data?.mfaRequired && data?.challengeToken) {
@@ -141,7 +167,7 @@ export default function Login() {
       return
     }
     refreshUser()
-    navigate(postLoginRoute)
+    navigate(getRoleBasedPostLoginRoute(data), { replace: true })
   }
 
   async function onPasswordLogin(e: React.FormEvent) {
@@ -215,6 +241,10 @@ export default function Login() {
       setError('Missing reset token.')
       return
     }
+    if (!String(resetEmail || '').trim()) {
+      setError('Email is required.')
+      return
+    }
     if (resetPasswordValue.length < 8) {
       setError('Password must be at least 8 characters.')
       return
@@ -226,7 +256,8 @@ export default function Login() {
     try {
       setLoading(true)
       await resetPassword(resetToken, resetPasswordValue)
-      setInfo('Your password has been changed.')
+      setInfo('Your password has been reset.')
+      setResetEmail('')
       setResetPasswordValue('')
       setConfirmPasswordValue('')
     } catch (e: any) {
@@ -246,6 +277,36 @@ export default function Login() {
       await finishAuth(data)
     } catch (e: any) {
       setError(e?.response?.data?.error || e.message || 'Invalid verification code')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onAcceptInvite(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setInfo('')
+    if (!activationToken) {
+      setError('Missing invitation token.')
+      return
+    }
+    if (activationPassword.length < 8) {
+      setError('Password must be at least 8 characters.')
+      return
+    }
+    if (activationPassword !== activationConfirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    try {
+      setLoading(true)
+      await acceptInvite(activationToken, activationPassword, activationName.trim() || undefined)
+      setActivationPassword('')
+      setActivationConfirmPassword('')
+      setInfo('Account activated successfully. Continue to login.')
+      navigate('/login', { replace: true })
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e.message || 'Unable to activate account')
     } finally {
       setLoading(false)
     }
@@ -323,30 +384,63 @@ export default function Login() {
 
   return (
     <div className="login-page">
-      <div className="login-shell">
-        <div className="login-card">
-          <div className="login-app-switch">
-            <button
-              type="button"
-              className={`login-app-switch-btn${!isPortalLogin ? ' active' : ''}`}
-              onClick={() => navigate('/login')}
-            >
-              Agent Application
-            </button>
-            <button
-              type="button"
-              className={`login-app-switch-btn${isPortalLogin ? ' active' : ''}`}
-              onClick={() => navigate('/portal/login')}
-            >
-              User Portal
-            </button>
-          </div>
-        {mode !== 'forgot' && (
-          <div className="login-title">
-            {mode === 'reset' ? 'SET NEW PASSWORD' : mode === 'mfa' ? 'MFA VERIFICATION' : 'LOG IN'}
+      <div className={`login-card${mode === 'activate' ? ' login-card-activate' : ''}`}>
+        {mode === 'activate' && (
+          <div className="invite-activation-wrap">
+            <form onSubmit={onAcceptInvite} className="invite-activation-form">
+              <div className="login-title" style={{ marginBottom: 0 }}>Activate Account</div>
+              <p className="invite-activation-help">Set your account password to complete activation, then log in.</p>
+              {info ? <div className="login-alert login-alert-success">{info}</div> : null}
+              {error ? <div className="login-alert login-alert-error">{error}</div> : null}
+              <label className="invite-activation-label">
+                Work Email
+                <input className="invite-activation-input" value={activationEmail} readOnly />
+              </label>
+              <div className="invite-activation-grid">
+                <label className="invite-activation-label">
+                  Name
+                  <input
+                    className="invite-activation-input"
+                    value={activationName}
+                    onChange={(e) => setActivationName(e.target.value)}
+                    placeholder="Your name"
+                  />
+                </label>
+                <label className="invite-activation-label">
+                  Password
+                  <input
+                    className="invite-activation-input"
+                    type="password"
+                    value={activationPassword}
+                    onChange={(e) => setActivationPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                  />
+                </label>
+              </div>
+              <label className="invite-activation-label">
+                Confirm Password
+                <input
+                  className="invite-activation-input"
+                  type="password"
+                  value={activationConfirmPassword}
+                  onChange={(e) => setActivationConfirmPassword(e.target.value)}
+                  placeholder="Re-enter password"
+                />
+              </label>
+              <button disabled={loading} type="submit" className="invite-activation-submit">
+                {loading ? 'Activating...' : 'Activate & Continue'}
+              </button>
+            </form>
           </div>
         )}
-        {mode !== 'forgot' && info ? <div className="login-alert login-alert-success">{info}</div> : null}
+        {mode !== 'activate' && (
+          <>
+        {mode !== 'forgot' && mode !== 'reset' && (
+          <div className="login-title">
+            {mode === 'mfa' ? 'MFA VERIFICATION' : 'LOG IN'}
+          </div>
+        )}
+        {mode !== 'forgot' && mode !== 'reset' && info ? <div className="login-alert login-alert-success">{info}</div> : null}
         {mode !== 'forgot' && error ? <div className="login-alert login-alert-error">{error}</div> : null}
 
         {mode === 'login' && (
@@ -422,25 +516,71 @@ export default function Login() {
             {error ? <div className="login-alert login-alert-error">{error}</div> : null}
             {info ? (
               <div className="forgot-success">
-                <div><strong>Email sent!</strong> Check your spam/junk folder!</div>
-                <button type="button" className="login-link-btn forgot-success-link" onClick={() => switchMode('login')}>Login</button>
+                <div>Please check your email. Instructions regarding resetting your password have been sent to you.</div>
+                <button type="button" className="login-link-btn forgot-success-link" onClick={() => switchMode('login')}>
+                  Click here to return to the sign-in screen.
+                </button>
               </div>
             ) : null}
-            <div className="forgot-input-wrap">
-              <span className="forgot-mail-icon">👤</span>
-              <input className="forgot-input" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Email Address" />
-            </div>
-            <button disabled={loading} type="submit" className="forgot-submit-btn">Submit</button>
+                        {!info && (
+              <>
+                <div className="forgot-input-wrap">
+                  <span className="forgot-mail-icon">👤</span>
+                  <input className="forgot-input" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="Email Address" />
+                </div>
+                <button disabled={loading} type="submit" className="forgot-submit-btn">Submit</button>
+              </>
+            )}
           </form>
         )}
 
         {mode === 'reset' && (
-          <form onSubmit={onResetPassword} className="login-form">
-            <input className="login-input" type="password" value={resetPasswordValue} onChange={(e) => setResetPasswordValue(e.target.value)} placeholder="New Password" />
-            <input className="login-input" type="password" value={confirmPasswordValue} onChange={(e) => setConfirmPasswordValue(e.target.value)} placeholder="Confirm Password" />
-            <button disabled={loading} type="submit" className="login-submit-btn">Update Password</button>
-            <button type="button" className="login-link-btn" onClick={() => switchMode('login')}>Back to login</button>
-            {info ? <button type="button" className="login-link-btn" onClick={() => switchMode('login')}>Login</button> : null}
+          <form onSubmit={onResetPassword} className="reset-form">
+            {info ? (
+              <div className="reset-success-view">
+                <div className="reset-success-title">Reset Password</div>
+                <div className="reset-success-text">Your password has been reset.</div>
+                <button type="button" className="login-link-btn reset-success-link" onClick={() => switchMode('login')}>
+                  Click here to return to the sign-in screen.
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="reset-title">Reset Password</div>
+                <div className="reset-help">Please enter your email address and a new password.</div>
+                <label className="reset-label">
+                  Email Address
+                  <input
+                    className="reset-input"
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="Email Address"
+                  />
+                </label>
+                <label className="reset-label">
+                  New Password
+                  <input
+                    className="reset-input"
+                    type="password"
+                    value={resetPasswordValue}
+                    onChange={(e) => setResetPasswordValue(e.target.value)}
+                    placeholder="Please enter your new password here"
+                  />
+                </label>
+                <label className="reset-label">
+                  Re-enter New Password
+                  <input
+                    className="reset-input"
+                    type="password"
+                    value={confirmPasswordValue}
+                    onChange={(e) => setConfirmPasswordValue(e.target.value)}
+                    placeholder="Please re-enter your new password here"
+                  />
+                </label>
+                <button disabled={loading} type="submit" className="forgot-submit-btn">{loading ? 'Submitting...' : 'Submit'}</button>
+              </>
+            )}
           </form>
         )}
 
@@ -451,9 +591,11 @@ export default function Login() {
             <button type="button" className="login-link-btn" onClick={() => switchMode('login')}>Cancel</button>
           </form>
         )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   )
 }
+
 

@@ -24,3 +24,13 @@ export async function deleteUser(id: number) {
   const res = await api.delete(`/users/${id}`)
   return res.data
 }
+
+export async function sendUserInvite(id: number) {
+  const res = await api.post(`/users/${id}/send-invite`)
+  return res.data
+}
+
+export async function reinviteUser(id: number) {
+  const res = await api.post(`/users/${id}/service-account/reinvite`)
+  return res.data
+}

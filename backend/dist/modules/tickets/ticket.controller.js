@@ -26,35 +26,46 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteTicket = exports.updateTicket = exports.unassignAsset = exports.assignAsset = exports.resolveTicket = exports.uploadAttachments = exports.privateNote = exports.markResponded = exports.respond = exports.addHistory = exports.transitionTicket = exports.createTicket = exports.getTicket = exports.listTickets = void 0;
 const ticketService = __importStar(require("./ticket.service"));
 const listTickets = async (req, res) => {
-    const page = Number(req.query.page || 1);
-    const pageSize = Number(req.query.pageSize || 20);
-    const q = String(req.query.q || '');
-    const viewer = req.user;
-    const tickets = await ticketService.getTickets({ page, pageSize, q }, viewer);
-    res.json(tickets);
+    try {
+        const page = Number(req.query.page || 1);
+        const pageSize = Number(req.query.pageSize || 20);
+        const q = String(req.query.q || '');
+        const viewer = req.user;
+        const tickets = await ticketService.getTickets({ page, pageSize, q }, viewer);
+        res.json(tickets);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to load tickets' });
+    }
 };
 exports.listTickets = listTickets;
 const getTicket = async (req, res) => {
-    const viewer = req.user;
-    const t = await ticketService.getTicketById(req.params.id, viewer);
-    if (!t)
-        return res.status(404).json({ error: 'Ticket not found' });
-    if (viewer?.role === 'USER' && Array.isArray(t.history)) {
-        ;
-        t.history = t.history.filter((h) => !h.internal);
+    try {
+        const viewer = req.user;
+        const t = await ticketService.getTicketById(req.params.id, viewer);
+        if (!t)
+            return res.status(404).json({ error: 'Ticket not found' });
+        if (viewer?.role === 'USER' && Array.isArray(t.history)) {
+            ;
+            t.history = t.history.filter((h) => !h.internal);
+        }
+        res.json(t);
     }
-    res.json(t);
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to load ticket' });
+    }
 };
 exports.getTicket = getTicket;
 const createTicket = async (req, res) => {
     try {
         const payload = req.validated?.body || req.body;
         const creator = req.user?.id || 'system';
-        const role = req.user?.role;
+        const role = String(req.user?.role || '').toUpperCase();
         if (role === 'USER') {
             payload.requesterId = req.user?.id;
             if (!payload.createdFrom)
                 payload.createdFrom = 'User portal';
+            payload.teamId = 'helpdesk';
         }
         if (!payload.createdFrom)
             payload.createdFrom = 'ITSM Platform';

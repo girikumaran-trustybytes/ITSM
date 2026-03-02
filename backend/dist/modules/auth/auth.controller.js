@@ -23,8 +23,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ssoCallback = exports.ssoStart = exports.ssoConfig = exports.googleConfig = exports.changePassword = exports.refresh = exports.verifyMfa = exports.resetPassword = exports.forgotPassword = exports.loginWithGoogle = exports.login = void 0;
+exports.ssoCallback = exports.ssoStart = exports.ssoConfig = exports.googleConfig = exports.changePassword = exports.refresh = exports.verifyMfa = exports.acceptInvite = exports.resetPassword = exports.forgotPassword = exports.loginWithGoogle = exports.login = void 0;
 const authService = __importStar(require("./auth.service"));
+const invitations_service_1 = require("../users/invitations.service");
 function isDbError(err) {
     const name = err?.constructor?.name ?? '';
     const msg = (err?.message ?? '').toLowerCase();
@@ -101,6 +102,21 @@ async function resetPassword(req, res) {
     }
 }
 exports.resetPassword = resetPassword;
+async function acceptInvite(req, res) {
+    const { token, password, name } = req.body || {};
+    try {
+        const result = await (0, invitations_service_1.acceptInvitationToken)(String(token || ''), String(password || ''), String(name || '') || null, { ipAddress: req.ip });
+        res.json(result);
+    }
+    catch (err) {
+        if (isDbError(err)) {
+            res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' });
+            return;
+        }
+        res.status(err.status || 400).json({ error: err.message || 'Unable to accept invitation' });
+    }
+}
+exports.acceptInvite = acceptInvite;
 async function verifyMfa(req, res) {
     const { challengeToken, code } = req.body;
     try {

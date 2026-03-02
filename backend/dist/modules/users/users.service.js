@@ -105,9 +105,12 @@ async function listUsers(opts = {}) {
     const take = opts.limit && opts.limit > 0 ? opts.limit : 50;
     params.push(take);
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-    const inviteTable = await (0, db_1.queryOne)(`SELECT to_regclass('public.user_invites')::text AS exists`);
-    const hasInvites = Boolean(inviteTable?.exists);
-    if (!hasInvites) {
+    const inviteTables = await (0, db_1.queryOne)(`SELECT
+       to_regclass('public.invitations')::text AS modern_exists,
+       to_regclass('public.user_invites')::text AS legacy_exists`);
+    const hasModernInvites = Boolean(inviteTables?.modern_exists);
+    const hasLegacyInvites = Boolean(inviteTables?.legacy_exists);
+    if (!hasModernInvites && !hasLegacyInvites) {
         return (0, db_1.query)(`SELECT
          u."id",
          u."name",
@@ -134,6 +137,55 @@ async function listUsers(opts = {}) {
        FROM "User" u
        LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
        LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+       ${where}
+       ORDER BY u."name" ASC NULLS LAST, u."email" ASC
+       LIMIT $${params.length}`, params);
+    }
+    if (hasModernInvites) {
+        return (0, db_1.query)(`SELECT
+         u."id",
+         u."name",
+         u."avatarUrl",
+         u."email",
+         u."personalEmail",
+         u."workEmail",
+         u."phone",
+         u."employeeId",
+         u."designation",
+         u."department",
+         u."reportingManager",
+         u."dateOfJoining",
+         u."employmentType",
+         u."workMode",
+         u."role",
+         u."status",
+         COALESCE(up."status", 'Available') AS "presenceStatus",
+         u."createdAt",
+         COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
+         COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
+         COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds",
+         COALESCE(
+           CASE
+             WHEN i.status = 'PENDING' AND i.last_sent_at IS NULL THEN 'invite_pending'
+             WHEN i.status = 'PENDING' THEN 'invited_not_accepted'
+             WHEN i.status = 'ACCEPTED' THEN 'accepted'
+             WHEN i.status = 'EXPIRED' THEN 'expired'
+             WHEN i.status = 'REVOKED' THEN 'revoked'
+             ELSE LOWER(i.status)
+           END,
+           'none'
+         ) AS "inviteStatus"
+       FROM "User" u
+       LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+       LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+       LEFT JOIN LATERAL (
+         SELECT status, last_sent_at
+         FROM invitations
+         WHERE user_id = u."id"
+            OR LOWER(email) = LOWER(u."email")
+         ORDER BY created_at DESC
+         LIMIT 1
+       ) i ON TRUE
        ${where}
        ORDER BY u."name" ASC NULLS LAST, u."email" ASC
        LIMIT $${params.length}`, params);
@@ -244,7 +296,7 @@ async function createUser(payload) {
         site: payload.site ?? null,
         accountManager: payload.accountManager ?? null,
         role: normalizeRole(payload.role),
-        status: String(payload.status || 'ACTIVE').trim().toUpperCase(),
+        status: 'INVITED',
     };
     const explicitServiceAccount = payload.isServiceAccount === true || payload.isServiceAccount === false
         ? Boolean(payload.isServiceAccount)

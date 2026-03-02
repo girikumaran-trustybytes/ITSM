@@ -3,6 +3,7 @@ import { query, queryOne } from '../../db'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import { sendSmtpMail } from '../../services/mail.integration'
+import { getRolePermissions } from '../../common/authz/policy'
 
 const ACCESS_EXPIRES = process.env.ACCESS_TOKEN_EXPIRES_IN || '15m'
 const REFRESH_EXPIRES_DAYS = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS || 7)
@@ -21,11 +22,50 @@ const MS_TENANT_ID = String(process.env.MS_TENANT_ID || process.env.MICROSOFT_TE
 const MS_HOSTED_DOMAIN = String(process.env.MS_HOSTED_DOMAIN || process.env.MICROSOFT_HOSTED_DOMAIN || '').trim().toLowerCase()
 const BACKEND_PUBLIC_URL = String(process.env.BACKEND_PUBLIC_URL || 'http://localhost:5000').trim().replace(/\/+$/, '')
 const SSO_STATE_TTL_MIN = Math.max(5, Number(process.env.SSO_STATE_TTL_MIN || 10))
-const RESET_TOKEN_TTL_MIN = Number(process.env.PASSWORD_RESET_TOKEN_TTL_MIN || 30)
+const RESET_TOKEN_TTL_MIN = 30
 const MFA_CODE_TTL_MIN = Number(process.env.MFA_CODE_TTL_MIN || 10)
 const MFA_REQUIRED_FOR_GOOGLE = String(process.env.MFA_REQUIRED_FOR_GOOGLE || 'false').toLowerCase() === 'true'
 const TOKEN_PEPPER = process.env.AUTH_TOKEN_PEPPER || ACCESS_SECRET
 const FRONTEND_URL = String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '')
+
+function htmlEscape(value: string) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function formatIstDate(date: Date): string {
+  const day = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+  const time = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+  return `${day} at ${time} IST`
+}
+
+function passwordResetMailContext() {
+  const appName = String(process.env.APPLICATION_NAME || process.env.APP_NAME || 'TB ITSM').trim() || 'TB ITSM'
+  const supportTeamName = String(process.env.RESET_SENDER_NAME || `${appName} Support Team`).trim() || `${appName} Support Team`
+  const supportEmail = String(process.env.SUPPORT_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || '').trim()
+  const from = String(process.env.APPLICATION_BASE_MAIL || process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@itsm.local').trim()
+  return { appName, supportTeamName, supportEmail, from }
+}
+
+function toGreetingName(name: string) {
+  const trimmed = String(name || '').trim()
+  if (!trimmed) return 'User'
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
 
 type AuthUser = {
   id: number
@@ -373,17 +413,89 @@ export function getSsoStartUrl(provider: SsoProvider, rememberMe = true) {
   return buildSsoAuthorizationUrl(provider, rememberMe)
 }
 
-async function getPrimaryRole(user: AuthUser) {
+function resolvePrimaryRole(roles: string[], fallbackRole: string | null | undefined) {
+  const normalizedRoles = roles
+    .map((role) => String(role || '').trim().toUpperCase())
+    .filter((role) => role.length > 0)
+  const fallback = String(fallbackRole || '').trim().toUpperCase()
+  const allCandidates = fallback ? Array.from(new Set([...normalizedRoles, fallback])) : normalizedRoles
+  if (allCandidates.includes('ADMIN')) return 'ADMIN'
+  if (allCandidates.includes('AGENT')) return 'AGENT'
+  if (allCandidates.includes('USER')) return 'USER'
+  return allCandidates[0] || 'USER'
+}
+
+async function getAssignedRoles(user: AuthUser) {
+  const mergedRoles: string[] = []
   try {
     const roleRows = await query<any>(
       'SELECT r.role_name FROM roles r INNER JOIN user_roles ur ON r.role_id = ur.role_id WHERE ur.user_id = $1 ORDER BY r.role_id ASC',
       [user.id]
     )
-    if (roleRows.length > 0) return String(roleRows[0].role_name || 'USER')
+    if (roleRows.length > 0) {
+      mergedRoles.push(
+        ...roleRows
+        .map((row) => String(row?.role_name || '').trim().toUpperCase())
+        .filter((role) => role.length > 0)
+      )
+    }
   } catch {
     // Legacy RBAC tables may not exist in some environments.
   }
-  return String(user.role || 'USER')
+  try {
+    const serviceAccount = await queryOne<{ enabled: boolean }>(
+      'SELECT "enabled" FROM "ServiceAccounts" WHERE "userId" = $1 LIMIT 1',
+      [user.id]
+    )
+    if (serviceAccount?.enabled) mergedRoles.push('AGENT')
+  } catch {
+    // Ignore when ServiceAccounts table is unavailable.
+  }
+  const fallback = String(user.role || '').trim().toUpperCase()
+  if (fallback) mergedRoles.push(fallback)
+  const deduped = Array.from(new Set(mergedRoles))
+  return deduped.length > 0 ? deduped : ['USER']
+}
+
+async function getEffectivePermissions(userId: number, role: string, roles: string[]) {
+  const fallback = getRolePermissions({ role, roles }).map((permission) => String(permission || '').trim()).filter((permission) => permission.length > 0)
+  try {
+    const roleNames = roles.length > 0 ? roles : [role]
+    const roleRows = await query<{ role_id: number }>(
+      `SELECT DISTINCT r.role_id
+       FROM roles r
+       WHERE UPPER(r.role_name) = ANY($1::text[])`,
+      [roleNames.map((name) => String(name || '').trim().toUpperCase()).filter((name) => name.length > 0)]
+    )
+    const roleIds = roleRows.map((row) => Number(row.role_id)).filter((id) => Number.isFinite(id) && id > 0)
+    if (roleIds.length === 0) return fallback
+
+    const rows = await query<{ permission_key: string; role_allowed: boolean | null; override_allowed: boolean | null }>(
+      `SELECT
+         p.permission_key,
+         BOOL_OR(rp.allowed) AS role_allowed,
+         MAX(uo.allowed::int)::boolean AS override_allowed
+       FROM permissions p
+       LEFT JOIN role_permissions rp
+         ON rp.permission_id = p.permission_id
+        AND rp.role_id = ANY($1::int[])
+       LEFT JOIN user_permissions_override uo
+         ON uo.permission_id = p.permission_id
+        AND uo.user_id = $2
+       GROUP BY p.permission_id, p.permission_key`,
+      [roleIds, userId]
+    )
+
+    const resolved = rows
+      .filter((row) => (row.override_allowed !== null ? Boolean(row.override_allowed) : Boolean(row.role_allowed)))
+      .map((row) => String(row.permission_key || '').trim())
+      .filter((permission) => permission.length > 0)
+
+    if (resolved.length === 0) return fallback
+    return Array.from(new Set(resolved))
+  } catch {
+    return fallback
+  }
 }
 
 async function ensureDefaultUserRole(userId: number) {
@@ -402,10 +514,12 @@ async function ensureDefaultUserRole(userId: number) {
 }
 
 async function issueTokens(user: AuthUser): Promise<TokenResponse> {
-  const role = await getPrimaryRole(user)
+  const roles = await getAssignedRoles(user)
+  const role = resolvePrimaryRole(roles, user.role)
+  const permissions = await getEffectivePermissions(user.id, role, roles)
   const name = safeDisplayName(user)
   const accessToken = (jwt as any).sign(
-    { sub: user.id, email: user.email, name, role },
+    { sub: user.id, email: user.email, name, role, roles, permissions },
     ACCESS_SECRET as any,
     { expiresIn: ACCESS_EXPIRES }
   )
@@ -625,14 +739,55 @@ export async function forgotPassword(email: string) {
     expiresAt,
   ])
 
-  const appBase = String(FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')
-  const resetUrl = `${appBase}/reset-password?token=${encodeURIComponent(rawToken)}`
+  const resetBase = String(process.env.PASSWORD_RESET_BASE_URL || process.env.RESET_PASSWORD_BASE_URL || 'http://localhost:3000').trim()
+  const appBase = String(resetBase || FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '')
+  const resetUrl = `${appBase}/#/reset-password?token=${encodeURIComponent(rawToken)}&email=${encodeURIComponent(user.email)}`
+  const displayName = toGreetingName(safeDisplayName(user))
+  const expiresTextIst = formatIstDate(expiresAt)
+  const mailCtx = passwordResetMailContext()
+  const subject = `${mailCtx.appName} Password Reset Request`
+  const supportLine = mailCtx.supportEmail
+    ? `If you did not request a password reset, please ignore this email and report it to ${mailCtx.supportEmail}.`
+    : `If you did not request a password reset, please ignore this email.`
+  const text = [
+    `Dear ${displayName},`,
+    ``,
+    `We received a request to reset the password for your ${mailCtx.appName} account.`,
+    ``,
+    `To set a new password and regain access to your account, please click the Reset Password button below:`,
+    ``,
+    `Reset Password`,
+    ``,
+    `${resetUrl}`,
+    ``,
+    `Please note that this password reset link will expire on ${expiresTextIst}. We recommend completing the reset process before this time.`,
+    ``,
+    supportLine,
+    ``,
+    `Best regards,`,
+    `${mailCtx.supportTeamName}`,
+  ].join('\n')
+  const html = `
+    <div style="font-family:Segoe UI,Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px;background:#ffffff;color:#111827;line-height:1.5">
+      <p style="margin:0 0 16px 0">Dear ${htmlEscape(displayName)},</p>
+      <p style="margin:0 0 16px 0">We received a request to reset the password for your <strong>${htmlEscape(mailCtx.appName)}</strong> account.</p>
+      <p style="margin:0 0 12px 0">To set a new password and regain access to your account, please click the <strong>Reset Password</strong> button below:</p>
+      <p style="margin:0 0 18px 0">
+        <a href="${htmlEscape(resetUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:11px 20px;border-radius:999px;font-weight:700">Reset Password</a>
+      </p>
+      <p style="margin:0 0 16px 0;color:#4b5563">Please note that this password reset link will expire on ${htmlEscape(expiresTextIst)}. We recommend completing the reset process before this time.</p>
+      <p style="margin:0 0 18px 0;color:#4b5563">${htmlEscape(supportLine)}</p>
+      <p style="margin:0">Best regards,<br/>${htmlEscape(mailCtx.supportTeamName)}</p>
+    </div>
+  `
   let delivery = 'email'
   try {
     await sendSmtpMail({
       to: user.email,
-      subject: 'ITSM Password Reset',
-      text: `Use this link to reset your password (valid for ${RESET_TOKEN_TTL_MIN} minutes): ${resetUrl}`,
+      from: mailCtx.from,
+      subject,
+      text,
+      html,
     })
   } catch (err: any) {
     if (String(process.env.NODE_ENV || '').toLowerCase() === 'production') throw err
@@ -711,10 +866,12 @@ export async function refresh(refreshToken: string) {
     )
     if (!user) throw new Error('User not found')
 
-    const role = await getPrimaryRole(user)
+    const roles = await getAssignedRoles(user)
+    const role = resolvePrimaryRole(roles, user.role)
+    const permissions = await getEffectivePermissions(user.id, role, roles)
     const name = safeDisplayName(user)
     const accessToken = (jwt as any).sign(
-      { sub: user.id, email: user.email, name, role },
+      { sub: user.id, email: user.email, name, role, roles, permissions },
       ACCESS_SECRET as any,
       { expiresIn: ACCESS_EXPIRES }
     )

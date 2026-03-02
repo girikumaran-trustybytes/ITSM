@@ -25,9 +25,16 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateStatus = exports.listByTicket = exports.createTask = void 0;
 const service = __importStar(require("./tasks.service"));
+const ticket_service_1 = require("../tickets/ticket.service");
+async function ensureTicketVisibility(ticketRef, viewer) {
+    const ticket = await (0, ticket_service_1.getTicketById)(ticketRef, viewer);
+    if (!ticket)
+        throw { status: 403, message: 'Forbidden' };
+}
 async function createTask(req, res) {
     try {
         const ticketId = String(req.params.ticketId || '');
+        await ensureTicketVisibility(ticketId, req.user);
         const { name, assignedToId } = req.body;
         const task = await service.createTask(ticketId, name, assignedToId);
         res.status(201).json(task);
@@ -40,6 +47,7 @@ exports.createTask = createTask;
 async function listByTicket(req, res) {
     try {
         const ticketId = String(req.params.ticketId || '');
+        await ensureTicketVisibility(ticketId, req.user);
         const list = await service.listTasksByTicket(ticketId);
         res.json(list);
     }
@@ -51,6 +59,10 @@ exports.listByTicket = listByTicket;
 async function updateStatus(req, res) {
     try {
         const taskId = Number(req.params.taskId);
+        const currentTask = await service.getTaskById(taskId);
+        if (!currentTask)
+            return res.status(404).json({ error: 'Task not found' });
+        await ensureTicketVisibility(String(currentTask.ticketId), req.user);
         const { status } = req.body;
         const updated = await service.updateTaskStatus(taskId, status);
         res.json(updated);

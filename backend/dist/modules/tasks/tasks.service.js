@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateTaskStatus = exports.listTasksByTicket = exports.createTask = void 0;
+exports.getTaskById = exports.updateTaskStatus = exports.listTasksByTicket = exports.createTask = void 0;
 const db_1 = require("../../db");
 async function resolveTicketDbId(ticketRef) {
     const raw = String(ticketRef || '').trim();
@@ -39,3 +39,7 @@ async function updateTaskStatus(taskId, status) {
     return rows[0] ?? null;
 }
 exports.updateTaskStatus = updateTaskStatus;
+async function getTaskById(taskId) {
+    return (0, db_1.queryOne)('SELECT * FROM "Task" WHERE "id" = $1', [taskId]);
+}
+exports.getTaskById = getTaskById;

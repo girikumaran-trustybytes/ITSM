@@ -1,8 +1,14 @@
 import axios from 'axios'
 
-function normalizeApiBase(rawBase: string) {
+declare global {
+  interface Window {
+    __API_BASE__?: string
+  }
+}
+
+function normalizeApiBase(rawBase: string, fallback = 'http://localhost:5000/api') {
   const trimmed = String(rawBase || '').trim()
-  if (!trimmed) return 'http://localhost:5000/api'
+  if (!trimmed) return fallback
   const noTrailingSlash = trimmed.replace(/\/+$/, '')
   if (/^https?:\/\//i.test(noTrailingSlash) && !noTrailingSlash.endsWith('/api')) {
     return `${noTrailingSlash}/api`
@@ -10,7 +16,26 @@ function normalizeApiBase(rawBase: string) {
   return noTrailingSlash
 }
 
-const BASE = normalizeApiBase(import.meta.env.VITE_API_BASE || '')
+function resolveApiBase() {
+  const env = (import.meta as any).env || {}
+  const isDev = Boolean(env.DEV)
+  const defaultBase = isDev ? '/api' : 'http://localhost:5000/api'
+  const envBase = normalizeApiBase(env.VITE_API_BASE || '', defaultBase)
+  if (typeof window === 'undefined') return envBase
+
+  const runtimeBase = normalizeApiBase(String(window.__API_BASE__ || ''), '')
+  if (runtimeBase) return runtimeBase
+
+  // In dev, avoid stale persisted overrides breaking local proxyed API calls.
+  if (!isDev) {
+    const storedBase = normalizeApiBase(String(window.localStorage.getItem('itsm.api.base') || ''), '')
+    if (storedBase) return storedBase
+  }
+
+  return envBase
+}
+
+let BASE = resolveApiBase()
 
 const api = axios.create({
   baseURL: BASE,
@@ -31,6 +56,7 @@ function isPublicEndpoint(url: string) {
     url.includes('/auth/sso/config') ||
     url.includes('/auth/forgot-password') ||
     url.includes('/auth/reset-password') ||
+    url.includes('/auth/accept-invite') ||
     url.includes('/auth/mfa/verify') ||
     url.includes('/auth/refresh')
   )
@@ -64,7 +90,7 @@ api.interceptors.request.use((config) => {
   // Prevent sending protected API calls without auth; keep public auth endpoints accessible.
   if (!isPublicEndpoint(url)) {
     const onLoginRoute = typeof window !== 'undefined'
-      && (window.location.pathname === '/login' || window.location.pathname === '/portal/login')
+      && window.location.pathname === '/login'
     if (typeof window !== 'undefined' && !onLoginRoute) {
       window.location.href = '/login'
     }
@@ -101,7 +127,7 @@ api.interceptors.response.use(
         sessionStorage.removeItem('accessToken');
         sessionStorage.removeItem('refreshToken');
         const onLoginRoute = typeof window !== 'undefined'
-          && (window.location.pathname === '/login' || window.location.pathname === '/portal/login')
+          && window.location.pathname === '/login'
         if (!onLoginRoute) {
           window.location.href = '/login';
         }

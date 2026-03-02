@@ -2,7 +2,10 @@ import React from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
+import { canShowPortalSwitchToItsm } from '../../security/policy'
 import { getUserAvatarUrl, getUserInitials } from '../../utils/avatar'
+import { getMyPresence, putMyPresence } from '../../services/presence.service'
+import { getStoredPresenceStatus, normalizePresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from '../../utils/presence'
 
 export default function PortalHome() {
   const { user, logout } = useAuth()
@@ -10,7 +13,56 @@ export default function PortalHome() {
   const location = useLocation()
   const initials = getUserInitials(user, 'U')
   const avatarUrl = getUserAvatarUrl(user)
+  const canSwitchToItsm = canShowPortalSwitchToItsm(user)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [showPresenceMenu, setShowPresenceMenu] = useState(false)
+  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
+  const presenceHydratedRef = React.useRef(false)
+  const lastRemotePresenceRef = React.useRef<PresenceStatus | null>(null)
+
+  React.useEffect(() => {
+    setStoredPresenceStatus(presenceStatus)
+    if (!presenceHydratedRef.current || !user?.id) return
+    if (lastRemotePresenceRef.current === presenceStatus) return
+    putMyPresence(presenceStatus)
+      .then((res) => {
+        lastRemotePresenceRef.current = normalizePresenceStatus(res?.status)
+      })
+      .catch(() => undefined)
+  }, [presenceStatus, user?.id])
+
+  React.useEffect(() => {
+    let cancelled = false
+    const hydratePresence = async () => {
+      presenceHydratedRef.current = false
+      lastRemotePresenceRef.current = null
+      const local = getStoredPresenceStatus()
+      setPresenceStatus(local)
+      if (!user?.id) {
+        presenceHydratedRef.current = true
+        return
+      }
+      try {
+        const res = await getMyPresence()
+        if (cancelled) return
+        const next = normalizePresenceStatus(res?.status)
+        lastRemotePresenceRef.current = next
+        setPresenceStatus(next)
+        setStoredPresenceStatus(next)
+      } catch {
+        // fallback to local value on API failure
+      } finally {
+        if (!cancelled) presenceHydratedRef.current = true
+      }
+    }
+    hydratePresence()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  const activePresence = presenceStatuses.find((item) => item.value === presenceStatus) || presenceStatuses[0]
+  const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
   const switchToAgentApp = () => {
     const map: Record<string, string> = {
       '/portal/home': '/',
@@ -32,7 +84,7 @@ export default function PortalHome() {
             <button className="portal-nav-link" onClick={() => navigate('/portal/tickets')}>My Tickets</button>
             <button className="portal-nav-link" onClick={() => navigate('/portal/assets')}>My Devices</button>
           </nav>
-          <div className="portal-profile" onClick={() => setProfileOpen((v) => !v)}>
+          <div className="portal-profile" onClick={() => { setProfileOpen((v) => !v); setShowPresenceMenu(false) }}>
             <div className="portal-profile-name">{user?.name || 'User'}</div>
             <div className="portal-avatar unified-user-avatar">
               {avatarUrl ? <img src={avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
@@ -85,21 +137,51 @@ export default function PortalHome() {
       {profileOpen && (
         <div className="portal-profile-overlay" onClick={() => setProfileOpen(false)}>
           <aside className="portal-profile-panel" onClick={(e) => e.stopPropagation()}>
-            <button className="portal-profile-close" onClick={() => setProfileOpen(false)} aria-label="Close">x</button>
+            <button className="portal-profile-close" onClick={() => { setProfileOpen(false); setShowPresenceMenu(false) }} aria-label="Close">x</button>
             <div className="portal-profile-header">
               <div className="portal-profile-avatar">{initials}</div>
               <div>
                 <div className="portal-profile-title">{user?.name || 'User'}</div>
                 <div className="portal-profile-email">{user?.email || 'user@example.com'}</div>
-                <div className="portal-profile-status">
-                  <span className="portal-status-dot" />
-                  Available
+                <div className="profile-panel-status-wrap">
+                  <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
+                    <span
+                      className={`profile-panel-status-indicator ${presenceDotClass}`}
+                      style={{ ['--presence-color' as any]: activePresence.color }}
+                    />
+                    {presenceStatus}
+                  </button>
+                  {showPresenceMenu && (
+                    <div className="profile-panel-status-menu">
+                      {presenceStatuses.map((item) => (
+                        <button
+                          key={item.value}
+                          className={`profile-panel-status-option${item.value === presenceStatus ? ' active' : ''}`}
+                          onClick={() => {
+                            setPresenceStatus(item.value)
+                            setShowPresenceMenu(false)
+                          }}
+                        >
+                          <span
+                            className={`profile-panel-status-indicator ${item.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'}`}
+                            style={{ ['--presence-color' as any]: item.color }}
+                          />
+                          <span className="profile-panel-status-option-main">
+                            <span className="profile-panel-status-option-title">{item.value}</span>
+                          </span>
+                          <span className="profile-panel-status-option-check" aria-hidden="true">
+                            {item.value === presenceStatus ? '✓' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
             <div className="portal-profile-links">
-              <button onClick={() => { setProfileOpen(false); navigate('/security') }}>Account &amp; Password</button>
-              <button onClick={() => { setProfileOpen(false); switchToAgentApp() }}>Switch to Agent Application</button>
+              <button onClick={() => { setProfileOpen(false); setShowPresenceMenu(false); navigate('/security') }}>Account &amp; Password</button>
+              {canSwitchToItsm ? <button onClick={() => { setProfileOpen(false); setShowPresenceMenu(false); switchToAgentApp() }}>Switch to Agent Application</button> : null}
               <button onClick={() => { logout(); navigate('/login') }}>Log out</button>
             </div>
           </aside>

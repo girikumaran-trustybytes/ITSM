@@ -1191,7 +1191,6 @@ export default function AdminView(_props: AdminViewProps) {
   const [ticketQueueModalOpen, setTicketQueueModalOpen] = useState(false)
   const [ticketQueueTargetId, setTicketQueueTargetId] = useState('')
   const [ticketQueueLabelInput, setTicketQueueLabelInput] = useState('')
-  const [ticketQueueServiceAccountInput, setTicketQueueServiceAccountInput] = useState('')
   const [ticketQueueVisibilityInput, setTicketQueueVisibilityInput] = useState('ADMIN,AGENT')
   const [ticketQueueModalError, setTicketQueueModalError] = useState('')
   const [assetCategoryModalMode, setAssetCategoryModalMode] = useState<AssetCategoryModalMode | null>(null)
@@ -2215,7 +2214,6 @@ export default function AdminView(_props: AdminViewProps) {
     setTicketQueueModalMode(null)
     setTicketQueueTargetId('')
     setTicketQueueLabelInput('')
-    setTicketQueueServiceAccountInput('')
     setTicketQueueVisibilityInput('ADMIN,AGENT')
     setTicketQueueModalError('')
   }
@@ -2223,7 +2221,6 @@ export default function AdminView(_props: AdminViewProps) {
     const target = leftPanelConfig.ticketQueues.find((q) => q.id === id)
     if (!target) return
     setTicketQueueLabelInput(target.label)
-    setTicketQueueServiceAccountInput(target.serviceAccount || '')
     setTicketQueueVisibilityInput((target.visibilityRoles || []).join(',') || 'ADMIN,AGENT')
   }
   const handleTicketQueueAdd = () => {
@@ -2232,7 +2229,6 @@ export default function AdminView(_props: AdminViewProps) {
     setTicketQueueModalError('')
     setTicketQueueTargetId('')
     setTicketQueueLabelInput('')
-    setTicketQueueServiceAccountInput('')
     setTicketQueueVisibilityInput('ADMIN,AGENT')
   }
   const handleTicketQueueEdit = () => {
@@ -2242,7 +2238,6 @@ export default function AdminView(_props: AdminViewProps) {
     if (!leftPanelConfig.ticketQueues.length) {
       setTicketQueueTargetId('')
       setTicketQueueLabelInput('')
-      setTicketQueueServiceAccountInput('')
       setTicketQueueVisibilityInput('ADMIN,AGENT')
       setTicketQueueModalError('No ticket queue available.')
       return
@@ -2274,15 +2269,13 @@ export default function AdminView(_props: AdminViewProps) {
       }
       const exists = leftPanelConfig.ticketQueues.some((q) => q.label.trim().toLowerCase() === label.toLowerCase())
       if (exists) return setTicketQueueModalError(`Queue "${label}" already exists.`)
-      const serviceAccount = ticketQueueServiceAccountInput.trim()
-      if (!serviceAccount) return setTicketQueueModalError('Service account is required.')
       const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
       persistQueueConfig({
         ...leftPanelConfig,
         ticketQueues: [...leftPanelConfig.ticketQueues, {
           id: `tq-${Date.now()}`,
           label,
-          serviceAccount,
+          serviceAccount: '',
           visibilityRoles,
         }],
       })
@@ -2300,13 +2293,11 @@ export default function AdminView(_props: AdminViewProps) {
       }
       const duplicate = leftPanelConfig.ticketQueues.some((q) => q.id !== target.id && q.label.trim().toLowerCase() === label.toLowerCase())
       if (duplicate) return setTicketQueueModalError(`Queue "${label}" already exists.`)
-      const serviceAccount = ticketQueueServiceAccountInput.trim()
-      if (!serviceAccount) return setTicketQueueModalError('Service account is required.')
       const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
       persistQueueConfig({
         ...leftPanelConfig,
         ticketQueues: leftPanelConfig.ticketQueues.map((q) => q.id === target.id
-          ? { ...q, label, serviceAccount, visibilityRoles }
+          ? { ...q, label, visibilityRoles }
           : q),
       })
       closeTicketQueueModal()
@@ -4204,7 +4195,7 @@ export default function AdminView(_props: AdminViewProps) {
                   {queueSettingsView === 'ticket' ? (
                     <>
                       <h3 style={{ marginTop: 0 }}>Ticket Team Queues</h3>
-                      <p>Create/edit/delete queues with service account (app user) and visibility scope.</p>
+                      <p>Create/edit/delete queues and manage visibility scope.</p>
                       <div className="admin-settings-toolbar-actions">
                         <button className="admin-settings-ghost" onClick={handleTicketQueueAdd}>Add Queue</button>
                         <button className="admin-settings-ghost" onClick={handleTicketQueueEdit}>Edit Queue</button>
@@ -4240,14 +4231,6 @@ export default function AdminView(_props: AdminViewProps) {
                                   value={ticketQueueLabelInput}
                                   onChange={(e) => setTicketQueueLabelInput(e.target.value)}
                                   placeholder="L1 Team, L2 Team, Accounts Team, HR Team"
-                                />
-                              </label>
-                              <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Service account</span>
-                                <input
-                                  value={ticketQueueServiceAccountInput}
-                                  onChange={(e) => setTicketQueueServiceAccountInput(e.target.value)}
-                                  placeholder="app.user"
                                 />
                               </label>
                               <label className="admin-field-row" style={{ marginTop: 10 }}>
@@ -4294,7 +4277,7 @@ export default function AdminView(_props: AdminViewProps) {
                           <div key={queue.id} className="admin-queue-rule-row">
                             <span>{queue.label}</span>
                             <small>
-                              App User: {queue.serviceAccount || 'Not set'} | Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
+                              Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
                             </small>
                           </div>
                         ))}

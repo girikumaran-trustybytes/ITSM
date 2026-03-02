@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import * as authService from './auth.service'
+import { acceptInvitationToken } from '../users/invitations.service'
 
 function isDbError(err: any): boolean {
   const name = err?.constructor?.name ?? ''
@@ -72,6 +73,20 @@ export async function resetPassword(req: Request, res: Response) {
       return
     }
     res.status(400).json({ error: err.message || 'Unable to reset password' })
+  }
+}
+
+export async function acceptInvite(req: Request, res: Response) {
+  const { token, password, name } = req.body || {}
+  try {
+    const result = await acceptInvitationToken(String(token || ''), String(password || ''), String(name || '') || null, { ipAddress: req.ip })
+    res.json(result)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 400).json({ error: err.message || 'Unable to accept invitation' })
   }
 }
 

@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { forgotPassword, login, loginWithGoogle, refresh, resetPassword, verifyMfa, changePassword, googleConfig, ssoConfig, ssoStart, ssoCallback } from './auth.controller'
+import { forgotPassword, login, loginWithGoogle, refresh, resetPassword, verifyMfa, changePassword, googleConfig, ssoConfig, ssoStart, ssoCallback, acceptInvite } from './auth.controller'
 import { authenticateJWT } from '../../common/middleware/auth.middleware'
 
 const router = Router()
@@ -12,6 +12,7 @@ router.get('/sso/:provider/start', ssoStart)
 router.get('/sso/:provider/callback', ssoCallback)
 router.post('/forgot-password', forgotPassword)
 router.post('/reset-password', resetPassword)
+router.post('/accept-invite', acceptInvite)
 router.post('/mfa/verify', verifyMfa)
 router.post('/refresh', refresh)
 router.post('/change-password', authenticateJWT, changePassword)

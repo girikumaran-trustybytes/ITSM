@@ -11,7 +11,7 @@ function buildAssetWhere(opts: {
   const params: any[] = []
   if (opts.q) {
     params.push(`%${opts.q}%`)
-    conditions.push(`("assetId" ILIKE $${params.length} OR "name" ILIKE $${params.length} OR "serial" ILIKE $${params.length} OR "category" ILIKE $${params.length} OR "supplier" ILIKE $${params.length})`)
+    conditions.push(`("assetId" ILIKE $${params.length} OR "serial" ILIKE $${params.length} OR "category" ILIKE $${params.length} OR "supplier" ILIKE $${params.length})`)
   }
   if (opts.status) {
     params.push(opts.status)

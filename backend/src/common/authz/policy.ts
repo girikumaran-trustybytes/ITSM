@@ -123,12 +123,15 @@ export function normalizeRole(input: unknown): SystemRole {
 
 export function getRolePermissions(roleInput: unknown): PermissionKey[] {
   const explicitPermissions = extractPermissions(roleInput)
-  if (explicitPermissions.length > 0) return explicitPermissions as PermissionKey[]
-
   const roles = extractRoles(roleInput)
-  if (roles.length === 0) return ROLE_PERMISSION_MAP.GUEST
+  if (roles.length === 0) {
+    return explicitPermissions.length > 0 ? (explicitPermissions as PermissionKey[]) : ROLE_PERMISSION_MAP.GUEST
+  }
 
   const merged = new Set<PermissionKey>()
+  for (const permission of explicitPermissions) {
+    merged.add(permission as PermissionKey)
+  }
   for (const role of roles) {
     for (const permission of ROLE_PERMISSION_MAP[role] || []) merged.add(permission)
   }

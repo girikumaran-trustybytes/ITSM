@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { query, queryOne, withClient } from '../../db'
 import { auditLog } from '../../common/logger/logger'
 import { sendSmtpMail } from '../../services/mail.integration'
+import { enforceProtectedAdminRoleByUserId, isProtectedAdminEmail } from './protected-admin'
 
 type PermissionRow = {
   permission_id: number
@@ -26,6 +27,7 @@ type ModuleSeed = {
 
 const predefinedRoles = ['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM'] as const
 type PredefinedRole = typeof predefinedRoles[number]
+const INVITE_TOKEN_TTL_HOURS = 8
 
 const enterpriseModuleSeeds: ModuleSeed[] = [
   { key: 'dashboard', label: 'Dashboard', sortOrder: 1 },
@@ -170,7 +172,10 @@ const defaultQueues: Array<{ key: string; label: string }> = [
 ]
 
 const defaultQueueActions: Array<{ key: string; label: string }> = [
+  { key: 'view', label: 'View' },
+  { key: 'create', label: 'Create' },
   { key: 'access', label: 'Access' },
+  { key: 'edit', label: 'Edit' },
   { key: 'export', label: 'Export' },
   { key: 'accept', label: 'Accept' },
   { key: 'acknowledge', label: 'Acknowledge' },
@@ -193,6 +198,95 @@ function normalizeRoleName(role: string | undefined | null): string {
 
 function normalizeDisplayStatus(inviteStatus: string | null | undefined): 'Active' | 'Invited' {
   return String(inviteStatus || '').trim().toLowerCase() === 'accepted' ? 'Active' : 'Invited'
+}
+
+function normalizeTeamKey(input: any): string {
+  return String(input || '').trim().toLowerCase()
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter((value) => String(value || '').trim().length > 0)))
+}
+
+async function ensureTeamMembershipSchema() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS teams (
+      team_id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      team_key TEXT NOT NULL,
+      team_name TEXT NOT NULL,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, team_key)
+    )
+  `)
+  await query(`
+    CREATE TABLE IF NOT EXISTS team_members (
+      team_id INTEGER NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(team_id, user_id)
+    )
+  `)
+  await query(`CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)`)
+  await query(`
+    INSERT INTO teams (tenant_id, team_key, team_name)
+    SELECT 1, tq.queue_key, tq.queue_label
+    FROM ticket_queues tq
+    ON CONFLICT (tenant_id, team_key) DO UPDATE
+    SET team_name = EXCLUDED.team_name
+  `)
+}
+
+async function syncTeamMembershipWithClient(
+  client: any,
+  userId: number,
+  tenantId: number,
+  teamKeys: string[]
+) {
+  const normalizedTeamKeys = uniqueStrings(teamKeys.map((teamKey) => normalizeTeamKey(teamKey)))
+  if (normalizedTeamKeys.length === 0) {
+    await client.query(
+      `DELETE FROM team_members
+       WHERE user_id = $1
+         AND team_id IN (SELECT team_id FROM teams WHERE tenant_id = $2)`,
+      [userId, tenantId]
+    )
+    return
+  }
+
+  for (const teamKey of normalizedTeamKeys) {
+    await client.query(
+      `INSERT INTO teams (tenant_id, team_key, team_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (tenant_id, team_key) DO UPDATE
+       SET team_name = EXCLUDED.team_name`,
+      [tenantId, teamKey, teamKey.toUpperCase()]
+    )
+  }
+
+  const teamRows = await client.query(
+    `SELECT team_id
+     FROM teams
+     WHERE tenant_id = $1
+       AND team_key = ANY($2::text[])`,
+    [tenantId, normalizedTeamKeys]
+  )
+
+  await client.query(
+    `DELETE FROM team_members
+     WHERE user_id = $1
+       AND team_id IN (SELECT team_id FROM teams WHERE tenant_id = $2)`,
+    [userId, tenantId]
+  )
+
+  for (const row of (teamRows.rows || []) as Array<{ team_id: number }>) {
+    await client.query(
+      `INSERT INTO team_members (team_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (team_id, user_id) DO NOTHING`,
+      [row.team_id, userId]
+    )
+  }
 }
 
 function defaultRoleAllowed(role: string, permission: PermissionRow): boolean {
@@ -637,6 +731,7 @@ export async function ensureRbacSeeded() {
         }
       }
 
+      await enforceProtectedAdminBaseline()
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -853,8 +948,13 @@ export async function upsertUserPermissions(
   actorUserId?: number
 ) {
   await ensureRbacSeeded()
-  const user = await queryOne<{ id: number; role: string }>('SELECT "id", "role" FROM "User" WHERE "id" = $1', [userId])
+  await ensureTeamMembershipSchema()
+  const user = await queryOne<{ id: number; role: string; tenantId: number | null; email: string }>('SELECT "id", "role", "tenantId", "email" FROM "User" WHERE "id" = $1', [userId])
   if (!user) throw { status: 404, message: 'User not found' }
+  if (isProtectedAdminEmail(user.email)) {
+    await enforceProtectedAdminRoleByUserId(userId)
+    return getUserPermissionsSnapshot(userId)
+  }
 
   const allPermissions = await query<PermissionRow>('SELECT permission_id, permission_key, module, action, queue, label FROM permissions')
   const permissionByKey = allPermissions.reduce<Record<string, PermissionRow>>((acc, row) => {
@@ -877,7 +977,7 @@ export async function upsertUserPermissions(
       }, {})
       : {}
 
-  if (payload.autoSwitchCustom && requestedRole !== 'CUSTOM') {
+  if (payload.autoSwitchCustom && requestedRole !== 'CUSTOM' && requestedRole !== 'ADMIN') {
     const baseline = selectedTemplate ? selectedTemplate.permissions : {}
     const baselineToCompare = Object.keys(baseline).length > 0
       ? baseline
@@ -911,6 +1011,7 @@ export async function upsertUserPermissions(
     acc[row.permission_key] = Boolean(row.allowed)
     return acc
   }, {})
+  const tenantId = Number(user.tenantId || 1)
 
   await withClient(async (client) => {
     await client.query('BEGIN')
@@ -934,6 +1035,38 @@ export async function upsertUserPermissions(
           [userId, permission.permission_id, Boolean(selectedAllowed)]
         )
       }
+
+      const accessTeamKeys = uniqueStrings(
+        allPermissions
+          .filter((permission) => permission.module === 'ticket' && permission.action === 'access' && permission.queue)
+          .filter((permission) => {
+            const explicit = Object.prototype.hasOwnProperty.call(submitted, permission.permission_key)
+              ? submitted[permission.permission_key]
+              : undefined
+            const effectiveAllowed = explicit !== undefined
+              ? Boolean(explicit)
+              : Boolean(baselineTemplateByKey[permission.permission_key])
+            return effectiveAllowed
+          })
+          .map((permission) => normalizeTeamKey(permission.queue))
+      )
+
+      if (accessTeamKeys.length > 0) {
+        await client.query(
+          `INSERT INTO "ServiceAccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
+           VALUES ($1, TRUE, FALSE, $2, NOW(), NOW())
+           ON CONFLICT ("userId")
+           DO UPDATE SET
+             "enabled" = TRUE,
+             "autoUpgradeQueues" = FALSE,
+             "queueIds" = EXCLUDED."queueIds",
+             "updatedAt" = NOW()`,
+          [userId, accessTeamKeys]
+        )
+      } else {
+        await client.query(`DELETE FROM "ServiceAccounts" WHERE "userId" = $1`, [userId])
+      }
+      await syncTeamMembershipWithClient(client, userId, tenantId, accessTeamKeys)
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -1044,6 +1177,22 @@ function trimSlash(url: string) {
   return String(url || '').replace(/\/+$/, '')
 }
 
+function formatInviteExpiryIst(date: Date): string {
+  const day = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+  const time = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+  return `${day} at ${time} IST`
+}
+
 function invitationContext() {
   const appName = String(
     process.env.APPLICATION_NAME ||
@@ -1099,7 +1248,8 @@ async function sendInviteEmail(
   const person = (name || 'User').trim()
   const actorName = String(actor?.name || ctx.senderName).trim()
   const actorEmail = String(actor?.email || ctx.supportEmail).trim()
-  const expiresText = expiresAt.toISOString()
+  const expiresText = formatInviteExpiryIst(expiresAt)
+  const supportEmail = String(ctx.supportEmail || 'girikumaran@trustybytes.in').trim()
   const contactLine = [ctx.supportEmail, ctx.supportPhone].filter(Boolean).join(' | ')
   const signatureContact = contactLine || actorEmail || 'Support Desk'
 
@@ -1112,25 +1262,19 @@ async function sendInviteEmail(
     ? [
       `Dear ${person},`,
       '',
-      `This is a gentle reminder regarding your access to the ${ctx.appName} web application.`,
+      `As per your request, we are sending you a new account reactivation link for your ${ctx.appName} account, as your previous credentials were reported as compromised.`,
       '',
-      `If you have not yet logged in, please use the link below to access the system:`,
-      `${ctx.loginUrl}`,
+      `To secure your account and set a new password, please click the reactivation link below:`,
       '',
-      `Activation / reset link:`,
+      `Reactivate Account`,
       `${inviteLink}`,
-      `Link expiry: ${expiresText}`,
       '',
-      `Username: ${email}`,
-      `Password setup: Use the activation/reset link above to set a new password.`,
+      `For security reasons, this link will expire on ${expiresText}. We strongly recommend completing the reactivation process as soon as possible.`,
       '',
-      `If you need a new activation link or have forgotten your login details, please let us know and we will be happy to assist.`,
+      `If you did not request this reactivation link, please ignore this email and immediately report it to ${supportEmail}.`,
       '',
       `Best regards,`,
-      actorName,
-      ctx.senderTitle,
-      ctx.companyName,
-      signatureContact,
+      `TB Support Team`,
     ].join('\n')
     : [
       `Dear ${person},`,
@@ -1162,20 +1306,17 @@ async function sendInviteEmail(
     ? `
       <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111827">
         <p>Dear ${htmlEscape(person)},</p>
-        <p>This is a gentle reminder regarding your access to the <strong>${htmlEscape(ctx.appName)}</strong> web application.</p>
-        <p>If you have not yet logged in, please use the link below to access the system:<br/>
-        <a href="${htmlEscape(ctx.loginUrl)}">${htmlEscape(ctx.loginUrl)}</a></p>
-        <p><strong>Activation / reset link:</strong><br/>
-        <a href="${htmlEscape(inviteLink)}">${htmlEscape(inviteLink)}</a><br/>
-        <small>Link expiry: ${htmlEscape(expiresText)}</small></p>
-        <p><strong>Username:</strong> ${htmlEscape(email)}<br/>
-        <strong>Password setup:</strong> Use the activation/reset link above to set a new password.</p>
-        <p>If you need a new activation link or have forgotten your login details, please let us know and we will be happy to assist.</p>
+        <p>As per your request, we are sending you a new account reactivation link for your <strong>${htmlEscape(ctx.appName)}</strong> account, as your previous credentials were reported as compromised.</p>
+        <p>To secure your account and set a new password, please click the reactivation link below:</p>
+        <p>
+          <a href="${htmlEscape(inviteLink)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:11px 24px;border-radius:999px;font-weight:600">
+            Reactivate Account
+          </a>
+        </p>
+        <p>For security reasons, this link will expire on ${htmlEscape(expiresText)}. We strongly recommend completing the reactivation process as soon as possible.</p>
+        <p>If you did not request this reactivation link, please ignore this email and immediately report it to <a href="mailto:${htmlEscape(supportEmail)}">${htmlEscape(supportEmail)}</a>.</p>
         <p>Best regards,<br/>
-        ${htmlEscape(actorName)}<br/>
-        ${htmlEscape(ctx.senderTitle)}<br/>
-        ${htmlEscape(ctx.companyName)}<br/>
-        ${htmlEscape(signatureContact)}</p>
+        TB Support Team</p>
       </div>
     `
     : `
@@ -1234,7 +1375,7 @@ export async function sendUserInvite(
 
   const token = crypto.randomBytes(32).toString('hex')
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_HOURS * 60 * 60 * 1000)
 
   await query(
     `INSERT INTO user_invites (user_id, token_hash, expires_at, status, sent_at)

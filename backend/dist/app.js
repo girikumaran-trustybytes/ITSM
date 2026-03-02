@@ -8,7 +8,12 @@ const cors_1 = __importDefault(require("cors"));
 const morgan_1 = __importDefault(require("morgan"));
 const routes_1 = __importDefault(require("./routes"));
 const error_middleware_1 = require("./common/middleware/error.middleware");
+const rbac_service_1 = require("./modules/users/rbac.service");
 const app = (0, express_1.default)();
+void (0, rbac_service_1.ensureRbacSeeded)().catch((error) => {
+    // Keep API boot resilient; authorization middleware still has safe fallbacks.
+    console.error('RBAC seed initialization failed:', error);
+});
 app.use((0, cors_1.default)());
 app.use(express_1.default.json({ limit: '50mb' }));
 app.use((0, morgan_1.default)('dev'));

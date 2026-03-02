@@ -24,6 +24,8 @@ const baseModulePermissions = [
     { module: 'dashboard', action: 'kpi_view', label: 'KPI View' },
     { module: 'tickets', action: 'view', label: 'View Tickets' },
     { module: 'tickets', action: 'create', label: 'Create Tickets' },
+    { module: 'tickets', action: 'access', label: 'Access Tickets' },
+    { module: 'tickets', action: 'export', label: 'Export Tickets' },
     { module: 'tickets', action: 'edit', label: 'Edit Tickets' },
     { module: 'tickets', action: 'delete', label: 'Delete Tickets' },
     { module: 'tickets', action: 'resolve', label: 'Resolve Tickets' },
@@ -31,14 +33,17 @@ const baseModulePermissions = [
     { module: 'assets', action: 'view', label: 'View Asset' },
     { module: 'assets', action: 'create', label: 'Create Asset' },
     { module: 'assets', action: 'edit', label: 'Edit Asset' },
+    { module: 'assets', action: 'export', label: 'Export Asset' },
     { module: 'assets', action: 'delete', label: 'Delete Asset' },
     { module: 'users', action: 'view', label: 'View User' },
     { module: 'users', action: 'create', label: 'Create User' },
     { module: 'users', action: 'edit', label: 'Edit User' },
+    { module: 'users', action: 'export', label: 'Export User' },
     { module: 'users', action: 'delete', label: 'Delete User' },
     { module: 'suppliers', action: 'view', label: 'View Supplier' },
     { module: 'suppliers', action: 'create', label: 'Create Supplier' },
     { module: 'suppliers', action: 'edit', label: 'Edit Supplier' },
+    { module: 'suppliers', action: 'export', label: 'Export Supplier' },
     { module: 'suppliers', action: 'delete', label: 'Delete Supplier' },
     { module: 'reports', action: 'view', label: 'View Report' },
     { module: 'reports', action: 'edit', label: 'Edit Report' },
@@ -137,6 +142,8 @@ const defaultQueues = [
     { key: 'supplier', label: 'Supplier' },
 ];
 const defaultQueueActions = [
+    { key: 'access', label: 'Access' },
+    { key: 'export', label: 'Export' },
     { key: 'accept', label: 'Accept' },
     { key: 'acknowledge', label: 'Acknowledge' },
     { key: 'email_user', label: 'Email User' },
@@ -155,6 +162,70 @@ function normalizeRoleName(role) {
         return value;
     return 'CUSTOM';
 }
+function normalizeDisplayStatus(inviteStatus) {
+    return String(inviteStatus || '').trim().toLowerCase() === 'accepted' ? 'Active' : 'Invited';
+}
+function normalizeTeamKey(input) {
+    return String(input || '').trim().toLowerCase();
+}
+function uniqueStrings(values) {
+    return Array.from(new Set(values.filter((value) => String(value || '').trim().length > 0)));
+}
+async function ensureTeamMembershipSchema() {
+    await (0, db_1.query)(`
+    CREATE TABLE IF NOT EXISTS teams (
+      team_id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      team_key TEXT NOT NULL,
+      team_name TEXT NOT NULL,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, team_key)
+    )
+  `);
+    await (0, db_1.query)(`
+    CREATE TABLE IF NOT EXISTS team_members (
+      team_id INTEGER NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(team_id, user_id)
+    )
+  `);
+    await (0, db_1.query)(`CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)`);
+    await (0, db_1.query)(`
+    INSERT INTO teams (tenant_id, team_key, team_name)
+    SELECT 1, tq.queue_key, tq.queue_label
+    FROM ticket_queues tq
+    ON CONFLICT (tenant_id, team_key) DO UPDATE
+    SET team_name = EXCLUDED.team_name
+  `);
+}
+async function syncTeamMembershipWithClient(client, userId, tenantId, teamKeys) {
+    const normalizedTeamKeys = uniqueStrings(teamKeys.map((teamKey) => normalizeTeamKey(teamKey)));
+    if (normalizedTeamKeys.length === 0) {
+        await client.query(`DELETE FROM team_members
+       WHERE user_id = $1
+         AND team_id IN (SELECT team_id FROM teams WHERE tenant_id = $2)`, [userId, tenantId]);
+        return;
+    }
+    for (const teamKey of normalizedTeamKeys) {
+        await client.query(`INSERT INTO teams (tenant_id, team_key, team_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (tenant_id, team_key) DO UPDATE
+       SET team_name = EXCLUDED.team_name`, [tenantId, teamKey, teamKey.toUpperCase()]);
+    }
+    const teamRows = await client.query(`SELECT team_id
+     FROM teams
+     WHERE tenant_id = $1
+       AND team_key = ANY($2::text[])`, [tenantId, normalizedTeamKeys]);
+    await client.query(`DELETE FROM team_members
+     WHERE user_id = $1
+       AND team_id IN (SELECT team_id FROM teams WHERE tenant_id = $2)`, [userId, tenantId]);
+    for (const row of (teamRows.rows || [])) {
+        await client.query(`INSERT INTO team_members (team_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (team_id, user_id) DO NOTHING`, [row.team_id, userId]);
+    }
+}
 function defaultRoleAllowed(role, permission) {
     const roleName = normalizeRoleName(role);
     if (roleName === 'ADMIN')
@@ -168,9 +239,7 @@ function defaultRoleAllowed(role, permission) {
             return true;
         if (permission.module === 'users' && permission.action === 'view')
             return true;
-        if (permission.module === 'suppliers' && permission.action === 'view')
-            return true;
-        if (permission.module === 'reports' && permission.action === 'view')
+        if (permission.module === 'suppliers' && ['view', 'create', 'edit', 'delete'].includes(permission.action))
             return true;
         if (permission.module === 'dashboard' && permission.action === 'read')
             return true;
@@ -180,28 +249,14 @@ function defaultRoleAllowed(role, permission) {
             return true;
         if (permission.module === 'user' && permission.action === 'read')
             return true;
-        if (permission.module === 'supplier' && permission.action === 'read')
-            return true;
-        if (permission.module === 'report' && permission.action === 'read')
+        if (permission.module === 'supplier' && ['read', 'create', 'edit', 'delete'].includes(permission.action))
             return true;
         return false;
     }
     if (roleName === 'USER') {
-        if (permission.module === 'dashboard' && permission.action === 'view')
+        if (permission.module === 'tickets' && ['view', 'create', 'edit'].includes(permission.action))
             return true;
-        if (permission.module === 'tickets' && permission.action === 'view')
-            return true;
-        if (permission.module === 'assets' && permission.action === 'view')
-            return true;
-        if (permission.module === 'users' && permission.action === 'view')
-            return true;
-        if (permission.module === 'reports' && permission.action === 'view')
-            return true;
-        if (permission.module === 'dashboard' && permission.action === 'read')
-            return true;
-        if (permission.module === 'asset' && permission.action === 'read')
-            return true;
-        if (permission.module === 'ticket' && permission.action === 'email_user')
+        if (permission.module === 'ticket' && ['email_user', 'note_plus_email', 'internal_note'].includes(permission.action))
             return true;
         return false;
     }
@@ -461,6 +516,16 @@ async function ensureRbacSeeded() {
           PRIMARY KEY(role_id, permission_id)
         );
 
+        CREATE TABLE IF NOT EXISTS user_roles (
+          user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+          role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+          created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(user_id, role_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
+
         CREATE TABLE IF NOT EXISTS modules (
           module_id SERIAL PRIMARY KEY,
           module_key TEXT NOT NULL UNIQUE,
@@ -569,9 +634,29 @@ async function ensureRbacSeeded() {
             const templateRows = await client.query('SELECT template_id, template_key FROM permission_templates');
             for (const roleRow of roleRows.rows) {
                 for (const permission of permissionRows.rows) {
-                    await client.query('INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES ($1, $2, $3) ON CONFLICT (role_id, permission_id) DO NOTHING', [roleRow.role_id, permission.permission_id, defaultRoleAllowed(roleRow.role_name, permission)]);
+                    await client.query(`INSERT INTO role_permissions (role_id, permission_id, allowed)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (role_id, permission_id)
+             DO UPDATE SET allowed = EXCLUDED.allowed`, [roleRow.role_id, permission.permission_id, defaultRoleAllowed(roleRow.role_name, permission)]);
                 }
             }
+            await client.query(`
+        DO $$
+        BEGIN
+          BEGIN
+            INSERT INTO user_roles (user_id, role_id)
+            SELECT u."id", r.role_id
+            FROM "User" u
+            INNER JOIN roles r ON r.role_name = UPPER(COALESCE(u."role"::text, 'USER'))
+            ON CONFLICT (user_id, role_id) DO NOTHING;
+          EXCEPTION
+            WHEN foreign_key_violation THEN
+              -- Legacy installs may still have user_roles.user_id -> app_user(id).
+              -- Skip auto-sync here instead of failing RBAC seed.
+              NULL;
+          END;
+        END $$;
+      `);
             for (const templateRow of templateRows.rows) {
                 for (const permission of permissionRows.rows) {
                     await client.query(`INSERT INTO template_permissions (template_id, permission_id, allowed)
@@ -590,6 +675,27 @@ async function ensureRbacSeeded() {
 }
 exports.ensureRbacSeeded = ensureRbacSeeded;
 async function getLatestInviteStatus(userId) {
+    const modernTable = await (0, db_1.queryOne)(`SELECT to_regclass('public.invitations')::text AS exists`);
+    if (modernTable?.exists) {
+        const modern = await (0, db_1.queryOne)(`SELECT status, last_sent_at
+       FROM invitations
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`, [userId]);
+        if (modern) {
+            const status = String(modern.status || '').toUpperCase();
+            if (status === 'PENDING' && !modern.last_sent_at)
+                return 'invite_pending';
+            if (status === 'PENDING')
+                return 'invited_not_accepted';
+            if (status === 'ACCEPTED')
+                return 'accepted';
+            if (status === 'EXPIRED')
+                return 'expired';
+            if (status === 'REVOKED')
+                return 'revoked';
+        }
+    }
     const row = await (0, db_1.queryOne)('SELECT status FROM user_invites WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1', [userId]);
     return row?.status || 'none';
 }
@@ -658,6 +764,7 @@ async function getUserPermissionsSnapshot(userId) {
        ON uo.permission_id = p.permission_id
       AND uo.user_id = $2
      WHERE p.module = ANY($3::text[])
+        OR p.module = 'ticket'
      ORDER BY p.module, p.queue NULLS FIRST, p.action`, [roleId, user.id, moduleKeys]);
     const roleTemplates = await getRoleTemplates();
     const permissionTemplates = await getPermissionTemplates();
@@ -684,7 +791,7 @@ async function getUserPermissionsSnapshot(userId) {
             name: user.name,
             email: user.email,
             role: normalizeRoleName(user.role),
-            status: user.status,
+            status: normalizeDisplayStatus(inviteStatus),
             inviteStatus,
         },
         roles: predefinedRoles,
@@ -702,7 +809,8 @@ async function getUserPermissionsSnapshot(userId) {
 exports.getUserPermissionsSnapshot = getUserPermissionsSnapshot;
 async function upsertUserPermissions(userId, payload, actorUserId) {
     await ensureRbacSeeded();
-    const user = await (0, db_1.queryOne)('SELECT "id", "role" FROM "User" WHERE "id" = $1', [userId]);
+    await ensureTeamMembershipSchema();
+    const user = await (0, db_1.queryOne)('SELECT "id", "role", "tenantId" FROM "User" WHERE "id" = $1', [userId]);
     if (!user)
         throw { status: 404, message: 'User not found' };
     const allPermissions = await (0, db_1.query)('SELECT permission_id, permission_key, module, action, queue, label FROM permissions');
@@ -724,7 +832,7 @@ async function upsertUserPermissions(userId, payload, actorUserId) {
                 return acc;
             }, {})
             : {};
-    if (payload.autoSwitchCustom && requestedRole !== 'CUSTOM') {
+    if (payload.autoSwitchCustom && requestedRole !== 'CUSTOM' && requestedRole !== 'ADMIN') {
         const baseline = selectedTemplate ? selectedTemplate.permissions : {};
         const baselineToCompare = Object.keys(baseline).length > 0
             ? baseline
@@ -755,6 +863,7 @@ async function upsertUserPermissions(userId, payload, actorUserId) {
         acc[row.permission_key] = Boolean(row.allowed);
         return acc;
     }, {});
+    const tenantId = Number(user.tenantId || 1);
     await (0, db_1.withClient)(async (client) => {
         await client.query('BEGIN');
         try {
@@ -772,6 +881,32 @@ async function upsertUserPermissions(userId, payload, actorUserId) {
            ON CONFLICT (user_id, permission_id)
            DO UPDATE SET allowed = EXCLUDED.allowed`, [userId, permission.permission_id, Boolean(selectedAllowed)]);
             }
+            const accessTeamKeys = uniqueStrings(allPermissions
+                .filter((permission) => permission.module === 'ticket' && permission.action === 'access' && permission.queue)
+                .filter((permission) => {
+                const explicit = Object.prototype.hasOwnProperty.call(submitted, permission.permission_key)
+                    ? submitted[permission.permission_key]
+                    : undefined;
+                const effectiveAllowed = explicit !== undefined
+                    ? Boolean(explicit)
+                    : Boolean(baselineTemplateByKey[permission.permission_key]);
+                return effectiveAllowed;
+            })
+                .map((permission) => normalizeTeamKey(permission.queue)));
+            if (accessTeamKeys.length > 0) {
+                await client.query(`INSERT INTO "ServiceAccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
+           VALUES ($1, TRUE, FALSE, $2, NOW(), NOW())
+           ON CONFLICT ("userId")
+           DO UPDATE SET
+             "enabled" = TRUE,
+             "autoUpgradeQueues" = FALSE,
+             "queueIds" = EXCLUDED."queueIds",
+             "updatedAt" = NOW()`, [userId, accessTeamKeys]);
+            }
+            else {
+                await client.query(`DELETE FROM "ServiceAccounts" WHERE "userId" = $1`, [userId]);
+            }
+            await syncTeamMembershipWithClient(client, userId, tenantId, accessTeamKeys);
             await client.query('COMMIT');
         }
         catch (error) {
@@ -1017,7 +1152,6 @@ async function sendUserInvite(userId, actorUserId, options) {
      VALUES ($1, $2, $3, $4, NOW())`, [userId, tokenHash, expiresAt, 'invited_not_accepted']);
     await (0, db_1.query)('UPDATE "User" SET "status" = $1, "updatedAt" = NOW() WHERE "id" = $2', ['INVITED', userId]);
     const ctx = invitationContext();
-    const inviteLink = `${ctx.appBaseUrl}/activate?token=${token}&user=${userId}`;
     const actor = actorUserId
         ? await (0, db_1.queryOne)('SELECT "name", "email" FROM "User" WHERE "id" = $1', [actorUserId])
         : null;
@@ -1026,6 +1160,9 @@ async function sendUserInvite(userId, actorUserId, options) {
     const recipientEmail = workEmail || primaryEmail;
     if (!recipientEmail)
         throw { status: 400, message: 'User does not have a valid mail ID to send invite' };
+    const activationBase = String(process.env.INVITE_ACTIVATION_BASE_URL || 'http://localhost:3000/#').trim();
+    const root = activationBase.includes('#') ? activationBase : `${activationBase}/#`;
+    const inviteLink = `${root.replace(/\/+$/, '')}/auth/Account/ConfirmEmail?userId=${encodeURIComponent(String(userId))}&token=${encodeURIComponent(token)}&email=${encodeURIComponent(recipientEmail)}`;
     await sendInviteEmail(recipientEmail, user.name, inviteLink, expiresAt, mode, actor);
     await (0, logger_1.auditLog)({
         action: 'invite_sent',

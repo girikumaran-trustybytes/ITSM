@@ -9,7 +9,7 @@ const ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || 'access_secret';
 function mockAuth(req, _res, next) {
     const user = req.header('X-User') || 'anonymous';
     const role = req.header('X-User-Role') || 'guest';
-    req.user = { id: user, role };
+    req.user = { id: user, role, roles: [String(role || '').toUpperCase()], permissions: [] };
     next();
 }
 exports.mockAuth = mockAuth;
@@ -26,7 +26,24 @@ function authenticateJWT(req, res, next) {
     const token = parts[1];
     try {
         const payload = jsonwebtoken_1.default.verify(token, ACCESS_SECRET);
-        req.user = { id: payload.sub, role: payload.role, name: payload.name, email: payload.email };
+        const roles = Array.isArray(payload.roles)
+            ? payload.roles.map((role) => String(role || '').trim().toUpperCase()).filter((role) => role.length > 0)
+            : [];
+        const role = String(payload.role || '').trim().toUpperCase();
+        if (role && !roles.includes(role))
+            roles.unshift(role);
+        const permissions = Array.isArray(payload.permissions)
+            ? payload.permissions.map((permission) => String(permission || '').trim()).filter((permission) => permission.length > 0)
+            : [];
+        req.user = {
+            id: payload.sub,
+            role: role || roles[0] || 'GUEST',
+            roles,
+            permissions,
+            tenantId: Number(payload.tenantId || 1),
+            name: payload.name,
+            email: payload.email,
+        };
         next();
     }
     catch (err) {

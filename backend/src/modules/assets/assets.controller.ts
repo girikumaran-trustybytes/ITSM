@@ -14,7 +14,7 @@ function buildAssetData(body: any, req: Request, isUpdate = false) {
   const set = (key: string, value: any) => { if (value !== undefined) data[key] = value }
 
   set('assetId', body.assetId)
-  set('name', body.name)
+  if (!isUpdate) set('name', body.assetId || body.name || null)
   set('assetType', body.assetType)
   set('category', body.category)
   set('subcategory', body.subcategory || null)
@@ -176,13 +176,12 @@ export async function create(req: Request, res: Response) {
   const body = req.body || {}
   const {
     assetId,
-    name,
     assetType,
     category,
     status,
   } = body
-  if (!assetId || !name || !assetType || !category || !status) {
-    return res.status(400).json({ error: 'Missing required fields: assetId, name, assetType, category, status' })
+  if (!assetId || !assetType || !category || !status) {
+    return res.status(400).json({ error: 'Missing required fields: assetId, assetType, category, status' })
   }
   const created = await svc.createAsset(buildAssetData(body, req))
   // link tickets if provided

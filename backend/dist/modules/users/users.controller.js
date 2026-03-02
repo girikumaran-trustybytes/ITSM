@@ -23,18 +23,29 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.putMyPresence = exports.getMyPresence = exports.markInvitePending = exports.reinviteServiceAccount = exports.sendServiceAccountInvite = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
+exports.putMyPresence = exports.getMyPresence = exports.revokeInvitation = exports.resendInvitation = exports.createInvitation = exports.markInvitePending = exports.reinviteServiceAccount = exports.sendServiceAccountInvite = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
 const svc = __importStar(require("./users.service"));
 const logger_1 = require("../../common/logger/logger");
 const rbacSvc = __importStar(require("./rbac.service"));
+const inviteSvc = __importStar(require("./invitations.service"));
+function normalizeStatusFromInvite(user) {
+    const inviteStatus = String(user?.inviteStatus || '').trim().toLowerCase();
+    const normalized = inviteStatus === 'accepted' ? 'Active' : 'Invited';
+    return { ...user, status: normalized };
+}
 async function list(req, res) {
     try {
-        await rbacSvc.ensureRbacSeeded();
+        try {
+            await rbacSvc.ensureRbacSeeded();
+        }
+        catch (seedErr) {
+            console.warn('RBAC seed skipped for /users list due to seed error:', seedErr);
+        }
         const q = req.query.q ? String(req.query.q) : undefined;
         const limit = req.query.limit ? Number(req.query.limit) : undefined;
         const role = req.query.role ? String(req.query.role) : undefined;
         const users = await svc.listUsers({ q, limit, role });
-        res.json(users);
+        res.json(Array.isArray(users) ? users.map((u) => normalizeStatusFromInvite(u)) : []);
     }
     catch (err) {
         res.status(err.status || 500).json({ error: err.message || 'Failed to list users' });
@@ -48,29 +59,34 @@ async function getOne(req, res) {
     const user = await svc.getUserById(id);
     if (!user)
         return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    res.json(normalizeStatusFromInvite(user));
 }
 exports.getOne = getOne;
 async function create(req, res) {
     try {
         await rbacSvc.ensureRbacSeeded();
         const payload = req.body || {};
+        const actorId = Number(req.user?.id || 0);
         const created = await svc.createUser(payload);
         if (payload.defaultPermissionTemplate) {
             await rbacSvc.upsertUserPermissions(created.id, {
                 templateKey: String(payload.defaultPermissionTemplate),
                 autoSwitchCustom: false,
-            }, Number(req.user?.id || 0));
+            }, actorId);
         }
         const inviteMode = String(payload.inviteMode || '').toLowerCase();
-        if (inviteMode === 'later') {
-            await rbacSvc.markInvitePending(created.id, Number(req.user?.id || 0));
-        }
-        if (inviteMode === 'now') {
-            await rbacSvc.sendUserInvite(created.id, Number(req.user?.id || 0));
-        }
-        await (0, logger_1.auditLog)({ action: 'create_user', entity: 'user', entityId: created.id, user: req.user?.id, meta: { email: created.email, role: created.role } });
-        res.status(201).json(created);
+        const inviteResult = await inviteSvc.inviteExistingUser(created.id, actorId, {
+            mode: 'invite',
+            sendNow: inviteMode === 'now',
+        }, { ipAddress: req.ip });
+        await (0, logger_1.auditLog)({
+            action: 'create_user',
+            entity: 'user',
+            entityId: created.id,
+            user: actorId,
+            meta: { email: created.email, role: created.role, invitationId: inviteResult?.invitationId || null },
+        });
+        res.status(201).json(normalizeStatusFromInvite({ ...created, inviteStatus: inviteResult?.inviteStatus || 'invite_pending' }));
     }
     catch (err) {
         res.status(err.status || 500).json({ error: err.message || 'Failed to create user' });
@@ -89,7 +105,7 @@ async function update(req, res) {
         }
         const updated = await svc.updateUser(id, payload);
         await (0, logger_1.auditLog)({ action: 'update_user', entity: 'user', entityId: updated.id, user: req.user?.id });
-        res.json(updated);
+        res.json(normalizeStatusFromInvite(updated));
     }
     catch (err) {
         res.status(err.status || 500).json({ error: err.message || 'Failed to update user' });
@@ -162,7 +178,7 @@ async function sendInvite(req, res) {
         const id = Number(req.params.id);
         if (!id)
             return res.status(400).json({ error: 'Invalid id' });
-        const result = await rbacSvc.sendUserInvite(id, Number(req.user?.id || 0));
+        const result = await inviteSvc.inviteExistingUser(id, Number(req.user?.id || 0), { mode: 'invite', sendNow: true }, { ipAddress: req.ip });
         res.json(result);
     }
     catch (err) {
@@ -175,8 +191,7 @@ async function sendServiceAccountInvite(req, res) {
         const id = Number(req.params.id);
         if (!id)
             return res.status(400).json({ error: 'Invalid id' });
-        const toEmail = String(req.body?.toEmail || '').trim() || undefined;
-        const result = await rbacSvc.sendServiceAccountInvite(id, Number(req.user?.id || 0), { mode: 'invite', toEmail });
+        const result = await inviteSvc.inviteExistingUser(id, Number(req.user?.id || 0), { mode: 'invite', sendNow: true }, { ipAddress: req.ip });
         res.json(result);
     }
     catch (err) {
@@ -189,8 +204,7 @@ async function reinviteServiceAccount(req, res) {
         const id = Number(req.params.id);
         if (!id)
             return res.status(400).json({ error: 'Invalid id' });
-        const toEmail = String(req.body?.toEmail || '').trim() || undefined;
-        const result = await rbacSvc.sendServiceAccountInvite(id, Number(req.user?.id || 0), { mode: 'reinvite', toEmail });
+        const result = await inviteSvc.inviteExistingUser(id, Number(req.user?.id || 0), { mode: 'reinvite', sendNow: true }, { ipAddress: req.ip });
         res.json(result);
     }
     catch (err) {
@@ -203,14 +217,58 @@ async function markInvitePending(req, res) {
         const id = Number(req.params.id);
         if (!id)
             return res.status(400).json({ error: 'Invalid id' });
-        await rbacSvc.markInvitePending(id, Number(req.user?.id || 0));
-        res.json({ inviteStatus: 'invite_pending' });
+        const result = await inviteSvc.inviteExistingUser(id, Number(req.user?.id || 0), { mode: 'invite', sendNow: false }, { ipAddress: req.ip });
+        res.json({ ...result, inviteStatus: 'invite_pending' });
     }
     catch (err) {
         res.status(err.status || 500).json({ error: err.message || 'Failed to mark invite pending' });
     }
 }
 exports.markInvitePending = markInvitePending;
+async function createInvitation(req, res) {
+    try {
+        const payload = req.body || {};
+        const result = await inviteSvc.createInvitationRequest({
+            email: payload.email,
+            name: payload.name || payload.fullName,
+            roleIds: payload.roleIds || payload.role_ids,
+            roleNames: payload.roleNames,
+            teamIds: payload.teamIds || payload.team_ids,
+            sendNow: payload.sendNow !== false,
+        }, Number(req.user?.id || 0), { ipAddress: req.ip });
+        res.status(201).json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to create invitation' });
+    }
+}
+exports.createInvitation = createInvitation;
+async function resendInvitation(req, res) {
+    try {
+        const invitationId = Number(req.params.invitationId);
+        if (!invitationId)
+            return res.status(400).json({ error: 'Invalid invitation id' });
+        const result = await inviteSvc.resendInvitationById(invitationId, Number(req.user?.id || 0), { ipAddress: req.ip });
+        res.json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to resend invitation' });
+    }
+}
+exports.resendInvitation = resendInvitation;
+async function revokeInvitation(req, res) {
+    try {
+        const invitationId = Number(req.params.invitationId);
+        if (!invitationId)
+            return res.status(400).json({ error: 'Invalid invitation id' });
+        const result = await inviteSvc.revokeInvitationById(invitationId, Number(req.user?.id || 0), { ipAddress: req.ip });
+        res.json(result);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to revoke invitation' });
+    }
+}
+exports.revokeInvitation = revokeInvitation;
 async function getMyPresence(req, res) {
     try {
         const id = Number(req.user?.id || 0);

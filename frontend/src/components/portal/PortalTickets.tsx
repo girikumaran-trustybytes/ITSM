@@ -1,8 +1,11 @@
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { useEffect, useMemo, useState } from 'react'
-import { getTicket, listTickets } from '../../services/ticket.service'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createHistory, getTicket, listTickets } from '../../services/ticket.service'
+import { canShowPortalSwitchToItsm } from '../../security/policy'
 import { getUserAvatarUrl, getUserInitials } from '../../utils/avatar'
+import { getMyPresence, putMyPresence } from '../../services/presence.service'
+import { getStoredPresenceStatus, normalizePresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from '../../utils/presence'
 
 export default function PortalTickets() {
   const { user, logout } = useAuth()
@@ -10,6 +13,7 @@ export default function PortalTickets() {
   const location = useLocation()
   const initials = getUserInitials(user, 'U')
   const avatarUrl = getUserAvatarUrl(user)
+  const canSwitchToItsm = canShowPortalSwitchToItsm(user)
   const [filter, setFilter] = useState('All Tickets')
   const [query, setQuery] = useState('')
   const [selectedTicketId, setSelectedTicketId] = useState<string>('')
@@ -17,8 +21,13 @@ export default function PortalTickets() {
   const [detailsTab, setDetailsTab] = useState<'details' | 'progress'>('progress')
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteDraft, setNoteDraft] = useState('')
+  const [noteSaving, setNoteSaving] = useState(false)
   const [localNotes, setLocalNotes] = useState<Record<string, any[]>>({})
   const [profileOpen, setProfileOpen] = useState(false)
+  const [showPresenceMenu, setShowPresenceMenu] = useState(false)
+  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
+  const presenceHydratedRef = useRef(false)
+  const lastRemotePresenceRef = useRef<PresenceStatus | null>(null)
   const [tickets, setTickets] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -31,6 +40,50 @@ export default function PortalTickets() {
     }
     navigate(map[location.pathname] || '/')
   }
+
+  useEffect(() => {
+    setStoredPresenceStatus(presenceStatus)
+    if (!presenceHydratedRef.current || !user?.id) return
+    if (lastRemotePresenceRef.current === presenceStatus) return
+    putMyPresence(presenceStatus)
+      .then((res) => {
+        lastRemotePresenceRef.current = normalizePresenceStatus(res?.status)
+      })
+      .catch(() => undefined)
+  }, [presenceStatus, user?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    const hydratePresence = async () => {
+      presenceHydratedRef.current = false
+      lastRemotePresenceRef.current = null
+      const local = getStoredPresenceStatus()
+      setPresenceStatus(local)
+      if (!user?.id) {
+        presenceHydratedRef.current = true
+        return
+      }
+      try {
+        const res = await getMyPresence()
+        if (cancelled) return
+        const next = normalizePresenceStatus(res?.status)
+        lastRemotePresenceRef.current = next
+        setPresenceStatus(next)
+        setStoredPresenceStatus(next)
+      } catch {
+        // fallback to local value on API failure
+      } finally {
+        if (!cancelled) presenceHydratedRef.current = true
+      }
+    }
+    hydratePresence()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  const activePresence = presenceStatuses.find((item) => item.value === presenceStatus) || presenceStatuses[0]
+  const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
 
   useEffect(() => {
     const load = async () => {
@@ -128,9 +181,24 @@ export default function PortalTickets() {
       .sort((a: any, b: any) => new Date(b.createdAt || b.time || 0).getTime() - new Date(a.createdAt || a.time || 0).getTime())
   }, [selectedTicketId, selectedTicketDetail, localNotes])
 
-  const addLocalNote = () => {
+  const addLocalNote = async () => {
     const note = noteDraft.trim()
     if (!note || !selectedTicketId) return
+    setNoteSaving(true)
+    try {
+      await createHistory(selectedTicketId, { note })
+      const refreshed = await getTicket(selectedTicketId)
+      setSelectedTicketDetail(refreshed || null)
+      setNoteDraft('')
+      setNoteOpen(false)
+      setDetailsTab('progress')
+      return
+    } catch {
+      // Fall back to local note cache if network persistence fails.
+    } finally {
+      setNoteSaving(false)
+    }
+
     const key = String(selectedTicketId)
     const entry = {
       id: `local-${Date.now()}`,
@@ -158,7 +226,7 @@ export default function PortalTickets() {
             <button className="portal-nav-link active" onClick={() => navigate('/portal/tickets')}>My Tickets</button>
             <button className="portal-nav-link" onClick={() => navigate('/portal/assets')}>My Devices</button>
           </nav>
-          <div className="portal-profile" onClick={() => setProfileOpen(true)}>
+          <div className="portal-profile" onClick={() => { setProfileOpen(true); setShowPresenceMenu(false) }}>
             <div className="portal-profile-name">{user?.name || 'User'}</div>
             <div className="portal-avatar unified-user-avatar">
               {avatarUrl ? <img src={avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
@@ -322,7 +390,9 @@ export default function PortalTickets() {
                             placeholder="Write a note..."
                           />
                           <div className="portal-add-note-actions">
-                            <button type="button" onClick={addLocalNote}>Save Note</button>
+                            <button type="button" onClick={addLocalNote} disabled={noteSaving}>
+                              {noteSaving ? 'Saving...' : 'Save Note'}
+                            </button>
                           </div>
                         </div>
                       )}
@@ -358,23 +428,53 @@ export default function PortalTickets() {
       </section>
 
       {profileOpen && (
-        <div className="portal-profile-overlay" onClick={() => setProfileOpen(false)}>
+        <div className="portal-profile-overlay" onClick={() => { setProfileOpen(false); setShowPresenceMenu(false) }}>
           <aside className="portal-profile-panel" onClick={(e) => e.stopPropagation()}>
-            <button className="portal-profile-close" onClick={() => setProfileOpen(false)} aria-label="Close">x</button>
+            <button className="portal-profile-close" onClick={() => { setProfileOpen(false); setShowPresenceMenu(false) }} aria-label="Close">x</button>
             <div className="portal-profile-header">
               <div className="portal-profile-avatar">{initials}</div>
               <div>
                 <div className="portal-profile-title">{user?.name || 'User'}</div>
                 <div className="portal-profile-email">{user?.email || 'user@example.com'}</div>
-                <div className="portal-profile-status">
-                  <span className="portal-status-dot" />
-                  Available
+                <div className="profile-panel-status-wrap">
+                  <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
+                    <span
+                      className={`profile-panel-status-indicator ${presenceDotClass}`}
+                      style={{ ['--presence-color' as any]: activePresence.color }}
+                    />
+                    {presenceStatus}
+                  </button>
+                  {showPresenceMenu && (
+                    <div className="profile-panel-status-menu">
+                      {presenceStatuses.map((item) => (
+                        <button
+                          key={item.value}
+                          className={`profile-panel-status-option${item.value === presenceStatus ? ' active' : ''}`}
+                          onClick={() => {
+                            setPresenceStatus(item.value)
+                            setShowPresenceMenu(false)
+                          }}
+                        >
+                          <span
+                            className={`profile-panel-status-indicator ${item.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'}`}
+                            style={{ ['--presence-color' as any]: item.color }}
+                          />
+                          <span className="profile-panel-status-option-main">
+                            <span className="profile-panel-status-option-title">{item.value}</span>
+                          </span>
+                          <span className="profile-panel-status-option-check" aria-hidden="true">
+                            {item.value === presenceStatus ? '✓' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
             <div className="portal-profile-links">
-              <button onClick={() => { setProfileOpen(false); navigate('/security') }}>Account &amp; Password</button>
-              <button onClick={() => { setProfileOpen(false); switchToAgentApp() }}>Switch to Agent Application</button>
+              <button onClick={() => { setProfileOpen(false); setShowPresenceMenu(false); navigate('/security') }}>Account &amp; Password</button>
+              {canSwitchToItsm ? <button onClick={() => { setProfileOpen(false); setShowPresenceMenu(false); switchToAgentApp() }}>Switch to Agent Application</button> : null}
               <button onClick={() => { logout(); navigate('/login') }}>Log out</button>
             </div>
           </aside>

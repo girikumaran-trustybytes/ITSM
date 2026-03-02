@@ -57,6 +57,8 @@ async function ensureAuthSchema() {
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleSub" VARCHAR(255)');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "zohoSub" VARCHAR(255)');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "microsoftSub" VARCHAR(255)');
+            await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "tenantId" INTEGER');
+            await (0, db_1.query)('UPDATE "User" SET "tenantId" = 1 WHERE "tenantId" IS NULL');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "is_deleted" BOOLEAN DEFAULT FALSE');
             await (0, db_1.query)('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)');
@@ -317,17 +319,6 @@ function getSsoStartUrl(provider, rememberMe = true) {
     return buildSsoAuthorizationUrl(provider, rememberMe);
 }
 exports.getSsoStartUrl = getSsoStartUrl;
-async function getPrimaryRole(user) {
-    try {
-        const roleRows = await (0, db_1.query)('SELECT r.role_name FROM roles r INNER JOIN user_roles ur ON r.role_id = ur.role_id WHERE ur.user_id = $1 ORDER BY r.role_id ASC', [user.id]);
-        if (roleRows.length > 0)
-            return String(roleRows[0].role_name || 'USER');
-    }
-    catch {
-        // Legacy RBAC tables may not exist in some environments.
-    }
-    return String(user.role || 'USER');
-}
 async function ensureDefaultUserRole(userId) {
     try {
         await (0, db_1.query)(`INSERT INTO user_roles (user_id, role_id)
@@ -340,10 +331,104 @@ async function ensureDefaultUserRole(userId) {
         // Ignore when RBAC tables are not installed.
     }
 }
+function normalizeRoleName(input) {
+    const value = String(input || '').trim().toUpperCase();
+    if (!value)
+        return 'USER';
+    if (value === 'ADMIN' || value === 'ADMINISTRATOR')
+        return 'ADMIN';
+    if (value === 'AGENT' ||
+        value === 'SERVICE ACCOUNT (AGENT)' ||
+        value === 'SERVICE ACCOUNT AGENT' ||
+        value === 'SERVICE_ACCOUNT_AGENT')
+        return 'AGENT';
+    if (value === 'USER' || value === 'END USER' || value === 'END_USER')
+        return 'USER';
+    if (value === 'SUPPLIER')
+        return 'SUPPLIER';
+    if (value === 'CUSTOM')
+        return 'CUSTOM';
+    return value;
+}
+function pickPrimaryRole(roles, fallbackRole) {
+    const normalized = Array.from(new Set(roles.map((role) => normalizeRoleName(role)).filter((role) => role.length > 0)));
+    const priority = ['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM'];
+    for (const role of priority) {
+        if (normalized.includes(role))
+            return role;
+    }
+    return normalizeRoleName(fallbackRole || normalized[0] || 'USER');
+}
+async function getUserRoles(user) {
+    const fallback = normalizeRoleName(user.role || 'USER');
+    try {
+        const roleRows = await (0, db_1.query)(`SELECT DISTINCT r.role_name
+       FROM roles r
+       INNER JOIN user_roles ur ON r.role_id = ur.role_id
+       WHERE ur.user_id = $1`, [user.id]);
+        const roles = Array.from(new Set(roleRows.map((row) => normalizeRoleName(row.role_name)).filter((value) => value.length > 0)));
+        if (fallback && !roles.includes(fallback))
+            roles.push(fallback);
+        if (roles.length > 0)
+            return roles;
+    }
+    catch {
+        // Legacy RBAC tables may not exist in some environments.
+    }
+    return [fallback];
+}
+async function getUserPermissionClaims(userId, roles) {
+    const permissions = new Set();
+    try {
+        const rows = await (0, db_1.query)(`SELECT
+         p.permission_key,
+         COALESCE(
+           uo.allowed,
+           BOOL_OR(CASE WHEN ur.user_id IS NOT NULL THEN rp.allowed ELSE FALSE END),
+           FALSE
+         ) AS allowed
+       FROM permissions p
+       LEFT JOIN role_permissions rp ON rp.permission_id = p.permission_id
+       LEFT JOIN user_roles ur
+         ON ur.role_id = rp.role_id
+        AND ur.user_id = $1
+       LEFT JOIN user_permissions_override uo
+         ON uo.permission_id = p.permission_id
+        AND uo.user_id = $1
+       GROUP BY p.permission_id, p.permission_key, uo.allowed`, [userId]);
+        for (const row of rows) {
+            if (row.allowed)
+                permissions.add(String(row.permission_key || ''));
+        }
+    }
+    catch {
+        // Keep compatibility when RBAC tables are unavailable.
+    }
+    if (roles.includes('ADMIN'))
+        permissions.add('*');
+    if (roles.includes('AGENT')) {
+        permissions.add('portal.access');
+        permissions.add('itsm.access');
+        permissions.add('itsm.dashboard');
+        permissions.add('itsm.tickets');
+        permissions.add('itsm.assets');
+        permissions.add('itsm.users');
+        permissions.add('itsm.suppliers');
+        permissions.add('itsm.accounts');
+    }
+    return Array.from(permissions);
+}
+async function getAuthClaims(user) {
+    const roles = await getUserRoles(user);
+    const role = pickPrimaryRole(roles, user.role);
+    const permissions = await getUserPermissionClaims(user.id, roles);
+    const tenantId = Number(user.tenantId || 1);
+    return { role, roles, permissions, tenantId };
+}
 async function issueTokens(user) {
-    const role = await getPrimaryRole(user);
+    const { role, roles, permissions, tenantId } = await getAuthClaims(user);
     const name = safeDisplayName(user);
-    const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, email: user.email, name, role }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
+    const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, email: user.email, name, role, roles, permissions, tenantId }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
     const refreshToken = jsonwebtoken_1.default.sign({ sub: user.id }, REFRESH_SECRET, { expiresIn: `${REFRESH_EXPIRES_DAYS}d` });
     const expiresAt = new Date(Date.now() + REFRESH_EXPIRES_DAYS * 24 * 60 * 60 * 1000);
     await (0, db_1.query)('INSERT INTO "RefreshToken" ("token", "userId", "expiresAt", "createdAt") VALUES ($1, $2, $3, NOW())', [refreshToken, user.id, expiresAt]);
@@ -351,7 +436,7 @@ async function issueTokens(user) {
     return {
         accessToken,
         refreshToken,
-        user: { id: user.id, email: user.email, name, role, avatarUrl: user.avatarUrl || null },
+        user: { id: user.id, email: user.email, name, role, roles, permissions, tenantId, avatarUrl: user.avatarUrl || null },
     };
 }
 async function createMfaChallenge(user) {
@@ -391,12 +476,12 @@ async function createMfaChallenge(user) {
 async function findActiveUserByEmail(email) {
     return (0, db_1.queryOne)(`SELECT
        u."id", u."email", u."password", u."name", u."role", u."status",
-       u."mfaEnabled", u."avatarUrl", u."googleSub"
+       u."tenantId", u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub"
      FROM "User" u
      LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
      WHERE LOWER(u."email") = LOWER($1)
        AND COALESCE(u."is_deleted", FALSE) = FALSE
-       AND COALESCE(u."status", 'ACTIVE') <> 'INACTIVE'
+       AND COALESCE(u."status", 'ACTIVE') = 'ACTIVE'
        AND COALESCE(sa."enabled", TRUE) = TRUE`, [normalizeEmail(email)]);
 }
 async function verifyGoogleIdToken(idToken) {
@@ -462,26 +547,25 @@ async function loginWithGoogle(idToken) {
     const google = await verifyGoogleIdToken(idToken);
     let user = await (0, db_1.queryOne)(`SELECT
        u."id", u."email", u."password", u."name", u."role", u."status",
-       u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub"
+       u."tenantId", u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub"
      FROM "User" u
      LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
      WHERE (LOWER(u."email") = LOWER($1) OR u."googleSub" = $2)
        AND COALESCE(u."is_deleted", FALSE) = FALSE
+       AND COALESCE(u."status", 'ACTIVE') = 'ACTIVE'
        AND COALESCE(sa."enabled", TRUE) = TRUE
      ORDER BY u."id" ASC
      LIMIT 1`, [google.email, google.sub]);
     if (!user) {
-        user = await createSsoBackedUser({ ...google, provider: 'google' });
+        throw new Error('Account is not invited or not activated');
     }
-    else {
-        await (0, db_1.query)('UPDATE "User" SET "googleSub" = $1, "avatarUrl" = COALESCE(NULLIF($2, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $3', [
-            google.sub,
-            google.picture,
-            user.id,
-        ]);
-        user.googleSub = google.sub;
-        user.avatarUrl = google.picture || user.avatarUrl;
-    }
+    await (0, db_1.query)('UPDATE "User" SET "googleSub" = $1, "avatarUrl" = COALESCE(NULLIF($2, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $3', [
+        google.sub,
+        google.picture,
+        user.id,
+    ]);
+    user.googleSub = google.sub;
+    user.avatarUrl = google.picture || user.avatarUrl;
     if (user.mfaEnabled || MFA_REQUIRED_FOR_GOOGLE)
         return createMfaChallenge(user);
     return issueTokens(user);
@@ -504,7 +588,7 @@ async function verifyMfa(challengeToken, code) {
     if (hashOpaqueToken(String(code || '')) !== row.codeHash)
         throw new Error('Invalid verification code');
     await (0, db_1.query)('UPDATE "MfaChallenge" SET "consumed" = TRUE WHERE "id" = $1', [row.id]);
-    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
+    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "tenantId", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
      FROM "User" WHERE "id" = $1`, [payload.sub]);
     if (!user)
         throw new Error('User not found');
@@ -578,7 +662,7 @@ async function changePassword(userId, currentPassword, newPassword) {
         throw new Error('Current password is required');
     if (String(newPassword || '').length < 8)
         throw new Error('Password must be at least 8 characters');
-    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
+    const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "tenantId", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
      FROM "User"
      WHERE "id" = $1`, [userId]);
     if (!user)
@@ -602,13 +686,15 @@ async function refresh(refreshToken) {
         const record = await (0, db_1.queryOne)('SELECT * FROM "RefreshToken" WHERE "token" = $1 AND "revoked" = FALSE AND "expiresAt" > NOW()', [refreshToken]);
         if (!record)
             throw new Error('Invalid refresh token');
-        const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
+        const user = await (0, db_1.queryOne)(`SELECT "id", "email", "password", "name", "role", "status", "tenantId", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub"
        FROM "User" WHERE "id" = $1`, [record.userId]);
         if (!user)
             throw new Error('User not found');
-        const role = await getPrimaryRole(user);
+        if (String(user.status || '').toUpperCase() !== 'ACTIVE')
+            throw new Error('User account is not active');
+        const { role, roles, permissions, tenantId } = await getAuthClaims(user);
         const name = safeDisplayName(user);
-        const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, email: user.email, name, role }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
+        const accessToken = jsonwebtoken_1.default.sign({ sub: user.id, email: user.email, name, role, roles, permissions, tenantId }, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES });
         return { accessToken };
     }
     catch (_err) {
@@ -622,27 +708,26 @@ async function loginWithSsoCode(provider, code) {
     const subField = provider === 'google' ? 'u."googleSub"' : provider === 'zoho' ? 'u."zohoSub"' : 'u."microsoftSub"';
     let user = await (0, db_1.queryOne)(`SELECT
        u."id", u."email", u."password", u."name", u."role", u."status",
-       u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub"
+       u."tenantId", u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub"
      FROM "User" u
      LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
      WHERE (LOWER(u."email") = LOWER($1) OR ${subField} = $2)
        AND COALESCE(u."is_deleted", FALSE) = FALSE
+       AND COALESCE(u."status", 'ACTIVE') = 'ACTIVE'
        AND COALESCE(sa."enabled", TRUE) = TRUE
      ORDER BY u."id" ASC
      LIMIT 1`, [identity.email, identity.sub]);
     if (!user) {
-        user = await createSsoBackedUser(identity);
+        throw new Error('Account is not invited or not activated');
     }
-    else {
-        const googleSub = provider === 'google' ? identity.sub : user.googleSub;
-        const zohoSub = provider === 'zoho' ? identity.sub : (user.zohoSub || null);
-        const microsoftSub = provider === 'outlook' ? identity.sub : (user.microsoftSub || null);
-        await (0, db_1.query)('UPDATE "User" SET "googleSub" = $1, "zohoSub" = $2, "microsoftSub" = $3, "avatarUrl" = COALESCE(NULLIF($4, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $5', [googleSub || null, zohoSub || null, microsoftSub || null, identity.picture, user.id]);
-        user.googleSub = googleSub || null;
-        user.zohoSub = zohoSub || null;
-        user.microsoftSub = microsoftSub || null;
-        user.avatarUrl = identity.picture || user.avatarUrl;
-    }
+    const googleSub = provider === 'google' ? identity.sub : user.googleSub;
+    const zohoSub = provider === 'zoho' ? identity.sub : (user.zohoSub || null);
+    const microsoftSub = provider === 'outlook' ? identity.sub : (user.microsoftSub || null);
+    await (0, db_1.query)('UPDATE "User" SET "googleSub" = $1, "zohoSub" = $2, "microsoftSub" = $3, "avatarUrl" = COALESCE(NULLIF($4, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $5', [googleSub || null, zohoSub || null, microsoftSub || null, identity.picture, user.id]);
+    user.googleSub = googleSub || null;
+    user.zohoSub = zohoSub || null;
+    user.microsoftSub = microsoftSub || null;
+    user.avatarUrl = identity.picture || user.avatarUrl;
     if (user.mfaEnabled || (provider === 'google' && MFA_REQUIRED_FOR_GOOGLE))
         return createMfaChallenge(user);
     return issueTokens(user);

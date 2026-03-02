@@ -26,6 +26,7 @@ export const ticketsCreateBodySchema = z.object({
   requesterEmail: z.string().email().optional(),
   createdFrom: z.string().min(1).optional(),
   assigneeId: zId.optional(),
+  teamId: z.string().min(1).optional(),
   slaStart: z.string().optional(),
 }).refine((val) => val.subject || val.summary, {
   message: 'Missing subject',
@@ -42,6 +43,7 @@ export const ticketsUpdateBodySchema = z.object({
   createdFrom: z.string().min(1).optional(),
   assigneeId: zId.optional(),
   requesterId: zId.optional(),
+  teamId: z.string().min(1).optional(),
 })
 
 export const ticketsTransitionBodySchema = z.object({

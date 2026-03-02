@@ -2,32 +2,41 @@ import { Request, Response } from 'express'
 import * as ticketService from './ticket.service'
 
 export const listTickets = async (req: Request, res: Response) => {
-  const page = Number(req.query.page || 1)
-  const pageSize = Number(req.query.pageSize || 20)
-  const q = String(req.query.q || '')
-  const viewer = (req as any).user
-  const tickets = await ticketService.getTickets({ page, pageSize, q }, viewer)
-  res.json(tickets)
+  try {
+    const page = Number(req.query.page || 1)
+    const pageSize = Number(req.query.pageSize || 20)
+    const q = String(req.query.q || '')
+    const viewer = (req as any).user
+    const tickets = await ticketService.getTickets({ page, pageSize, q }, viewer)
+    res.json(tickets)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to load tickets' })
+  }
 }
 
 export const getTicket = async (req: Request, res: Response) => {
-  const viewer = (req as any).user
-  const t = await ticketService.getTicketById(req.params.id, viewer)
-  if (!t) return res.status(404).json({ error: 'Ticket not found' })
-  if (viewer?.role === 'USER' && Array.isArray((t as any).history)) {
-    ;(t as any).history = (t as any).history.filter((h: any) => !h.internal)
+  try {
+    const viewer = (req as any).user
+    const t = await ticketService.getTicketById(req.params.id, viewer)
+    if (!t) return res.status(404).json({ error: 'Ticket not found' })
+    if (viewer?.role === 'USER' && Array.isArray((t as any).history)) {
+      ;(t as any).history = (t as any).history.filter((h: any) => !h.internal)
+    }
+    res.json(t)
+  } catch (err: any) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to load ticket' })
   }
-  res.json(t)
 }
 
 export const createTicket = async (req: Request, res: Response) => {
   try {
     const payload = (req as any).validated?.body || req.body
     const creator = (req as any).user?.id || 'system'
-    const role = (req as any).user?.role
+    const role = String((req as any).user?.role || '').toUpperCase()
     if (role === 'USER') {
       payload.requesterId = (req as any).user?.id
       if (!payload.createdFrom) payload.createdFrom = 'User portal'
+      payload.teamId = 'helpdesk'
     }
     if (!payload.createdFrom) payload.createdFrom = 'ITSM Platform'
     const t = await ticketService.createTicket(payload, creator)

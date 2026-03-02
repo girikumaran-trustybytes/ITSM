@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.setApprovalStatus = exports.listApprovalsByTicket = exports.createApproval = void 0;
+exports.getApprovalById = exports.setApprovalStatus = exports.listApprovalsByTicket = exports.createApproval = void 0;
 const db_1 = require("../../db");
 async function resolveTicketDbId(ticketRef) {
     const raw = String(ticketRef || '').trim();
@@ -47,3 +47,7 @@ async function setApprovalStatus(approvalId, status, approverId, comment) {
     return rows[0] ?? null;
 }
 exports.setApprovalStatus = setApprovalStatus;
+async function getApprovalById(approvalId) {
+    return (0, db_1.queryOne)('SELECT * FROM "Approval" WHERE "id" = $1', [approvalId]);
+}
+exports.getApprovalById = getApprovalById;

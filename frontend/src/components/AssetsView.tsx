@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import * as assetService from '../modules/assets/services/asset.service'
@@ -14,7 +14,7 @@ import { loadLeftPanelConfig, type QueueRule, type AssetCategoryConfig } from '.
 type Asset = {
   id: number
   assetId?: string
-  name: string
+  name?: string
   assetType?: string
   category: string
   subcategory?: string | null
@@ -32,7 +32,6 @@ type Asset = {
 
 const emptyForm = {
   assetId: '',
-  name: '',
   assetType: 'Laptop',
   category: '',
   subcategory: '',
@@ -365,7 +364,7 @@ export default function AssetsView({
           }
         }
       }
-      if (filters.name && !match(`${asset.name} ${asset.assetId || ''}`, filters.name)) return false
+      if (filters.name && !match(`${asset.assetId || ''}`, filters.name)) return false
       if (filters.serial && !match(asset.serial, filters.serial)) return false
       if (filters.category && !match(asset.category, filters.category)) return false
       if (filters.status && !match(asset.status, filters.status)) return false
@@ -423,7 +422,6 @@ export default function AssetsView({
     setForm({
       ...emptyForm,
       assetId: asset.assetId || '',
-      name: asset.name || '',
       assetType: asset.assetType || 'Laptop',
       category: asset.category || '',
       subcategory: asset.subcategory || '',
@@ -462,14 +460,13 @@ export default function AssetsView({
   const toIsoDate = (value: string) => (value ? new Date(value).toISOString() : null)
 
   const handleSave = async () => {
-    if (!form.assetId.trim() || !form.name.trim() || !form.assetType.trim() || !form.category.trim() || !form.status.trim()) {
-      alert('Asset ID, Name, Asset Type, Category, and Status are required.')
+    if (!form.assetId.trim() || !form.assetType.trim() || !form.category.trim() || !form.status.trim()) {
+      alert('Asset ID, Asset Type, Category, and Status are required.')
       return
     }
     setIsSaving(true)
     const payload = {
       assetId: form.assetId.trim(),
-      name: form.name.trim(),
       assetType: form.assetType.trim(),
       category: form.category.trim(),
       subcategory: form.subcategory.trim() || null,
@@ -557,7 +554,7 @@ export default function AssetsView({
   }
 
   const handleDelete = async (asset: Asset) => {
-    if (!confirm(`Delete asset "${asset.name}"? This cannot be undone.`)) return
+    if (!confirm(`Delete asset "${asset.assetId || `AST-${asset.id}`}"? This cannot be undone.`)) return
     try {
       await assetService.deleteAsset(asset.id)
       setAssets((prev) => prev.filter((a) => a.id !== asset.id))
@@ -812,11 +809,17 @@ export default function AssetsView({
           <section className="asset-table-panel">
             <div className="asset-table-header-row">
               <div>Asset ID</div>
-              <div>Name</div>
-              <div>Category</div>
+              <div>Asset Type</div>
+              <div>Model</div>
               <div>Status</div>
+              <div>Assigned User</div>
             </div>
             {cardRows.map((asset) => {
+              const assignedUser =
+                String(asset.assignedTo?.name || '').trim() ||
+                String(asset.assignedTo?.email || '').trim() ||
+                String(asset.assignedUserEmail || '').trim() ||
+                '-'
               return (
                 <button
                   key={asset.id}
@@ -825,11 +828,12 @@ export default function AssetsView({
                   onClick={() => openDetail(asset)}
                 >
                   <div className="asset-table-cell">{asset.assetId || `AST-${asset.id}`}</div>
-                  <div className="asset-table-cell">{asset.name}</div>
-                  <div className="asset-table-cell">{asset.category || '-'}</div>
+                  <div className="asset-table-cell">{asset.assetType || '-'}</div>
+                  <div className="asset-table-cell">{asset.model || '-'}</div>
                   <div className="asset-table-cell">
                     <span className={`asset-status ${String(asset.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{asset.status || 'Active'}</span>
                   </div>
+                  <div className="asset-table-cell">{assignedUser}</div>
                 </button>
               )
             })}
@@ -845,7 +849,7 @@ export default function AssetsView({
           <div className="modal-content asset-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editing ? 'Edit Asset' : 'New Asset'}</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>�</button>
+              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="asset-tabs">
@@ -861,10 +865,6 @@ export default function AssetsView({
                     <div className="form-section">
                       <label className="form-label">Asset ID *</label>
                       <input className="form-input" value={form.assetId} onChange={(e) => setForm({ ...form, assetId: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Asset Name *</label>
-                      <input className="form-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                     </div>
                   </div>
                   <div className="form-row">
@@ -1149,7 +1149,7 @@ export default function AssetsView({
                     <select className="form-select" value={form.parentAssetId} onChange={(e) => setForm({ ...form, parentAssetId: e.target.value })}>
                       <option value="">None</option>
                       {assetsAll.map((a) => (
-                        <option key={a.id} value={a.id}>{a.assetId || a.name}</option>
+                        <option key={a.id} value={a.id}>{a.assetId || `AST-${a.id}`}</option>
                       ))}
                     </select>
                   </div>
@@ -1178,6 +1178,10 @@ export default function AssetsView({
     </>
   )
 }
+
+
+
+
 
 
 

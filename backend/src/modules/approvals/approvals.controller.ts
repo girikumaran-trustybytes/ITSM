@@ -1,9 +1,16 @@
 import { Request, Response } from 'express'
 import * as service from './approvals.service'
+import { getTicketById } from '../tickets/ticket.service'
+
+async function ensureTicketVisibility(ticketRef: string, viewer: any) {
+  const ticket = await getTicketById(ticketRef, viewer)
+  if (!ticket) throw { status: 403, message: 'Forbidden' }
+}
 
 export async function createApproval(req: Request, res: Response) {
   try {
     const ticketId = String(req.params.ticketId || '')
+    await ensureTicketVisibility(ticketId, (req as any).user)
     const approverId = req.body.approverId
     const approval = await service.createApproval(ticketId, approverId)
     res.status(201).json(approval)
@@ -15,6 +22,7 @@ export async function createApproval(req: Request, res: Response) {
 export async function listByTicket(req: Request, res: Response) {
   try {
     const ticketId = String(req.params.ticketId || '')
+    await ensureTicketVisibility(ticketId, (req as any).user)
     const list = await service.listApprovalsByTicket(ticketId)
     res.json(list)
   } catch (err: any) {
@@ -25,6 +33,9 @@ export async function listByTicket(req: Request, res: Response) {
 export async function approve(req: Request, res: Response) {
   try {
     const approvalId = Number(req.params.approvalId)
+    const approval = await service.getApprovalById(approvalId)
+    if (!approval) return res.status(404).json({ error: 'Approval not found' })
+    await ensureTicketVisibility(String(approval.ticketId), (req as any).user)
     const userId = (req as any).user?.id
     const comment = req.body.comment
     const updated = await service.setApprovalStatus(approvalId, 'approved', userId, comment)
@@ -37,6 +48,9 @@ export async function approve(req: Request, res: Response) {
 export async function reject(req: Request, res: Response) {
   try {
     const approvalId = Number(req.params.approvalId)
+    const approval = await service.getApprovalById(approvalId)
+    if (!approval) return res.status(404).json({ error: 'Approval not found' })
+    await ensureTicketVisibility(String(approval.ticketId), (req as any).user)
     const userId = (req as any).user?.id
     const comment = req.body.comment
     const updated = await service.setApprovalStatus(approvalId, 'rejected', userId, comment)

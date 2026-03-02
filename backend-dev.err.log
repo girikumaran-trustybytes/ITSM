@@ -1,0 +1,659 @@
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+Error: Route.post() requires a callback function but got a [object Undefined]
+    at Route.<computed> [as post] (C:\Users\girim\Desktop\ITSM\backend\node_modules\express\lib\router\route.js:216:15)
+    at router.proto.<computed> [as post] (C:\Users\girim\Desktop\ITSM\backend\node_modules\express\lib\router\index.js:521:19)
+    at Object.<anonymous> (C:\Users\girim\Desktop\ITSM\backend\src\modules\auth\auth.routes.ts:15:8)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1761:14)
+    at Module._compile (C:\Users\girim\Desktop\ITSM\backend\node_modules\source-map-support\source-map-support.js:568:25)
+    at Module.m._compile (C:\Users\girim\AppData\Local\Temp\ts-node-dev-hook-30499414593587726.js:69:33)
+    at node:internal/modules/cjs/loader:1893:10
+    at require.extensions..jsx.require.extensions..js (C:\Users\girim\AppData\Local\Temp\ts-node-dev-hook-30499414593587726.js:114:20)
+    at require.extensions.<computed> (C:\Users\girim\AppData\Local\Temp\ts-node-dev-hook-30499414593587726.js:71:20)
+    at Object.nodeDevHook [as .ts] (C:\Users\girim\Desktop\ITSM\backend\node_modules\ts-node-dev\lib\hook.js:63:13)
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}
+RBAC seed initialization failed: error: insert or update on table "user_roles" violates foreign key constraint "fk_userroles_user"
+    at C:\Users\girim\Desktop\ITSM\backend\node_modules\pg\lib\client.js:624:17
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:599:7
+    at withClient (C:\Users\girim\Desktop\ITSM\backend\src\db.ts:34:12)
+    at ensureRbacSeeded (C:\Users\girim\Desktop\ITSM\backend\src\modules\users\rbac.service.ts:298:3) {
+  length: 253,
+  severity: 'ERROR',
+  code: '23503',
+  detail: 'Key (user_id)=(9) is not present in table "app_user".',
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: 'public',
+  table: 'user_roles',
+  column: undefined,
+  dataType: undefined,
+  constraint: 'fk_userroles_user',
+  file: 'ri_triggers.c',
+  line: '2783',
+  routine: 'ri_ReportViolation'
+}

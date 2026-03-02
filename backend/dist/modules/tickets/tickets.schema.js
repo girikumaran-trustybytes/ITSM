@@ -26,6 +26,7 @@ exports.ticketsCreateBodySchema = zod_1.z.object({
     requesterEmail: zod_1.z.string().email().optional(),
     createdFrom: zod_1.z.string().min(1).optional(),
     assigneeId: common_1.zId.optional(),
+    teamId: zod_1.z.string().min(1).optional(),
     slaStart: zod_1.z.string().optional(),
 }).refine((val) => val.subject || val.summary, {
     message: 'Missing subject',
@@ -41,6 +42,7 @@ exports.ticketsUpdateBodySchema = zod_1.z.object({
     createdFrom: zod_1.z.string().min(1).optional(),
     assigneeId: common_1.zId.optional(),
     requesterId: common_1.zId.optional(),
+    teamId: zod_1.z.string().min(1).optional(),
 });
 exports.ticketsTransitionBodySchema = zod_1.z.object({
     to: zod_1.z.string().min(1),

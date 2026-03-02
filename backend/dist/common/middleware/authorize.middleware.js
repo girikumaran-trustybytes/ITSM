@@ -2,19 +2,48 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authorize = void 0;
 const db_1 = require("../../db");
+const logger_1 = require("../logger/logger");
+function deny(req, res, reason) {
+    const user = req.user || {};
+    void (0, logger_1.auditLog)({
+        action: 'access_denied',
+        entity: 'authorization',
+        user: user?.id,
+        meta: {
+            reason,
+            role: String(user?.role || '').toUpperCase(),
+            roles: Array.isArray(user?.roles) ? user.roles : [String(user?.role || '').toUpperCase()].filter(Boolean),
+            method: req.method,
+            path: req.originalUrl,
+        },
+    });
+    return res.status(403).json({ error: 'Forbidden' });
+}
 function authorize(moduleName, action, optionalQueue) {
     return async (req, res, next) => {
         try {
             const userId = Number(req.user?.id || 0);
             if (!userId)
                 return res.status(401).json({ error: 'Unauthorized' });
+            const tokenPermissions = Array.isArray(req.user?.permissions)
+                ? req.user.permissions.map((permission) => String(permission || '').trim())
+                : [];
+            if (tokenPermissions.includes('*'))
+                return next();
             const user = await (0, db_1.queryOne)('SELECT "role" FROM "User" WHERE "id" = $1', [userId]);
             if (!user)
                 return res.status(401).json({ error: 'Unauthorized' });
-            const role = String(user.role || 'USER').toUpperCase();
-            const roleRow = await (0, db_1.queryOne)('SELECT role_id FROM roles WHERE role_name = $1', [role]);
-            if (!roleRow)
-                return res.status(403).json({ error: 'Forbidden' });
+            let roleIds = (await (0, db_1.query)(`SELECT DISTINCT ur.role_id
+         FROM user_roles ur
+         WHERE ur.user_id = $1`, [userId])).map((row) => Number(row.role_id));
+            if (roleIds.length === 0) {
+                const fallbackRole = String(user.role || 'USER').toUpperCase();
+                const fallbackRoleRow = await (0, db_1.queryOne)('SELECT role_id FROM roles WHERE role_name = $1', [fallbackRole]);
+                if (fallbackRoleRow?.role_id)
+                    roleIds = [Number(fallbackRoleRow.role_id)];
+            }
+            if (roleIds.length === 0)
+                return deny(req, res, 'role_not_mapped');
             const queue = optionalQueue ? String(optionalQueue).toLowerCase() : null;
             const requestedModule = String(moduleName || '').toLowerCase();
             const moduleAliases = {
@@ -42,25 +71,31 @@ function authorize(moduleName, action, optionalQueue) {
            )
          LIMIT 1`, [lookupModules, action, queue]);
             if (!permission)
-                return res.status(403).json({ error: 'Forbidden' });
-            const row = await (0, db_1.queryOne)(`SELECT COALESCE(uo.allowed, rp.allowed, false) AS allowed
-         FROM permissions p
-         LEFT JOIN role_permissions rp
-           ON rp.permission_id = p.permission_id
-          AND rp.role_id = $1
-         LEFT JOIN user_permissions_override uo
-           ON uo.permission_id = p.permission_id
-          AND uo.user_id = $2
-         WHERE p.permission_id = $3`, [roleRow.role_id, userId, permission.permission_id]);
+                return deny(req, res, 'permission_not_found');
+            const row = await (0, db_1.queryOne)(`SELECT COALESCE(
+           (
+             SELECT uo.allowed
+             FROM user_permissions_override uo
+             WHERE uo.user_id = $2
+               AND uo.permission_id = $3
+           ),
+           (
+             SELECT BOOL_OR(rp.allowed)
+             FROM role_permissions rp
+             WHERE rp.permission_id = $3
+               AND rp.role_id = ANY($1::int[])
+           ),
+           FALSE
+         ) AS allowed`, [roleIds, userId, permission.permission_id]);
             if (!row?.allowed)
-                return res.status(403).json({ error: 'Forbidden' });
+                return deny(req, res, 'permission_denied');
             next();
         }
         catch (_error) {
             const fallbackRole = String(req.user?.role || '').toUpperCase();
             if (fallbackRole === 'ADMIN')
                 return next();
-            return res.status(403).json({ error: 'Forbidden' });
+            return deny(req, res, 'authorize_exception');
         }
     };
 }

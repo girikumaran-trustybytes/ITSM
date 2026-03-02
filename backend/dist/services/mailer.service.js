@@ -1,16 +1,20 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const mail_integration_1 = require("./mail.integration");
+const PLATFORM_BASE_MAIL = String(process.env.APPLICATION_BASE_MAIL ||
+    process.env.SMTP_FROM ||
+    process.env.SMTP_USER ||
+    'no-reply@itsm.local').trim();
 async function safeSend(to, subject, text) {
     try {
-        await (0, mail_integration_1.sendSmtpMail)({ to, subject, text });
+        await (0, mail_integration_1.sendSmtpMail)({ to, subject, text, from: PLATFORM_BASE_MAIL });
     }
     catch (error) {
         console.warn('[MAILER] Failed to send email', { to, subject, error: error?.message || error });
     }
 }
 async function strictSend(to, subject, text) {
-    await (0, mail_integration_1.sendSmtpMail)({ to, subject, text });
+    await (0, mail_integration_1.sendSmtpMail)({ to, subject, text, from: PLATFORM_BASE_MAIL });
 }
 exports.default = {
     async sendTicketCreated(email, ticket) {
@@ -49,7 +53,7 @@ exports.default = {
             `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
             `Message: ${message || '-'}`,
         ].join('\n');
-        await (0, mail_integration_1.sendSmtpMail)({ to: email, cc, bcc, subject, text, attachments });
+        await (0, mail_integration_1.sendSmtpMail)({ to: email, cc, bcc, subject, text, attachments, from: PLATFORM_BASE_MAIL });
     },
     async sendTicketResolved(email, ticket) {
         const subject = `[ITSM] Ticket resolved: ${ticket?.ticketId || ticket?.id || ''}`.trim();

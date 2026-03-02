@@ -25,9 +25,16 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.reject = exports.approve = exports.listByTicket = exports.createApproval = void 0;
 const service = __importStar(require("./approvals.service"));
+const ticket_service_1 = require("../tickets/ticket.service");
+async function ensureTicketVisibility(ticketRef, viewer) {
+    const ticket = await (0, ticket_service_1.getTicketById)(ticketRef, viewer);
+    if (!ticket)
+        throw { status: 403, message: 'Forbidden' };
+}
 async function createApproval(req, res) {
     try {
         const ticketId = String(req.params.ticketId || '');
+        await ensureTicketVisibility(ticketId, req.user);
         const approverId = req.body.approverId;
         const approval = await service.createApproval(ticketId, approverId);
         res.status(201).json(approval);
@@ -40,6 +47,7 @@ exports.createApproval = createApproval;
 async function listByTicket(req, res) {
     try {
         const ticketId = String(req.params.ticketId || '');
+        await ensureTicketVisibility(ticketId, req.user);
         const list = await service.listApprovalsByTicket(ticketId);
         res.json(list);
     }
@@ -51,6 +59,10 @@ exports.listByTicket = listByTicket;
 async function approve(req, res) {
     try {
         const approvalId = Number(req.params.approvalId);
+        const approval = await service.getApprovalById(approvalId);
+        if (!approval)
+            return res.status(404).json({ error: 'Approval not found' });
+        await ensureTicketVisibility(String(approval.ticketId), req.user);
         const userId = req.user?.id;
         const comment = req.body.comment;
         const updated = await service.setApprovalStatus(approvalId, 'approved', userId, comment);
@@ -64,6 +76,10 @@ exports.approve = approve;
 async function reject(req, res) {
     try {
         const approvalId = Number(req.params.approvalId);
+        const approval = await service.getApprovalById(approvalId);
+        if (!approval)
+            return res.status(404).json({ error: 'Approval not found' });
+        await ensureTicketVisibility(String(approval.ticketId), req.user);
         const userId = req.user?.id;
         const comment = req.body.comment;
         const updated = await service.setApprovalStatus(approvalId, 'rejected', userId, comment);

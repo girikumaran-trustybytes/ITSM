@@ -1,6 +1,7 @@
 import { query, queryOne } from '../../db'
 import { workflowEngine } from '../workflows/workflow.service'
 import { auditLog } from '../../common/logger/logger'
+import { normalizeRole } from '../../common/authz/policy'
 import mailer from '../../services/mailer.service'
 import fs from 'fs/promises'
 import path from 'path'
@@ -13,6 +14,7 @@ let attachmentSchemaReady: Promise<void> | null = null
 let slaSchemaReady: Promise<void> | null = null
 let slaConfigSchemaReady: Promise<void> | null = null
 let ticketOriginSchemaReady: Promise<void> | null = null
+let ticketTeamSchemaReady: Promise<void> | null = null
 
 function buildTicketWhere(idOrTicketId: string, alias = 't', startIndex = 1) {
   if (isNumericId(idOrTicketId)) {
@@ -343,6 +345,18 @@ async function ensureTicketOriginSchema() {
   await ticketOriginSchemaReady
 }
 
+async function ensureTicketTeamSchema() {
+  if (!ticketTeamSchemaReady) {
+    ticketTeamSchemaReady = (async () => {
+      await query('ALTER TABLE "Ticket" ADD COLUMN IF NOT EXISTS "teamId" TEXT')
+      await query('ALTER TABLE "Ticket" ALTER COLUMN "teamId" SET DEFAULT \'helpdesk\'')
+      await query('CREATE INDEX IF NOT EXISTS idx_ticket_team_id ON "Ticket"("teamId")')
+      await query('CREATE INDEX IF NOT EXISTS idx_ticket_assignee_id ON "Ticket"("assigneeId")')
+    })()
+  }
+  await ticketTeamSchemaReady
+}
+
 function sanitizeFilename(name: string) {
   return String(name || 'file').replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').slice(0, 180) || 'file'
 }
@@ -389,6 +403,134 @@ async function resolveChangedById(user: any): Promise<number | null> {
   return null
 }
 
+type TicketAccessMode = 'view' | 'update'
+
+type AgentTicketScope = {
+  teamIds: string[]
+  canViewAllTeams: boolean
+}
+
+function normalizeTeamId(value: any): string {
+  const normalized = String(value || '').trim().toLowerCase()
+  return normalized || 'helpdesk'
+}
+
+function canUserModifyTicketStatus(status: any) {
+  const normalized = String(status || '').trim().toLowerCase()
+  return !['resolved', 'closed', 'cancelled'].includes(normalized)
+}
+
+async function getAgentTicketScope(userId: number): Promise<AgentTicketScope> {
+  const serviceAccount = await queryOne<{ autoUpgradeQueues: boolean; queueIds: string[] }>(
+    `SELECT "autoUpgradeQueues", "queueIds"
+     FROM "ServiceAccounts"
+     WHERE "userId" = $1
+       AND "enabled" = TRUE`,
+    [userId]
+  )
+  if (!serviceAccount) {
+    return { teamIds: [], canViewAllTeams: false }
+  }
+
+  const scopedQueueIds = Array.isArray(serviceAccount.queueIds)
+    ? serviceAccount.queueIds.map((queueId) => normalizeTeamId(queueId))
+    : []
+
+  if (!serviceAccount.autoUpgradeQueues) {
+    return { teamIds: scopedQueueIds, canViewAllTeams: false }
+  }
+
+  try {
+    const allQueues = await query<{ queue_key: string }>('SELECT queue_key FROM ticket_queues')
+    const allQueueIds = Array.from(new Set(allQueues.map((row) => normalizeTeamId(row.queue_key))))
+    if (allQueueIds.length > 0) {
+      return { teamIds: allQueueIds, canViewAllTeams: true }
+    }
+  } catch {
+    // Ticket queue table may be unavailable in legacy deployments.
+  }
+
+  return { teamIds: scopedQueueIds, canViewAllTeams: false }
+}
+
+async function buildTicketVisibilityClause(alias: string, params: any[], viewer: any) {
+  const role = normalizeRole(viewer?.role)
+  if (role === 'ADMIN') return ''
+
+  const userId = await resolveChangedById(viewer)
+  if (!userId) return '1=0'
+
+  if (role === 'USER') {
+    params.push(Number(userId))
+    return `${alias}."requesterId" = $${params.length}`
+  }
+
+  if (role === 'AGENT') {
+    await ensureTicketTeamSchema()
+    params.push(Number(userId))
+    const assigneeParam = params.length
+    const scope = await getAgentTicketScope(Number(userId))
+    if (scope.canViewAllTeams) {
+      return '1=1'
+    }
+    if (scope.teamIds.length > 0) {
+      params.push(scope.teamIds)
+      const teamsParam = params.length
+      return `(${alias}."assigneeId" = $${assigneeParam} OR LOWER(COALESCE(${alias}."teamId", 'helpdesk')) = ANY($${teamsParam}::text[]))`
+    }
+    return `${alias}."assigneeId" = $${assigneeParam}`
+  }
+
+  return '1=0'
+}
+
+async function canAgentAccessTicket(ticket: any, userId: number) {
+  if (!ticket) return false
+  if (Number(ticket.assigneeId || 0) === Number(userId)) return true
+  await ensureTicketTeamSchema()
+  const scope = await getAgentTicketScope(userId)
+  if (scope.canViewAllTeams) return true
+  const teamId = normalizeTeamId(ticket.teamId)
+  return scope.teamIds.includes(teamId)
+}
+
+async function assertViewerTicketAccess(ticket: any, viewer: any, mode: TicketAccessMode = 'view') {
+  if (!ticket) throw { status: 404, message: 'Ticket not found' }
+  if (viewer === 'system') return
+
+  const role = normalizeRole(viewer?.role)
+  if (role === 'ADMIN') return
+
+  const userId = await resolveChangedById(viewer)
+  let allowed = false
+
+  if (role === 'USER') {
+    allowed = Boolean(userId) && Number(ticket.requesterId || 0) === Number(userId)
+    if (allowed && mode === 'update' && !canUserModifyTicketStatus(ticket.status)) {
+      allowed = false
+    }
+  } else if (role === 'AGENT') {
+    allowed = Boolean(userId) ? await canAgentAccessTicket(ticket, Number(userId)) : false
+  }
+
+  if (allowed) return
+
+  await auditLog({
+    action: 'ticket_access_denied',
+    ticketId: ticket.ticketId,
+    user: viewer?.id || userId || null,
+    meta: {
+      role,
+      mode,
+      ticketDbId: ticket.id,
+      requesterId: ticket.requesterId,
+      assigneeId: ticket.assigneeId,
+      teamId: ticket.teamId || null,
+    },
+  })
+  throw { status: 403, message: 'Forbidden' }
+}
+
 function buildInsert(table: string, data: Record<string, any>) {
   const keys = Object.keys(data).filter((k) => data[k] !== undefined)
   const cols = keys.map((k) => `"${k}"`)
@@ -425,10 +567,8 @@ export const getTickets = async (opts: { page?: number; pageSize?: number; q?: s
     params.push(`%${opts.q}%`)
     conditions.push(`(t."ticketId" ILIKE $${params.length} OR t."subject" ILIKE $${params.length} OR t."description" ILIKE $${params.length} OR t."category" ILIKE $${params.length})`)
   }
-  if (viewer?.role === 'USER' && viewer?.id) {
-    params.push(Number(viewer.id))
-    conditions.push(`t."requesterId" = $${params.length}`)
-  }
+  const visibilityClause = await buildTicketVisibilityClause('t', params, viewer)
+  if (visibilityClause && visibilityClause !== '1=1') conditions.push(visibilityClause)
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
   const offset = (page - 1) * pageSize
 
@@ -452,6 +592,18 @@ export const getTickets = async (opts: { page?: number; pageSize?: number; q?: s
   await attachSlaData(items)
 
   const total = Number(totalRow?.count || 0)
+  await auditLog({
+    action: 'list_tickets',
+    ticketId: undefined,
+    user: viewer?.id || null,
+    meta: {
+      role: normalizeRole(viewer?.role),
+      page,
+      pageSize,
+      q: opts.q || '',
+      total,
+    },
+  })
   return { items, total, page, pageSize }
 }
 
@@ -466,10 +618,8 @@ export const getTicketById = async (id: string, viewer?: any) => {
      WHERE ${where.clause}`,
     where.params
   )
-  if (t && viewer?.role === 'USER' && viewer?.id && t.requesterId !== Number(viewer.id)) {
-    return null
-  }
   if (!t) return null
+  await assertViewerTicketAccess(t, viewer, 'view')
 
   const [attachments, history] = await Promise.all([
     query('SELECT * FROM "Attachment" WHERE "ticketId" = $1', [t.id]),
@@ -480,11 +630,18 @@ export const getTicketById = async (id: string, viewer?: any) => {
   t.history = history
   t.sla = buildSlaSnapshot(t, tracking)
   t.slaTimeLeft = deriveSlaTimeLeft(t.sla)
+  await auditLog({
+    action: 'view_ticket',
+    ticketId: t.ticketId,
+    user: viewer?.id || null,
+    meta: { role: normalizeRole(viewer?.role), ticketDbId: t.id },
+  })
   return t
 }
 
 export const createTicket = async (payload: any, creator = 'system') => {
   await ensureTicketOriginSchema()
+  await ensureTicketTeamSchema()
   const ticketId = await getNextTicketTag()
   // auto-actions: compute priority from impact x urgency if not provided
   function computePriority(impact: string, urgency: string) {
@@ -531,6 +688,7 @@ export const createTicket = async (payload: any, creator = 'system') => {
     description: payload.description,
     slaStart: now,
     createdFrom: String(payload.createdFrom || '').trim() || 'ITSM Platform',
+    teamId: normalizeTeamId(payload.teamId),
   }
   if (category) data.category = category
   if (payload.requesterId) data.requesterId = payload.requesterId
@@ -567,6 +725,7 @@ export const createTicket = async (payload: any, creator = 'system') => {
 export const transitionTicket = async (ticketId: string, toState: string, user = 'system') => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, user, 'update')
 
   const can = workflowEngine.canTransition(t.type, t.status, toState)
   if (!can) throw { status: 400, message: `Invalid transition from ${t.status} to ${toState}` }
@@ -624,6 +783,7 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
 export const createHistoryEntry = async (ticketId: string, opts: { note: string; user?: any }) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, opts.user, 'update')
 
   const changedById = await resolveChangedById(opts.user)
   const rows = await query(
@@ -677,6 +837,7 @@ export const addResponse = async (
 ) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, opts.user, 'update')
   const attachmentRows = await resolveAttachmentRows(t.id, opts.attachmentIds || [])
   const messageWithAttachments = appendAttachmentSummary(opts.message, attachmentRows)
   const persistedMessage = opts.sendEmail
@@ -724,7 +885,12 @@ export const addResponse = async (
         filename: String(a.filename || `attachment-${a.id}`),
         path: String(a.path || ''),
         contentType: String(a.contentType || ''),
-      }))
+      })),
+      String(
+        (opts.user && typeof opts.user === 'object'
+          ? (opts.user as any).name || (opts.user as any).email
+          : '') || ''
+      ).trim() || undefined
     )
   }
 
@@ -734,6 +900,7 @@ export const addResponse = async (
 export const markResponseSlaMet = async (ticketId: string, user: any = 'system') => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, user, 'update')
 
   const changedById = await resolveChangedById(user)
   const actorRole = String((user && typeof user === 'object' ? user.role : '') || '').trim().toUpperCase()
@@ -774,6 +941,7 @@ export const markResponseSlaMet = async (ticketId: string, user: any = 'system')
 export const addPrivateNote = async (ticketId: string, opts: { note: string; user?: any; attachmentIds?: number[] }) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, opts.user, 'update')
   const attachmentRows = await resolveAttachmentRows(t.id, opts.attachmentIds || [])
   const noteWithAttachments = appendAttachmentSummary(opts.note, attachmentRows)
 
@@ -803,6 +971,7 @@ export const addPrivateNote = async (ticketId: string, opts: { note: string; use
 export const resolveTicketWithDetails = async (ticketId: string, opts: { resolution: string; resolutionCategory?: string; user?: any; sendEmail?: boolean }) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, opts.user, 'update')
 
   const from = t.status
   const where = buildTicketWhere(ticketId, 't', 4)
@@ -858,6 +1027,7 @@ export const uploadTicketAttachments = async (
 ) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, opts.user, 'update')
   await ensureAttachmentSchema()
 
   const files = Array.isArray(opts.files) ? opts.files : []
@@ -929,19 +1099,28 @@ export const uploadTicketAttachments = async (
 
 export const updateTicket = async (ticketId: string, payload: any, user?: any) => {
   await ensureTicketOriginSchema()
+  await ensureTicketTeamSchema()
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, user, 'update')
 
+  const actorRole = normalizeRole((user && typeof user === 'object' ? user.role : '') || '')
   const data: any = {}
   if (payload.subject !== undefined) data.subject = payload.subject
   if (payload.summary !== undefined && payload.subject === undefined) data.subject = payload.summary
   if (payload.description !== undefined) data.description = payload.description
-  if (payload.type !== undefined) data.type = payload.type
-  if (payload.priority !== undefined) data.priority = payload.priority
-  if (payload.category !== undefined) data.category = payload.category
-  if (payload.createdFrom !== undefined) data.createdFrom = payload.createdFrom
-  if (payload.assigneeId !== undefined) data.assigneeId = payload.assigneeId || null
-  if (payload.requesterId !== undefined) data.requesterId = payload.requesterId || null
+  if (actorRole !== 'USER') {
+    if (payload.type !== undefined) data.type = payload.type
+    if (payload.priority !== undefined) data.priority = payload.priority
+    if (payload.category !== undefined) data.category = payload.category
+    if (payload.createdFrom !== undefined) data.createdFrom = payload.createdFrom
+    if (payload.assigneeId !== undefined) data.assigneeId = payload.assigneeId || null
+    if (payload.requesterId !== undefined) data.requesterId = payload.requesterId || null
+    if (payload.teamId !== undefined) data.teamId = normalizeTeamId(payload.teamId)
+  }
+  if (actorRole === 'USER' && Object.keys(data).length === 0) {
+    throw { status: 400, message: 'No editable fields provided' }
+  }
 
   const setParts: string[] = []
   const params: any[] = []
@@ -983,6 +1162,7 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
 export const deleteTicket = async (ticketId: string, user?: any) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, user, 'update')
 
   // hard delete for now
   const where = buildTicketWhere(ticketId, 't', 1)
@@ -1009,6 +1189,7 @@ export const deleteTicket = async (ticketId: string, user?: any) => {
 export const assignAsset = async (ticketId: string, assetId: number, user?: any) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, user, 'update')
   const asset = await queryOne<any>('SELECT * FROM "Asset" WHERE "id" = $1', [assetId])
   if (!asset) throw { status: 404, message: 'Asset not found' }
 
@@ -1033,6 +1214,7 @@ export const assignAsset = async (ticketId: string, assetId: number, user?: any)
 export const unassignAsset = async (ticketId: string, user?: any) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
+  await assertViewerTicketAccess(t, user, 'update')
 
   const where = buildTicketWhere(ticketId, 't', 1)
   await query(

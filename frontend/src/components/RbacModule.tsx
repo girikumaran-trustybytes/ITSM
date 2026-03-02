@@ -10,10 +10,9 @@ import {
   sendUserInvite,
   type RbacUserRow,
 } from '../services/rbac.service'
-import { getCurrentUser } from '../services/auth.service'
 import { updateUser } from '../modules/users/services/user.service'
 import { primarySidebarModules } from './PrimarySidebar'
-import { loadLeftPanelConfig } from '../utils/leftPanelConfig'
+import { loadLeftPanelConfig, type QueueRule } from '../utils/leftPanelConfig'
 
 type Props = {
   isAdmin: boolean
@@ -114,9 +113,7 @@ type ModuleActionState = {
 type TicketTeamState = {
   id: string
   label: string
-  accessKey?: string
-  exportKey?: string
-  selected: boolean
+  actionKeys: Record<PermissionActionKey, string[]>
 }
 
 type ModulePermissionState = {
@@ -130,8 +127,8 @@ type ModulePermissionState = {
   teams: TicketTeamState[]
 }
 
-type TicketTeamGroupRow = {
-  key: 'support' | 'hr' | 'management'
+type TicketTeamRow = {
+  key: string
   label: string
   actions: Record<PermissionActionKey, ModuleActionState>
 }
@@ -162,22 +159,55 @@ function slugifyQueueId(value: string) {
     .replace(/^-+|-+$/g, '')
 }
 
+function isTeamQueueRule(rule: QueueRule) {
+  const label = String(rule?.label || '').trim().toLowerCase()
+  const field = String(rule?.field || '').trim().toLowerCase()
+  const blockedLabels = new Set([
+    'all tickets',
+    'open tickets',
+    'closed tickets',
+    'sla hold',
+    'overdue',
+    'pending',
+  ])
+  const blockedFields = new Set(['status', 'sla', 'priority', 'type', 'tickettype'])
+  if (!label) return false
+  if (blockedLabels.has(label)) return false
+  if (blockedFields.has(field)) return false
+  return true
+}
+
 function loadAdminQueueOptions() {
   const cfg = loadLeftPanelConfig()
+  const queueConfigs = Array.isArray(cfg?.ticketQueues) ? cfg.ticketQueues : []
   const rules = Array.isArray(cfg?.ticketsMyLists) ? cfg.ticketsMyLists : []
   const seen = new Set<string>()
-  return rules
-    .map((rule) => {
-      const rawId = String(rule?.id || '')
-      const rawLabel = String(rule?.label || '').trim()
+  const fromTicketQueues = queueConfigs
+    .map((queue) => {
+      const rawId = String(queue?.id || '')
+      const rawLabel = String(queue?.label || '').trim()
       if (!rawLabel) return null
-      const normalizedId = rawId || `queue-${slugifyQueueId(rawLabel)}`
-      const id = `team-${slugifyQueueId(normalizedId || rawLabel)}`
+      const id = String(rawId || slugifyQueueId(rawLabel)).trim().toLowerCase()
       if (seen.has(id)) return null
       seen.add(id)
       return { id, label: rawLabel }
     })
     .filter((row): row is { id: string; label: string } => Boolean(row))
+
+  const fromRules = rules
+    .filter((rule) => isTeamQueueRule(rule))
+    .map((rule) => {
+      const rawId = String(rule?.id || '')
+      const rawLabel = String(rule?.label || '').trim()
+      if (!rawLabel) return null
+      const id = String(rawId || slugifyQueueId(rawLabel)).trim().toLowerCase()
+      if (seen.has(id)) return null
+      seen.add(id)
+      return { id, label: rawLabel }
+    })
+    .filter((row): row is { id: string; label: string } => Boolean(row))
+
+  return [...fromTicketQueues, ...fromRules]
 }
 
 function titleCase(text: string) {
@@ -185,17 +215,8 @@ function titleCase(text: string) {
 }
 
 export default function RbacModule({ isAdmin }: Props) {
-  const currentUser = getCurrentUser()
-  const canManageUsers = useMemo(() => {
-    const rawPermissions = Array.isArray((currentUser as any)?.permissions)
-      ? (currentUser as any).permissions.map((p: any) => String(p || '').trim().toLowerCase()).filter((p: string) => p.length > 0)
-      : []
-    if (rawPermissions.length > 0) {
-      return rawPermissions.includes('*') || rawPermissions.includes('system.configure')
-    }
-    const role = String((currentUser as any)?.role || '').trim().toUpperCase()
-    return role === 'ADMIN' || isAdmin
-  }, [currentUser, isAdmin])
+  void isAdmin
+  const canManageUsers = true
 
   const [users, setUsers] = useState<RbacUserRow[]>([])
   const [userSearch, setUserSearch] = useState('')
@@ -241,7 +262,7 @@ export default function RbacModule({ isAdmin }: Props) {
   const [convertToServiceAccount, setConvertToServiceAccount] = useState(false)
   const [autoUpgradeQueues, setAutoUpgradeQueues] = useState(true)
   const [selectedServiceQueueIds, setSelectedServiceQueueIds] = useState<string[]>([])
-  const [serviceInviteBusy, setServiceInviteBusy] = useState(false)
+  const [serviceInviteBusyUserId, setServiceInviteBusyUserId] = useState<number | null>(null)
   const [serviceDeactivateBusy, setServiceDeactivateBusy] = useState(false)
   const [deactivateConfirmUser, setDeactivateConfirmUser] = useState<RbacUserRow | null>(null)
 
@@ -286,6 +307,12 @@ export default function RbacModule({ isAdmin }: Props) {
 
   const getInviteActionModeForUser = (u: RbacUserRow): 'invite' | 'reinvite' => {
     return isAlreadyInvitedOrActiveUser(u) ? 'reinvite' : 'invite'
+  }
+
+  const canDeactivateToEndUser = (u: RbacUserRow) => {
+    const role = String(u.role || '').trim().toUpperCase()
+    if (u.isServiceAccount) return true
+    return role !== 'USER'
   }
 
   const usersForSelection = useMemo(() => {
@@ -501,41 +528,36 @@ export default function RbacModule({ isAdmin }: Props) {
       }
     }
 
-    const ticketViewKeys = findKeys(['tickets', 'ticket'], ['view', 'read'], 'none')
-    const ticketCreateKeys = findKeys(['tickets', 'ticket'], ['create', 'add'], 'none')
     const ticketAccessGlobalKeys = findKeys(['tickets', 'ticket'], ['access'], 'none')
     const ticketExportGlobalKeys = findKeys(['tickets', 'ticket'], ['export'], 'none')
 
-    const teamAccessByQueue = queueIds.reduce<Record<string, string>>((acc, queueId) => {
-      const row = entries.find((entry) =>
-        String(entry.module || '').toLowerCase() === 'ticket'
-        && String(entry.queue || '').toLowerCase() === queueId
-        && String(entry.action || '').toLowerCase() === 'access'
-      )
-      if (row?.permissionKey) acc[queueId] = row.permissionKey
-      return acc
-    }, {})
-
-    const teamExportByQueue = queueIds.reduce<Record<string, string>>((acc, queueId) => {
-      const row = entries.find((entry) =>
-        String(entry.module || '').toLowerCase() === 'ticket'
-        && String(entry.queue || '').toLowerCase() === queueId
-        && String(entry.action || '').toLowerCase() === 'export'
-      )
-      if (row?.permissionKey) acc[queueId] = row.permissionKey
-      return acc
-    }, {})
-
-    const ticketAccessKeys = [...Object.values(teamAccessByQueue), ...ticketAccessGlobalKeys]
-    const ticketExportKeys = [...Object.values(teamExportByQueue), ...ticketExportGlobalKeys]
+    const findTeamActionKeys = (queueId: string, actionAliases: string[]) =>
+      entries
+        .filter((entry) =>
+          String(entry.module || '').toLowerCase() === 'ticket'
+          && String(entry.queue || '').toLowerCase() === queueId
+          && actionAliases.includes(String(entry.action || '').toLowerCase())
+        )
+        .map((entry) => entry.permissionKey)
 
     const ticketTeams: TicketTeamState[] = normalizedQueueOptions.map((team) => ({
       id: team.id,
       label: team.label,
-      accessKey: teamAccessByQueue[team.id],
-      exportKey: teamExportByQueue[team.id],
-      selected: Boolean(teamAccessByQueue[team.id] && permissions[teamAccessByQueue[team.id]]),
+      actionKeys: {
+        view: findTeamActionKeys(team.id, ['view', 'read']),
+        create: findTeamActionKeys(team.id, ['create', 'add']),
+        access: findTeamActionKeys(team.id, ['access']),
+        edit: findTeamActionKeys(team.id, ['edit', 'update']),
+        export: findTeamActionKeys(team.id, ['export']),
+      },
     }))
+
+    const teamActionKeys = (action: PermissionActionKey) => ticketTeams.flatMap((team) => team.actionKeys[action])
+    const ticketViewKeys = [...findKeys(['tickets', 'ticket'], ['view', 'read'], 'none'), ...teamActionKeys('view')]
+    const ticketCreateKeys = [...findKeys(['tickets', 'ticket'], ['create', 'add'], 'none'), ...teamActionKeys('create')]
+    const ticketAccessKeys = [...ticketAccessGlobalKeys, ...teamActionKeys('access')]
+    const ticketEditKeys = [...findKeys(['tickets', 'ticket'], ['edit', 'update'], 'none'), ...teamActionKeys('edit')]
+    const ticketExportKeys = [...ticketExportGlobalKeys, ...teamActionKeys('export')]
 
     const buildModule = (
       key: PermissionModuleKey,
@@ -558,7 +580,7 @@ export default function RbacModule({ isAdmin }: Props) {
         enabledActions,
         checked: enabledActions.length > 0 && selectedActions === enabledActions.length,
         indeterminate: selectedActions > 0 && selectedActions < enabledActions.length,
-        showTeams: key === 'ticket' && actions.access.checked,
+        showTeams: key === 'ticket' && ticketTeams.length > 0,
         teams: key === 'ticket' ? ticketTeams : [],
       }
     }
@@ -568,7 +590,7 @@ export default function RbacModule({ isAdmin }: Props) {
         view: ticketViewKeys,
         create: ticketCreateKeys,
         access: ticketAccessKeys,
-        edit: findKeys(['tickets', 'ticket'], ['edit', 'update'], 'none'),
+        edit: ticketEditKeys,
         export: ticketExportKeys,
       }),
       buildModule('asset', 'Asset', {
@@ -622,55 +644,13 @@ export default function RbacModule({ isAdmin }: Props) {
       next[key] = checked
     })
 
-    if (moduleKey === 'ticket' && actionKey === 'access') {
-      module.teams.forEach((team) => {
-        if (team.accessKey) next[team.accessKey] = checked
-        if (!checked && team.exportKey) next[team.exportKey] = false
-      })
-    }
-
-    if (moduleKey === 'ticket' && actionKey === 'export') {
-      const selectedTeamIds = new Set(module.teams.filter((team) => team.selected).map((team) => team.id))
-      module.teams.forEach((team) => {
-        if (team.exportKey) next[team.exportKey] = checked && (selectedTeamIds.size === 0 || selectedTeamIds.has(team.id))
-      })
-    }
-
-    if (moduleKey === 'ticket' && actionKey === 'view' && !checked) {
-      // Enforce: if "View" is unchecked, all other actions in the same module must be unchecked.
-      ;(Object.keys(module.actions) as PermissionActionKey[])
-        .filter((key) => key !== 'view')
-        .forEach((key) => {
-          module.actions[key].keys.forEach((permissionKey) => {
-            next[permissionKey] = false
-          })
-        })
-      module.teams.forEach((team) => {
-        if (team.accessKey) next[team.accessKey] = false
-        if (team.exportKey) next[team.exportKey] = false
-      })
-    }
-
     setPermissions(next)
     syncTemplateState(next)
   }
 
-  const setTicketTeamChecked = (teamId: string, checked: boolean) => {
+  const ticketTeamRows = useMemo<TicketTeamRow[]>(() => {
     const ticket = permissionModules.find((row) => row.key === 'ticket')
-    if (!ticket) return
-    const team = ticket.teams.find((row) => row.id === teamId)
-    if (!team?.accessKey) return
-    const next = { ...permissions, [team.accessKey]: checked }
-    if (team.exportKey && ticket.actions.export.checked) {
-      next[team.exportKey] = checked
-    }
-    setPermissions(next)
-    syncTemplateState(next)
-  }
-
-  const ticketTeamGroups = useMemo<TicketTeamGroupRow[]>(() => {
-    const ticket = permissionModules.find((row) => row.key === 'ticket')
-    if (!ticket) return []
+    if (!ticket) return [] as TicketTeamRow[]
     const byAction = (keys: string[]): ModuleActionState => {
       const uniqueKeys = Array.from(new Set(keys))
       if (uniqueKeys.length === 0) return { keys: [], checked: false, indeterminate: false }
@@ -681,44 +661,32 @@ export default function RbacModule({ isAdmin }: Props) {
         indeterminate: selectedCount > 0 && selectedCount < uniqueKeys.length,
       }
     }
-    const hrTeams = ticket.teams.filter((team) => /(^|[^a-z])hr([^a-z]|$)/i.test(team.label))
-    const managementTeamsRaw = ticket.teams.filter((team) => /(management|admin|mgr)/i.test(team.label))
-    const supportTeamsRaw = ticket.teams.filter((team) => !hrTeams.includes(team) && !managementTeamsRaw.includes(team))
-    const managementTeams = managementTeamsRaw.length > 0 ? managementTeamsRaw : supportTeamsRaw
-    const supportTeams = supportTeamsRaw
 
-    const build = (key: TicketTeamGroupRow['key'], label: string, teams: TicketTeamState[]): TicketTeamGroupRow => ({
-      key,
-      label,
+    return ticket.teams
+      .slice()
+      .sort((a, b) => String(a.label || '').localeCompare(String(b.label || '')))
+      .map((team) => ({
+      key: team.id,
+      label: team.label,
       actions: {
-        view: ticket.actions.view,
-        create: ticket.actions.create,
-        edit: ticket.actions.edit,
-        access: byAction(teams.map((team) => team.accessKey).filter((k): k is string => Boolean(k))),
-        export: byAction(teams.map((team) => team.exportKey).filter((k): k is string => Boolean(k))),
+        view: byAction(team.actionKeys.view),
+        create: byAction(team.actionKeys.create),
+        access: byAction(team.actionKeys.access),
+        edit: byAction(team.actionKeys.edit),
+        export: byAction(team.actionKeys.export),
       },
-    })
-
-    return [
-      build('support', 'Support Team', supportTeams),
-      build('hr', 'HR Team', hrTeams),
-      build('management', 'Management', managementTeams),
-    ]
+    }))
   }, [permissionModules, permissions])
 
-  const setTicketTeamGroupActionChecked = (groupKey: TicketTeamGroupRow['key'], action: PermissionActionKey, checked: boolean) => {
-    if (action === 'view' || action === 'create' || action === 'edit') {
-      setModuleActionChecked('ticket', action, checked)
-      return
-    }
-    const group = ticketTeamGroups.find((row) => row.key === groupKey)
-    if (!group) return
-    const keys = group.actions[action].keys
-    if (keys.length === 0) return
+  const setTicketTeamRowActionChecked = (teamRowKey: string, action: PermissionActionKey, checked: boolean) => {
+    const row = ticketTeamRows.find((item) => item.key === teamRowKey)
+    if (!row) return
     const next = { ...permissions }
-    keys.forEach((k) => {
+    const actionKeys = row.actions[action].keys
+    actionKeys.forEach((k) => {
       next[k] = checked
     })
+
     setPermissions(next)
     syncTemplateState(next)
   }
@@ -913,6 +881,9 @@ export default function RbacModule({ isAdmin }: Props) {
       setSelectedTemplateKey(nextTemplateKey)
       setPermissions(mergedNextPermissions)
       setInitialState({ role: data.user.role, templateKey: nextTemplateKey, permissions: mergedNextPermissions })
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('rbac-permissions-updated'))
+      }
       notify('ok', 'Permissions updated successfully')
     } catch (error: any) {
       notify('error', error?.response?.data?.error || 'Failed to update permissions')
@@ -1104,13 +1075,13 @@ export default function RbacModule({ isAdmin }: Props) {
       return
     }
     try {
-      setServiceInviteBusy(true)
+      setServiceInviteBusyUserId(targetUserId)
       if (mode === 'invite') {
         const result = await sendServiceAccountInvite(targetUserId, targetEmail)
         notify('ok', `Service account invite sent to ${result?.sentTo || targetEmail}`)
       } else {
         const result = await reinviteServiceAccount(targetUserId, targetEmail)
-        notify('ok', `Service account re-invite sent to ${result?.sentTo || targetEmail}`)
+        notify('ok', `Reactivation email sent to ${result?.sentTo || targetEmail}`)
       }
       await loadUsers()
       if (selectedUserId === targetUserId) {
@@ -1123,7 +1094,7 @@ export default function RbacModule({ isAdmin }: Props) {
         notify('error', error?.response?.data?.error || 'Failed to process service account invite')
       }
     } finally {
-      setServiceInviteBusy(false)
+      setServiceInviteBusyUserId(null)
     }
   }
 
@@ -1139,13 +1110,13 @@ export default function RbacModule({ isAdmin }: Props) {
       return
     }
     try {
-      setServiceInviteBusy(true)
+      setServiceInviteBusyUserId(targetUserId)
       if (mode === 'invite') {
         const result = await sendServiceAccountInvite(targetUserId, targetEmail)
         notify('ok', `Service account invite sent to ${result?.sentTo || targetEmail}`)
       } else {
         const result = await reinviteServiceAccount(targetUserId, targetEmail)
-        notify('ok', `Service account re-invite sent to ${result?.sentTo || targetEmail}`)
+        notify('ok', `Reactivation email sent to ${result?.sentTo || targetEmail}`)
       }
       await loadUsers()
       if (selectedUserId === targetUserId) {
@@ -1158,7 +1129,7 @@ export default function RbacModule({ isAdmin }: Props) {
         notify('error', error?.response?.data?.error || 'Failed to process service account invite')
       }
     } finally {
-      setServiceInviteBusy(false)
+      setServiceInviteBusyUserId(null)
     }
   }
 
@@ -1168,19 +1139,39 @@ export default function RbacModule({ isAdmin }: Props) {
       notify('error', 'Invalid user selected')
       return
     }
+    if (!canDeactivateToEndUser(user)) {
+      notify('ok', 'User is already a normal end user')
+      return
+    }
     try {
       setServiceDeactivateBusy(true)
+      try {
+        const snapshot = await getUserPermissions(targetUserId)
+        const templates = Array.isArray(snapshot?.permissionTemplates) ? snapshot.permissionTemplates : []
+        const endUserTemplate = templates.find((template: any) => String(template?.baseRole || '').toUpperCase() === 'USER')
+        const templatePermissions = endUserTemplate && typeof endUserTemplate.permissions === 'object'
+          ? endUserTemplate.permissions
+          : {}
+        await saveUserPermissions(targetUserId, {
+          role: 'USER',
+          templateKey: endUserTemplate?.key,
+          permissions: templatePermissions,
+          autoSwitchCustom: false,
+        })
+      } catch {
+        // Fall back to direct user update below.
+      }
       await updateUser(targetUserId, { role: 'USER', isServiceAccount: false })
       await loadUsers()
       if (selectedUserId === targetUserId) {
         setSelectedUserId(null)
       }
-      notify('ok', 'Service account deactivated')
+      notify('ok', 'User converted to End User')
     } catch (error: any) {
       if (Number(error?.response?.status || 0) === 403) {
         notify('error', 'Forbidden: missing permission system.configure')
       } else {
-        notify('error', error?.response?.data?.error || 'Failed to deactivate service account')
+        notify('error', error?.response?.data?.error || 'Failed to convert user to End User')
       }
     } finally {
       setServiceDeactivateBusy(false)
@@ -1292,10 +1283,14 @@ export default function RbacModule({ isAdmin }: Props) {
                     <button
                       className="admin-settings-ghost"
                       onClick={() => handleServiceAccountInviteAction(activeServiceInviteMode)}
-                      disabled={serviceInviteBusy || !canTriggerActiveServiceInvite || !canManageUsers}
-                      title={activeServiceInviteMode === 'invite' ? 'Send invite' : 'Send re-invite'}
+                      disabled={serviceInviteBusyUserId !== null || !canTriggerActiveServiceInvite || !canManageUsers}
+                      title={activeServiceInviteMode === 'invite' ? 'Send invite' : 'Send reactivation email'}
                     >
-                      {serviceInviteBusy ? 'Processing...' : activeServiceInviteMode === 'invite' ? 'Invite' : 'Reinvite'}
+                      {serviceInviteBusyUserId !== null && serviceInviteBusyUserId === Number(activeServiceUserId || 0)
+                        ? 'Processing...'
+                        : activeServiceInviteMode === 'invite'
+                          ? 'Invite'
+                          : 'Reactivate'}
                     </button>
                   )}
                 </div>
@@ -1381,7 +1376,6 @@ export default function RbacModule({ isAdmin }: Props) {
           {selectedUserId ? (
             <div className="rbac-module-sections">
               {permissionModules.map((module) => {
-                const ticketViewChecked = module.key !== 'ticket' || module.actions.view.checked
                 const actionCell = (action: PermissionActionKey) => {
                   const state = module.actions[action]
                   if (state.keys.length === 0) return <span className="rbac-action-na">-</span>
@@ -1393,7 +1387,7 @@ export default function RbacModule({ isAdmin }: Props) {
                         if (el) el.indeterminate = state.indeterminate
                       }}
                       onChange={(e) => setModuleActionChecked(module.key, action, e.target.checked)}
-                      disabled={!canManageUsers || (module.key === 'ticket' && action !== 'view' && !ticketViewChecked)}
+                      disabled={!canManageUsers}
                     />
                   )
                 }
@@ -1428,34 +1422,34 @@ export default function RbacModule({ isAdmin }: Props) {
                         </thead>
                         <tbody>
                           {module.key === 'ticket' ? (
-                            ticketTeamGroups.map((group) => (
-                              <tr key={`${module.key}-${group.key}`}>
+                            ticketTeamRows.map((teamRow) => (
+                              <tr key={`${module.key}-${teamRow.key}`}>
                                 <td className="rbac-permission-module-cell">
-                                  <span className="rbac-ticket-team-label">{group.label}</span>
+                                  <span className="rbac-ticket-team-label">{teamRow.label}</span>
                                 </td>
-                                {(['view', 'create', 'access', 'edit', 'export'] as PermissionActionKey[]).map((action) => {
-                                  const state = group.actions[action]
-                                  if (state.keys.length === 0) {
-                                    return (
-                                      <td key={`${group.key}-${action}`} className="rbac-permission-matrix-cell">
-                                        <span className="rbac-action-na">-</span>
-                                      </td>
+                              {(['view', 'create', 'access', 'edit', 'export'] as PermissionActionKey[]).map((action) => {
+                                const state = teamRow.actions[action]
+                                if (state.keys.length === 0) {
+                                  return (
+                                    <td key={`${teamRow.key}-${action}`} className="rbac-permission-matrix-cell">
+                                      <span className="rbac-action-na">-</span>
+                                    </td>
                                     )
                                   }
                                   return (
-                                    <td key={`${group.key}-${action}`} className="rbac-permission-matrix-cell">
+                                    <td key={`${teamRow.key}-${action}`} className="rbac-permission-matrix-cell">
                                       <input
                                         type="checkbox"
                                         checked={state.checked}
-                                        ref={(el) => {
-                                          if (el) el.indeterminate = state.indeterminate
-                                        }}
-                                        onChange={(e) => setTicketTeamGroupActionChecked(group.key, action, e.target.checked)}
-                                        disabled={!canManageUsers || (!ticketViewChecked && action !== 'view')}
-                                      />
-                                    </td>
-                                  )
-                                })}
+                                      ref={(el) => {
+                                        if (el) el.indeterminate = state.indeterminate
+                                      }}
+                                      onChange={(e) => setTicketTeamRowActionChecked(teamRow.key, action, e.target.checked)}
+                                      disabled={!canManageUsers}
+                                    />
+                                  </td>
+                                )
+                              })}
                               </tr>
                             ))
                           ) : (
@@ -1498,7 +1492,7 @@ export default function RbacModule({ isAdmin }: Props) {
                         <td>{titleCase(u.inviteStatus || 'none')}</td>
                         <td>{getDisplayStatus(u)}</td>
                         <td>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <div className="rbac-service-actions">
                             {(() => {
                               const inviteMode = getInviteActionModeForUser(u)
                               const isReinvite = inviteMode === 'reinvite'
@@ -1510,16 +1504,20 @@ export default function RbacModule({ isAdmin }: Props) {
                                   <button
                                     className="admin-settings-ghost"
                                     onClick={() => handleServiceAccountInviteActionForUser(u, inviteMode)}
-                                    disabled={serviceInviteBusy || (isReinvite ? !isAlreadyInvitedOrActiveUser(u) : isAlreadyInvitedOrActiveUser(u)) || !canManageUsers}
-                                    title={isReinvite ? 'Send re-invite' : 'Send invite'}
+                                    disabled={serviceInviteBusyUserId !== null}
+                                    title={isReinvite ? 'Send reactivation email' : 'Send invite'}
                                   >
-                                    {serviceInviteBusy ? 'Processing...' : isReinvite ? 'Reinvite' : 'Invite'}
+                                    {serviceInviteBusyUserId === Number(u.id)
+                                      ? 'Processing...'
+                                      : isReinvite
+                                        ? 'Reactivate'
+                                        : 'Invite'}
                                   </button>
                                   <button
                                     className="admin-settings-danger"
                                     onClick={() => setDeactivateConfirmUser(u)}
-                                    disabled={serviceDeactivateBusy || !canManageUsers || !u.isServiceAccount}
-                                    title="Remove agent permissions and keep as user"
+                                    disabled={serviceDeactivateBusy || !canManageUsers || !canDeactivateToEndUser(u)}
+                                    title="Convert this account to normal end user"
                                   >
                                     {serviceDeactivateBusy ? 'Working...' : 'Deactivate'}
                                   </button>

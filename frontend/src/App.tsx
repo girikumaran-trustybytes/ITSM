@@ -28,6 +28,7 @@ import { loadNotificationState, saveNotificationState } from './utils/notificati
 import { getUserAvatarUrl, getUserInitials } from './utils/avatar'
 import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from './utils/presence'
 import { getMyPresence, putMyPresence } from './services/presence.service'
+import { canAccessItsmNav, getDefaultItsmRoute } from './security/policy'
 
 const emptyPagination = {
   page: 1,
@@ -186,16 +187,15 @@ function MainShell() {
   }, [])
 
   useEffect(() => {
-    const formatTime = (tz: string) => new Intl.DateTimeFormat('en-GB', {
+    const formatTime = () => new Intl.DateTimeFormat('en-GB', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
       hour12: false,
-      timeZone: tz,
     }).format(new Date())
 
     const tick = () => {
-      setTimeClock(`( UTC - ${formatTime('UTC')}) (IST - ${formatTime('Asia/Kolkata')})`)
+      setTimeClock(formatTime())
     }
 
     tick()
@@ -301,19 +301,22 @@ function MainShell() {
   }, [user])
 
   useEffect(() => {
-    if (!user?.role) return
+    if (!user) return
+    if (location.pathname.startsWith('/admin') && !canAccessItsmNav(user, 'admin')) {
+      navigate(getDefaultItsmRoute(user), { replace: true })
+      return
+    }
+    if (location.pathname.startsWith('/users') && !canAccessItsmNav(user, 'users')) {
+      navigate(getDefaultItsmRoute(user), { replace: true })
+      return
+    }
     if (
-      user.role === 'USER' &&
-      !location.pathname.startsWith('/tickets') &&
-      !location.pathname.startsWith('/reports') &&
-      !location.pathname.startsWith('/security')
+      location.pathname.startsWith('/dashboard') &&
+      !canAccessItsmNav(user, 'dashboard')
     ) {
-      navigate('/tickets', { replace: true })
+      navigate(getDefaultItsmRoute(user), { replace: true })
     }
-    if (user.role === 'AGENT' && (location.pathname.startsWith('/admin') || location.pathname.startsWith('/users'))) {
-      navigate('/tickets', { replace: true })
-    }
-  }, [user?.role, location.pathname, navigate])
+  }, [user, location.pathname, navigate])
 
   const handleNavSelect = (id: string) => {
     setActiveNav(id)
@@ -428,7 +431,7 @@ function MainShell() {
 
   return (
     <div className="app-root">
-      <PrimarySidebar activeNav={activeNav} setActiveNav={handleNavSelect} role={user?.role} />
+      <PrimarySidebar activeNav={activeNav} setActiveNav={handleNavSelect} auth={user} />
       <div id="ticket-left-panel" className="ticket-left-panel" />
       <div className="nav-top-bar">
         <div className="nav-top-bar-left">
@@ -943,8 +946,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/auth/Account/ConfirmEmail" element={<Login />} />
       <Route path="/reset-password" element={<Login />} />
-      <Route path="/portal/login" element={<Login />} />
+      <Route path="/portal/login" element={<Navigate to="/login" replace />} />
       <Route path="/portal/dashboard" element={<PortalHome />} />
       <Route path="/portal/tickets" element={<PortalTickets />} />
       <Route path="/portal/assets" element={<PortalAssets />} />

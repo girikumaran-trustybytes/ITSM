@@ -3,8 +3,14 @@ import cors from 'cors'
 import morgan from 'morgan'
 import routes from './routes'
 import { errorHandler } from './common/middleware/error.middleware'
+import { ensureRbacSeeded } from './modules/users/rbac.service'
 
 const app = express()
+
+void ensureRbacSeeded().catch((error) => {
+	// Keep API boot resilient; authorization middleware still has safe fallbacks.
+	console.error('RBAC seed initialization failed:', error)
+})
 
 app.use(cors())
 app.use(express.json({ limit: '50mb' }))

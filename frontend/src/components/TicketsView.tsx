@@ -11,6 +11,8 @@ import { getRowsPerPage } from '../utils/pagination'
 import { loadLeftPanelConfig, type QueueRule, type TicketQueueConfig } from '../utils/leftPanelConfig'
 import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, toPresenceClass, type PresenceStatus } from '../utils/presence'
 import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../utils/avatar'
+
+const PLATFORM_FROM_MAIL = String((import.meta as any).env?.VITE_PLATFORM_BASE_MAIL || 'girikumaran@trustybytes.in').trim()
 const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
 const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
@@ -308,17 +310,13 @@ export default function TicketsView() {
   }
 
   const getSlaElapsedColor = (elapsedPercent: number) => {
-    const p = Math.max(0, Math.min(100, Math.round(elapsedPercent / 10) * 10))
-    if (p <= 0) return '#006400'
-    if (p <= 10) return '#008000'
-    if (p <= 20) return '#32CD32'
-    if (p <= 30) return '#9ACD32'
-    if (p <= 40) return '#FFD700'
-    if (p <= 50) return '#FFA500'
-    if (p <= 60) return '#FF8C00'
-    if (p <= 70) return '#FF6A00'
-    if (p <= 80) return '#FF4500'
-    if (p <= 90) return '#FF0000'
+    const p = Math.max(0, Number(elapsedPercent || 0))
+    if (p <= 0) return '#008000'
+    if (p < 30) return '#008000'
+    if (p < 50) return '#9ACD32'
+    if (p < 70) return '#FFA500'
+    if (p < 90) return '#FF6A00'
+    if (p < 100) return '#FF0000'
     return '#8B0000'
   }
 
@@ -676,11 +674,17 @@ export default function TicketsView() {
   }, [])
 
   React.useEffect(() => {
-    userService.listUsers({ limit: 500 }).then((users) => {
-      setAgents(Array.isArray(users) ? users : [])
-    }).catch(() => {
-      setAgents([])
-    })
+    const loadAgents = () => {
+      userService.listUsers({ limit: 500 }).then((users) => {
+        setAgents(Array.isArray(users) ? users : [])
+      }).catch(() => {
+        setAgents([])
+      })
+    }
+    loadAgents()
+    const onRbacUpdated = () => loadAgents()
+    window.addEventListener('rbac-permissions-updated', onRbacUpdated)
+    return () => window.removeEventListener('rbac-permissions-updated', onRbacUpdated)
   }, [])
 
   React.useEffect(() => {
@@ -1742,6 +1746,15 @@ Click below to proceed:
     setComposerForm((prev) => ({ ...prev, body: text }))
   }
 
+  const buildReplySubject = (ticket: any) => {
+    const ticketLabel = String(ticket?.id || '').trim()
+    const raw = String(ticket?.subject || 'Ticket Update').trim()
+    const withoutRe = raw.replace(/^re:\s*/i, '').trim()
+    const withoutTicketTags = withoutRe.replace(/\[TB#\d+\]/gi, ' ').replace(/\s+/g, ' ').trim()
+    const base = withoutTicketTags || 'Ticket Update'
+    return `Re: ${base} [${ticketLabel}]`
+  }
+
   const openComposer = (
     mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
   ) => {
@@ -1750,14 +1763,7 @@ Click below to proceed:
     const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'resolve' || mode === 'close' || mode === 'noteEmail'
       ? getEndUserAutoRecipient()
       : ''
-    const subjectPrefix = `[${selectedTicket.id}] ${selectedTicket.subject}`
-    const subjectDefault =
-      mode === 'logSupplier' ? `Supplier log - ${subjectPrefix}` :
-      mode === 'approval' ? `Approval Pending - Ticket #${selectedTicket.id}` :
-      mode === 'resolve' ? `Resolution update - ${subjectPrefix}` :
-      mode === 'close' ? `Ticket closed - ${subjectPrefix}` :
-      mode === 'acknowledge' ? `Acknowledged - ${subjectPrefix}` :
-      `Update - ${subjectPrefix}`
+    const subjectDefault = buildReplySubject(selectedTicket)
 
     const defaultBody = mode === 'approval' ? getApprovalTemplate() : ''
     const defaultBodyHtml = defaultBody
@@ -1892,8 +1898,9 @@ Click below to proceed:
       (queue) => queue.label.trim().toLowerCase() === category.toLowerCase()
     )
     if (matchedQueue) return { team: matchedQueue.label, forcedUnassigned: false }
-    // Unknown/new categories are routed to Support Desk as unassigned.
-    return { team: 'Support Desk', forcedUnassigned: true }
+    // Unknown/new categories are not forced into a hardcoded team.
+    const fallbackLabel = String(visibleTicketQueues[0]?.label || '').trim()
+    return { team: fallbackLabel || 'Unassigned', forcedUnassigned: true }
   }
   const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
   const countWithSupplier = openIncidents.filter((i) => {
@@ -1914,11 +1921,10 @@ Click below to proceed:
       if (!key || groups[key]) return
       groups[key] = { total: 0, unassigned: 0, agents: {} }
     })
-    if (!groups['Support Desk']) groups['Support Desk'] = { total: 0, unassigned: 0, agents: {} }
-
     openIncidents.forEach((incident) => {
       const mapped = mapTeam(incident)
       const team = mapped.team
+      if (!team) return
       if (!groups[team]) groups[team] = { total: 0, unassigned: 0, agents: {} }
       groups[team].total += 1
       const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
@@ -1929,6 +1935,45 @@ Click below to proceed:
       const label = incident.assignedAgentName || String(incident.assignedAgentId)
       if (!groups[team].agents[agentKey]) groups[team].agents[agentKey] = { label, count: 0 }
       groups[team].agents[agentKey].count += 1
+    })
+
+    // Include service-account/team-scoped agents even when they have 0 tickets in the queue.
+    agents.forEach((agent: any) => {
+      const role = String(agent?.role || '').trim().toUpperCase()
+      const isAgentLike = role === 'AGENT' || role === 'ADMIN' || Boolean(agent?.isServiceAccount)
+      if (!isAgentLike) return
+
+      const queueIds = Array.isArray(agent?.queueIds)
+        ? agent.queueIds.map((queueId: any) => String(queueId || '').trim().toLowerCase()).filter(Boolean)
+        : []
+      if (queueIds.length === 0) return
+
+      const agentKey = String(agent?.id || agent?.email || '').trim()
+      const agentLabel = getAgentDisplayName(agent)
+      if (!agentKey || !agentLabel) return
+
+      const normalize = (value: string) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+      queueIds.forEach((queueId) => {
+        const queueIdNorm = normalize(queueId)
+        const matchedQueue = visibleTicketQueues.find((queue) => {
+          const queueLabel = String(queue.label || '').trim()
+          const queueKey = String((queue as any).id || '').trim()
+          const labelNorm = normalize(queueLabel)
+          const keyNorm = normalize(queueKey)
+          if (labelNorm === queueIdNorm || keyNorm === queueIdNorm) return true
+          // Alias map for legacy queue keys to admin labels.
+          if (queueIdNorm === 'helpdesk' && labelNorm.includes('support')) return true
+          if (queueIdNorm === 'hr' && labelNorm.includes('hr')) return true
+          return false
+        })
+        const teamName = matchedQueue ? String(matchedQueue.label || '').trim() : ''
+
+        if (!teamName) return
+        if (!groups[teamName]) groups[teamName] = { total: 0, unassigned: 0, agents: {} }
+        if (!groups[teamName].agents[agentKey]) {
+          groups[teamName].agents[agentKey] = { label: agentLabel, count: 0 }
+        }
+      })
     })
 
     return groups
@@ -2667,7 +2712,7 @@ Click below to proceed:
             to: composerForm.to.trim(),
             cc: composerForm.cc.trim() || undefined,
             bcc: composerForm.bcc.trim() || undefined,
-            subject: composerForm.subject.trim() || `Ticket closed - ${selectedTicket.id}`,
+            subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
             attachmentIds,
           })
         } else if (attachmentIds.length) {
@@ -2688,7 +2733,7 @@ Click below to proceed:
             to: composerForm.to.trim(),
             cc: composerForm.cc.trim() || undefined,
             bcc: composerForm.bcc.trim() || undefined,
-            subject: composerForm.subject.trim() || `Update - ${selectedTicket.id}`,
+            subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
             attachmentIds,
           })
         }
@@ -4630,7 +4675,7 @@ Click below to proceed:
               </div>
               <div className="compose-review-row">
                 <span>From:</span>
-                <span>{user?.email || 'support@itsm.local'}</span>
+                <span>{PLATFORM_FROM_MAIL || 'support@itsm.local'}</span>
               </div>
               <div className="compose-review-row">
                 <span>To:</span>

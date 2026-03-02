@@ -12,6 +12,7 @@ router.get('/sso/:provider/start', auth_controller_1.ssoStart);
 router.get('/sso/:provider/callback', auth_controller_1.ssoCallback);
 router.post('/forgot-password', auth_controller_1.forgotPassword);
 router.post('/reset-password', auth_controller_1.resetPassword);
+router.post('/accept-invite', auth_controller_1.acceptInvite);
 router.post('/mfa/verify', auth_controller_1.verifyMfa);
 router.post('/refresh', auth_controller_1.refresh);
 router.post('/change-password', auth_middleware_1.authenticateJWT, auth_controller_1.changePassword);

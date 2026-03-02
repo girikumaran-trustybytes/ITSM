@@ -16,7 +16,7 @@ export const assetIdParamsSchema = z.object({
 
 export const assetsCreateBodySchema = z.object({
   assetId: z.string().min(1),
-  name: z.string().min(1),
+  name: z.string().optional(),
   assetType: z.string().min(1),
   category: z.string().min(1),
   status: z.string().min(1),
