@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { acceptInvite, getCurrentUser, getGoogleConfig, getSsoConfig, login, loginWithGoogle, requestPasswordReset, resetPassword, storeAuthTokens, verifyMfa } from '../services/auth.service'
+import { acceptInvite, getCurrentUser, getGoogleConfig, getSsoConfig, login, loginWithGoogle, requestTwoFaChallenge, requestPasswordReset, resetPassword, storeAuthTokens, verifyTwoFa } from '../services/auth.service'
 import { buildApiUrl } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { getDefaultItsmRoute } from '../security/policy'
@@ -11,9 +11,10 @@ declare global {
   }
 }
 
-type Mode = 'login' | 'forgot' | 'reset' | 'mfa' | 'activate'
+type Mode = 'login' | 'forgot' | 'reset' | 'twofa' | 'mfa' | 'activate'
 type SsoProvider = 'google' | 'zoho' | 'outlook'
 type SsoProviderConfig = { provider: SsoProvider; enabled: boolean; label: string; loginUrl?: string }
+type TwoFaMethod = 'email' | 'authenticator'
 const REMEMBER_ME_STORAGE_KEY = 'rememberMe'
 const REMEMBERED_EMAIL_STORAGE_KEY = 'rememberedEmail'
 
@@ -39,6 +40,14 @@ export default function Login() {
   const [confirmPasswordValue, setConfirmPasswordValue] = useState('')
   const [mfaCode, setMfaCode] = useState('')
   const [mfaChallengeToken, setMfaChallengeToken] = useState('')
+  const [mfaPreToken, setMfaPreToken] = useState('')
+  const [mfaMethods, setMfaMethods] = useState<TwoFaMethod[]>([])
+  const [mfaSelectedMethod, setMfaSelectedMethod] = useState<TwoFaMethod>('email')
+  const [mfaStep, setMfaStep] = useState<'select' | 'verify'>('select')
+  const [twoFaChallengeMethod, setTwoFaChallengeMethod] = useState<TwoFaMethod | ''>('')
+  const [mfaMaskedEmail, setMfaMaskedEmail] = useState('')
+  const [mfaDontAskAgain, setMfaDontAskAgain] = useState(false)
+  const [mfaUserName, setMfaUserName] = useState('User')
   const [activationName, setActivationName] = useState('')
   const [activationPassword, setActivationPassword] = useState('')
   const [activationConfirmPassword, setActivationConfirmPassword] = useState('')
@@ -47,7 +56,7 @@ export default function Login() {
     if (location.pathname.toLowerCase() === '/auth/account/confirmemail') return 'activate'
     if (location.pathname === '/reset-password') return 'reset'
     const value = searchParams.get('mode')
-    if (value === 'forgot' || value === 'reset' || value === 'mfa') return value
+    if (value === 'forgot' || value === 'reset' || value === 'twofa' || value === 'mfa') return value
     return 'login'
   }, [location.pathname, searchParams])
   const resetToken = searchParams.get('token') || ''
@@ -148,22 +157,55 @@ export default function Login() {
     }
 
     const challengeToken = String(searchParams.get('challengeToken') || '').trim()
-    const mfaPreview = String(searchParams.get('mfaCodePreview') || '').trim()
+    const mfaPreview = String(searchParams.get('twoFaCodePreview') || searchParams.get('mfaCodePreview') || '').trim()
+    const methodsRaw = String(searchParams.get('methods') || '').trim()
+    const maskedEmail = String(searchParams.get('maskedEmail') || '').trim()
+    const defaultMethodRaw = String(searchParams.get('defaultMethod') || '').trim().toLowerCase()
+    const mfaUserRaw = String(searchParams.get('twoFaUser') || searchParams.get('mfaUser') || '').trim()
     if (challengeToken) {
-      setMfaChallengeToken(challengeToken)
-      if (mfaPreview) setInfo(`MFA code (dev preview): ${mfaPreview}`)
+      setMfaPreToken(challengeToken)
+      setMfaChallengeToken('')
+      const methods: TwoFaMethod[] = methodsRaw
+        ? methodsRaw
+          .split(',')
+          .map((v) => v.trim().toLowerCase())
+          .filter((v): v is TwoFaMethod => v === 'email' || v === 'authenticator')
+        : ['email']
+      setMfaMethods(methods.length ? methods : ['email'])
+      const defaultMethod: TwoFaMethod = defaultMethodRaw === 'authenticator' ? 'authenticator' : 'email'
+      setMfaSelectedMethod(methods.includes(defaultMethod) ? defaultMethod : (methods[0] || 'email'))
+      setMfaMaskedEmail(maskedEmail)
+      if (mfaUserRaw) setMfaUserName(mfaUserRaw)
+      setMfaStep('select')
+      if (mfaPreview) setInfo(`2FA code (dev preview): ${mfaPreview}`)
     }
   }, [navigate, refreshUser, searchParams])
 
+  useEffect(() => {
+    const inTwoFaMode = mode === 'mfa' || mode === 'twofa'
+    if (!inTwoFaMode) return
+    const hasChallengeInUrl = Boolean(String(searchParams.get('challengeToken') || '').trim())
+    const hasActiveChallenge = Boolean(String(mfaPreToken || mfaChallengeToken || '').trim())
+    if (hasChallengeInUrl || hasActiveChallenge) return
+    navigate(loginRoute, { replace: true })
+  }, [mode, mfaPreToken, mfaChallengeToken, searchParams, loginRoute, navigate])
+
   async function finishAuth(data: any) {
     if (data?.mfaRequired && data?.challengeToken) {
-      setMfaChallengeToken(data.challengeToken)
-      setSearchParams({ mode: 'mfa' })
-      if (data?.mfaCodePreview) {
-        setInfo(`MFA code (dev preview): ${data.mfaCodePreview}`)
-      } else {
-        setInfo('Verification code sent to your email.')
-      }
+      setMfaPreToken(String(data.challengeToken || ''))
+      setMfaChallengeToken('')
+      const methods: TwoFaMethod[] = Array.isArray(data?.availableMethods)
+        ? data.availableMethods.filter((v: any): v is TwoFaMethod => v === 'email' || v === 'authenticator')
+        : ['email']
+      setMfaMethods(methods.length ? methods : ['email'])
+      setMfaSelectedMethod((methods[0] === 'authenticator' ? 'authenticator' : 'email'))
+      setMfaStep('select')
+      setMfaMaskedEmail(String(data?.maskedEmail || ''))
+      setMfaUserName(String(data?.user?.name || data?.user?.email || 'User'))
+      setMfaCode('')
+      setMfaDontAskAgain(false)
+      setSearchParams({ mode: 'twofa' })
+      setInfo('')
       return
     }
     refreshUser()
@@ -267,16 +309,59 @@ export default function Login() {
     }
   }
 
-  async function onMfaVerify(e: React.FormEvent) {
+  async function onTwoFaVerify(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setInfo('')
+    if (!mfaChallengeToken) {
+      setError('Start verification first.')
+      return
+    }
+    if (!mfaCode.trim()) {
+      setError('Enter the 6-digit verification code.')
+      return
+    }
     try {
       setLoading(true)
-      const data = await verifyMfa(mfaChallengeToken, mfaCode, rememberMe)
+      const data = await verifyTwoFa(mfaChallengeToken, mfaCode, rememberMe, mfaDontAskAgain, navigator?.userAgent || 'browser')
       await finishAuth(data)
     } catch (e: any) {
       setError(e?.response?.data?.error || e.message || 'Invalid verification code')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function onStartTwoFaChallenge() {
+    setError('')
+    setInfo('')
+    if (!mfaPreToken) {
+      setError('2FA challenge is missing. Please login again.')
+      return
+    }
+    if (mfaSelectedMethod === 'authenticator' && !mfaMethods.includes('authenticator')) {
+      setError('Authenticator app is not configured for this account.')
+      return
+    }
+    try {
+      setLoading(true)
+      const challenge = await requestTwoFaChallenge(mfaPreToken, mfaSelectedMethod)
+      const challengeToken = String(challenge?.challengeToken || '')
+      if (!challengeToken) {
+        setError('Unable to create 2FA challenge. Please try again.')
+        return
+      }
+      setMfaChallengeToken(challengeToken)
+      setTwoFaChallengeMethod(mfaSelectedMethod)
+      setMfaStep('verify')
+      setMfaCode('')
+      if (mfaSelectedMethod === 'email') {
+        setInfo(`A verification code has been sent to ${String(challenge?.destination || mfaMaskedEmail || 'your email')}.`)
+      } else {
+        setInfo('Please enter the code from your Authenticator App.')
+      }
+    } catch (e: any) {
+      setError(e?.response?.data?.error || e?.message || 'Unable to start 2FA challenge')
     } finally {
       setLoading(false)
     }
@@ -373,10 +458,18 @@ export default function Login() {
       navigate(loginRoute)
     } else if (next === 'forgot') {
       navigate(`${loginRoute}?mode=forgot`)
-    } else if (next === 'mfa') {
-      navigate(`${loginRoute}?mode=mfa`)
+    } else if (next === 'mfa' || next === 'twofa') {
+      navigate(`${loginRoute}?mode=twofa`)
     } else {
       navigate(`/reset-password${resetToken ? `?token=${encodeURIComponent(resetToken)}` : ''}`)
+    }
+    if (next !== 'mfa' && next !== 'twofa') {
+      setMfaCode('')
+      setMfaPreToken('')
+      setMfaChallengeToken('')
+      setMfaMethods([])
+      setMfaStep('select')
+      setMfaDontAskAgain(false)
     }
     setError('')
     setInfo('')
@@ -437,10 +530,10 @@ export default function Login() {
           <>
         {mode !== 'forgot' && mode !== 'reset' && (
           <div className="login-title">
-            {mode === 'mfa' ? 'MFA VERIFICATION' : 'LOG IN'}
+            {mode === 'mfa' || mode === 'twofa' ? 'TWO-FACTOR AUTHENTICATION' : 'LOG IN'}
           </div>
         )}
-        {mode !== 'forgot' && mode !== 'reset' && info ? <div className="login-alert login-alert-success">{info}</div> : null}
+        {mode !== 'forgot' && mode !== 'reset' && mode !== 'mfa' && mode !== 'twofa' && info ? <div className="login-alert login-alert-success">{info}</div> : null}
         {mode !== 'forgot' && error ? <div className="login-alert login-alert-error">{error}</div> : null}
 
         {mode === 'login' && (
@@ -584,11 +677,85 @@ export default function Login() {
           </form>
         )}
 
-        {mode === 'mfa' && (
-          <form onSubmit={onMfaVerify} className="login-form">
-            <input className="login-input" value={mfaCode} onChange={(e) => setMfaCode(e.target.value)} placeholder="Verification Code" />
-            <button disabled={loading} type="submit" className="login-submit-btn">Verify</button>
-            <button type="button" className="login-link-btn" onClick={() => switchMode('login')}>Cancel</button>
+        {(mode === 'mfa' || mode === 'twofa') && (
+          <form onSubmit={onTwoFaVerify} className="login-form login-twofa-form">
+            {mfaStep === 'select' ? (
+              <div className="login-twofa-panel">
+                <div className="login-twofa-subtitle">Please verify your identity to continue</div>
+                <div className="login-twofa-methods">
+                  {mfaMethods.includes('authenticator') ? (
+                    <button
+                      type="button"
+                      className={`login-twofa-method-card ${mfaSelectedMethod === 'authenticator' ? 'active' : ''}`}
+                      onClick={() => {
+                        setMfaSelectedMethod('authenticator')
+                        setMfaChallengeToken('')
+                        setTwoFaChallengeMethod('')
+                      }}
+                    >
+                      <span className="login-twofa-method-radio" aria-hidden="true" />
+                      <span>
+                        <strong>Authenticator App</strong>
+                        <small>Use your authenticator app</small>
+                      </span>
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className={`login-twofa-method-card ${mfaSelectedMethod === 'email' ? 'active' : ''}`}
+                    onClick={() => {
+                      setMfaSelectedMethod('email')
+                      setMfaChallengeToken('')
+                      setTwoFaChallengeMethod('')
+                    }}
+                  >
+                    <span className="login-twofa-method-radio" aria-hidden="true" />
+                    <span>
+                      <strong>Email Code</strong>
+                      <small>Receive a code via email to {mfaMaskedEmail || 'your email'}</small>
+                    </span>
+                  </button>
+                </div>
+                <button disabled={loading} type="button" className="login-submit-btn login-twofa-submit" onClick={onStartTwoFaChallenge}>
+                  {loading ? 'Starting...' : 'Continue'}
+                </button>
+              </div>
+            ) : (
+              <div className="login-twofa-panel">
+                <div className="login-twofa-subtitle">
+                  {twoFaChallengeMethod === 'email'
+                    ? `A verification code has been sent to ${mfaMaskedEmail || 'your email'}.`
+                    : 'Please enter the code from your Authenticator App.'}
+                </div>
+                <label className="login-twofa-code-label">
+                  Enter 6-digit code
+                  <input
+                    className="login-input login-twofa-code"
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="0 0 0 0 0 0"
+                  />
+                </label>
+                <button disabled={loading} type="submit" className="login-submit-btn login-twofa-submit">
+                  {loading ? 'Verifying...' : 'Verify and Continue'}
+                </button>
+                <button
+                  type="button"
+                  className="login-link-btn login-twofa-back"
+                  onClick={() => {
+                    setMfaStep('select')
+                    setMfaCode('')
+                    setMfaChallengeToken('')
+                    setTwoFaChallengeMethod('')
+                    setInfo('')
+                    setError('')
+                  }}
+                >
+                  Change method
+                </button>
+              </div>
+            )}
+            <button type="button" className="login-link-btn login-twofa-back" onClick={() => switchMode('login')}>Back</button>
           </form>
         )}
           </>
@@ -597,5 +764,6 @@ export default function Login() {
     </div>
   )
 }
+
 
 

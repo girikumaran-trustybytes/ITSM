@@ -13,6 +13,7 @@ import {
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
+import { getMfaPolicy, updateMfaPolicy } from '../services/auth.service'
 import { listUsers } from '../modules/users/services/user.service'
 
 type PaginationMeta = {
@@ -56,7 +57,7 @@ const settingsMenu: MenuSection[] = [
     label: 'User & Access Management',
     items: [
       { id: 'roles-permissions', label: 'User & Access management', requiresAdmin: true },
-      { id: 'mfa-settings', label: 'MFA settings', requiresAdmin: true },
+      { id: 'mfa-settings', label: '2FA settings', requiresAdmin: true },
     ],
   },
   {
@@ -672,7 +673,10 @@ const initialValues: Values = {
   documentationLink: '',
   notes: '',
   ssoEnforced: true,
-  mfaRequired: true,
+  mfaRequired: false,
+  mfaMethod: 'Authenticator App',
+  mfaGracePeriod: '0',
+  mfaBypassEmergency: false,
   auditLogging: true,
   backupEnabled: true,
   autoAssignEnabled: true,
@@ -820,9 +824,9 @@ const settingsTopicPanels: Record<string, PanelDef[]> = {
     ]},
   ],
   'mfa-settings': [
-    { id: 'mfa', title: 'MFA Policy', description: 'Second-factor strategy and conditional access rules.', fields: [
-      { key: 'mfaRequired', label: 'MFA required for privileged roles', type: 'toggle', adminOnly: true },
-      { key: 'mfaMethod', label: 'Primary MFA method', type: 'select', options: ['Authenticator App', 'FIDO2 Key', 'SMS OTP'], adminOnly: true },
+    { id: 'mfa', title: '2FA Policy', description: 'Second-factor strategy and conditional access rules.', fields: [
+      { key: 'mfaRequired', label: '2FA required for all users', type: 'toggle', adminOnly: true },
+      { key: 'mfaMethod', label: 'Primary 2FA method', type: 'select', options: ['Authenticator App', 'FIDO2 Key', 'SMS OTP'], adminOnly: true },
       { key: 'mfaGracePeriod', label: 'Enrollment grace period (days)', type: 'text', adminOnly: true },
       { key: 'mfaBypassEmergency', label: 'Allow emergency bypass', type: 'toggle', adminOnly: true },
     ]},
@@ -1325,6 +1329,11 @@ export default function AdminView(_props: AdminViewProps) {
       loadDatabaseConfiguration()
     }
   }, [activeItem, role])
+  useEffect(() => {
+    if (activeItem === 'mfa-settings' && role === 'ADMIN') {
+      loadMfaPolicyConfiguration()
+    }
+  }, [activeItem, role])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1704,6 +1713,47 @@ export default function AdminView(_props: AdminViewProps) {
     } finally {
       setDbLoading(false)
     }
+  }
+
+  const loadMfaPolicyConfiguration = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      const data = await getMfaPolicy()
+      setValues((prev) => ({
+        ...prev,
+        mfaRequired: Boolean(data?.mfaRequiredForPrivilegedRoles),
+        mfaMethod: String(data?.primaryMfaMethod || 'Authenticator App'),
+        mfaGracePeriod: String(data?.enrollmentGracePeriodDays ?? 0),
+        mfaBypassEmergency: Boolean(data?.allowEmergencyBypass),
+      }))
+      setSavedValues((prev) => ({
+        ...prev,
+        mfaRequired: Boolean(data?.mfaRequiredForPrivilegedRoles),
+        mfaMethod: String(data?.primaryMfaMethod || 'Authenticator App'),
+        mfaGracePeriod: String(data?.enrollmentGracePeriodDays ?? 0),
+        mfaBypassEmergency: Boolean(data?.allowEmergencyBypass),
+      }))
+    } catch (error: any) {
+      addActivity(error?.response?.data?.error || 'Failed to load 2FA policy')
+    }
+  }
+
+  const saveMfaPolicyConfiguration = async () => {
+    if (role !== 'ADMIN') return
+    const payload = {
+      mfaRequiredForPrivilegedRoles: Boolean(values.mfaRequired),
+      primaryMfaMethod: String(values.mfaMethod || 'Authenticator App') as 'Authenticator App' | 'FIDO2 Key' | 'SMS OTP',
+      enrollmentGracePeriodDays: Math.max(0, Number(values.mfaGracePeriod || 0) || 0),
+      allowEmergencyBypass: Boolean(values.mfaBypassEmergency),
+    }
+    await updateMfaPolicy(payload)
+    setSavedValues((prev) => ({
+      ...prev,
+      mfaRequired: payload.mfaRequiredForPrivilegedRoles,
+      mfaMethod: payload.primaryMfaMethod,
+      mfaGracePeriod: String(payload.enrollmentGracePeriodDays),
+      mfaBypassEmergency: payload.allowEmergencyBypass,
+    }))
   }
 
   const updateMailRoot = (key: keyof Omit<MailConfigForm, 'smtp' | 'imap'>, value: any) => {
@@ -2411,12 +2461,21 @@ export default function AdminView(_props: AdminViewProps) {
     setActivityLog((prev) => [`${message} (${new Date().toLocaleTimeString()})`, ...prev])
   }
 
-  const handleSave = () => {
-    setSavedValues(values)
-    const now = new Date().toLocaleString()
-    setLastSavedAt(now)
-    addActivity(`${title} configuration saved`)
-    setShowConfirmSave(false)
+  const handleSave = async () => {
+    try {
+      if (activeItem === 'mfa-settings' && role === 'ADMIN') {
+        await saveMfaPolicyConfiguration()
+      } else {
+        setSavedValues(values)
+      }
+      const now = new Date().toLocaleString()
+      setLastSavedAt(now)
+      addActivity(`${title} configuration saved`)
+      setShowConfirmSave(false)
+    } catch (error: any) {
+      addActivity(error?.response?.data?.error || 'Failed to save configuration')
+      alert(error?.response?.data?.error || error?.message || 'Failed to save configuration')
+    }
   }
 
   const handleCancel = () => {
@@ -2626,6 +2685,9 @@ export default function AdminView(_props: AdminViewProps) {
         }
         if (activeItem === 'database-configuration' && role === 'ADMIN') {
           loadDatabaseConfiguration()
+        }
+        if (activeItem === 'mfa-settings' && role === 'ADMIN') {
+          loadMfaPolicyConfiguration()
         }
       }
     }

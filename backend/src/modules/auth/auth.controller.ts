@@ -21,9 +21,9 @@ function isDbError(err: any): boolean {
 }
 
 export async function login(req: Request, res: Response) {
-  const { email, password } = req.body
+  const { email, password, trustedDeviceToken } = req.body || {}
   try {
-    const result = await authService.login(email, password)
+    const result = await authService.login(email, password, trustedDeviceToken)
     res.json(result)
   } catch (err: any) {
     if (isDbError(err)) {
@@ -35,9 +35,9 @@ export async function login(req: Request, res: Response) {
 }
 
 export async function loginWithGoogle(req: Request, res: Response) {
-  const { idToken } = req.body
+  const { idToken, trustedDeviceToken } = req.body || {}
   try {
-    const result = await authService.loginWithGoogle(idToken)
+    const result = await authService.loginWithGoogle(idToken, trustedDeviceToken)
     res.json(result)
   } catch (err: any) {
     if (isDbError(err)) {
@@ -91,16 +91,31 @@ export async function acceptInvite(req: Request, res: Response) {
 }
 
 export async function verifyMfa(req: Request, res: Response) {
-  const { challengeToken, code } = req.body
+  const { challengeToken, code, dontAskAgain, trustedDeviceLabel } = req.body || {}
   try {
-    const result = await authService.verifyMfa(challengeToken, code)
+    const result = await authService.verifyMfa(challengeToken, code, Boolean(dontAskAgain), String(trustedDeviceLabel || 'browser'))
     res.json(result)
   } catch (err: any) {
     if (isDbError(err)) {
       res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
       return
     }
-    res.status(401).json({ error: err.message || 'Invalid MFA code' })
+    res.status(401).json({ error: err.message || 'Invalid 2FA code' })
+  }
+}
+
+export async function requestMfaChallenge(req: Request, res: Response) {
+  const { challengeToken, method } = req.body || {}
+  try {
+    const normalizedMethod = String(method || '').trim().toLowerCase() === 'authenticator' ? 'authenticator' : 'email'
+    const result = await authService.requestMfaChallenge(String(challengeToken || ''), normalizedMethod)
+    res.json(result)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(400).json({ error: err.message || 'Unable to create 2FA challenge' })
   }
 }
 
@@ -130,6 +145,125 @@ export async function changePassword(req: Request, res: Response) {
       return
     }
     res.status(400).json({ error: err.message || 'Unable to change password' })
+  }
+}
+
+export async function getMfaPolicy(_req: Request, res: Response) {
+  try {
+    const data = await authService.getMfaPolicy()
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 500).json({ error: err.message || 'Unable to load 2FA policy' })
+  }
+}
+
+export async function updateMfaPolicy(req: Request, res: Response) {
+  try {
+    const data = await authService.updateMfaPolicy(req.body || {})
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 500).json({ error: err.message || 'Unable to update 2FA policy' })
+  }
+}
+
+export async function getMyMfaSettings(req: Request, res: Response) {
+  try {
+    const userId = Number((req as any)?.user?.id || 0)
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const data = await authService.getUserMfaState(userId)
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 500).json({ error: err.message || 'Unable to load 2FA settings' })
+  }
+}
+
+export async function updateMyMfaSettings(req: Request, res: Response) {
+  try {
+    const userId = Number((req as any)?.user?.id || 0)
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const enabled = Boolean((req.body || {}).enabled)
+    const data = await authService.setUserMfaEnabled(userId, enabled)
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 500).json({ error: err.message || 'Unable to update 2FA settings' })
+  }
+}
+
+export async function setupAuthenticator(req: Request, res: Response) {
+  try {
+    const userId = Number((req as any)?.user?.id || 0)
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const data = await authService.setupAuthenticator(userId)
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 500).json({ error: err.message || 'Unable to setup authenticator app' })
+  }
+}
+
+export async function verifyAuthenticatorSetup(req: Request, res: Response) {
+  try {
+    const userId = Number((req as any)?.user?.id || 0)
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const code = String((req.body || {}).code || '')
+    const data = await authService.verifyAuthenticatorSetup(userId, code)
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 400).json({ error: err.message || 'Unable to verify authenticator app setup' })
+  }
+}
+
+export async function resetAuthenticator(req: Request, res: Response) {
+  try {
+    const userId = Number((req as any)?.user?.id || 0)
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    const data = await authService.resetAuthenticator(userId)
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 500).json({ error: err.message || 'Unable to reset authenticator app' })
+  }
+}
+
+export async function updateUserMfaSettings(req: Request, res: Response) {
+  try {
+    const userId = Number(req.params?.id || 0)
+    if (!userId) return res.status(400).json({ error: 'Invalid user id' })
+    const enabled = Boolean((req.body || {}).enabled)
+    const data = await authService.setUserMfaEnabled(userId, enabled)
+    res.json(data)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 500).json({ error: err.message || 'Unable to update user 2FA settings' })
   }
 }
 
@@ -190,10 +324,17 @@ export async function ssoCallback(req: Request, res: Response) {
   try {
     const { rememberMe, auth } = await authService.completeSsoCallback(provider, code, state)
     if (auth?.mfaRequired && auth?.challengeToken) {
+      const methods = Array.isArray(auth?.availableMethods)
+        ? auth.availableMethods.filter((m: any) => m === 'email' || m === 'authenticator')
+        : []
       const params = new URLSearchParams({
-        mode: 'mfa',
+        mode: 'twofa',
         challengeToken: String(auth.challengeToken || ''),
-        ...(auth?.mfaCodePreview ? { mfaCodePreview: String(auth.mfaCodePreview) } : {}),
+        ...(methods.length ? { methods: methods.join(',') } : {}),
+        ...(auth?.maskedEmail ? { maskedEmail: String(auth.maskedEmail) } : {}),
+        ...(auth?.defaultMethod ? { defaultMethod: String(auth.defaultMethod) } : {}),
+        ...(auth?.user?.name ? { twoFaUser: String(auth.user.name) } : {}),
+        ...(auth?.mfaCodePreview ? { twoFaCodePreview: String(auth.mfaCodePreview) } : {}),
       })
       return res.redirect(`${frontendBase}/login?${params.toString()}`)
     }

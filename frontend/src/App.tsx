@@ -77,6 +77,7 @@ function toNotificationId(value: any): number | null {
 }
 
 function MainShell() {
+  type NotificationToast = { id: number; title: string; sub: string }
   const [activeNav, setActiveNav] = useState('dashboard')
   const { user } = useAuth()
   const location = useLocation()
@@ -89,7 +90,7 @@ function MainShell() {
   const [activePanel, setActivePanel] = useState<null | 'search' | 'notifications' | 'todo' | 'feed'>(null)
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('All Activity')
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
-  const [notificationPopup, setNotificationPopup] = useState<{ title: string; sub: string } | null>(null)
+  const [notificationPopups, setNotificationPopups] = useState<NotificationToast[]>([])
   const lastSeenNotificationIdRef = React.useRef<number>(0)
   const notificationInitRef = React.useRef(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -235,7 +236,6 @@ function MainShell() {
 
   useEffect(() => {
     let mounted = true
-    let popupTimer: number | null = null
     const refreshUnreadCount = async () => {
       if (!user) {
         if (mounted) setUnreadNotificationCount(0)
@@ -271,17 +271,16 @@ function MainShell() {
 
         const fresh = sorted.filter((n: any) => (toNotificationId(n?.id) || 0) > lastSeenNotificationIdRef.current)
         if (fresh.length > 0 && mounted) {
-          const latest = fresh[fresh.length - 1]
-          const ticketId = String(latest?.ticketId || latest?.meta?.ticketId || '')
-          const title = String(latest?.entity || '').toLowerCase() === 'ticket'
-            ? 'New request logged.'
-            : 'New notification.'
-          const sub = ticketId ? `ID:${ticketId}` : `Action: ${String(latest?.action || 'update')}`
-          setNotificationPopup({ title, sub })
-          if (popupTimer) window.clearTimeout(popupTimer)
-          popupTimer = window.setTimeout(() => {
-            setNotificationPopup(null)
-          }, 3000)
+          const queued = fresh.map((item: any, index: number) => {
+            const id = toNotificationId(item?.id) || (Date.now() + index)
+            const ticketId = String(item?.ticketId || item?.meta?.ticketId || '')
+            const title = String(item?.entity || '').toLowerCase() === 'ticket'
+              ? 'New request logged.'
+              : 'New notification.'
+            const sub = ticketId ? `ID:${ticketId}` : `Action: ${String(item?.action || 'update')}`
+            return { id, title, sub }
+          })
+          setNotificationPopups((prev) => [...prev, ...queued].slice(-6))
         }
         lastSeenNotificationIdRef.current = maxId
       } catch {
@@ -294,11 +293,18 @@ function MainShell() {
     window.addEventListener('notifications-state-changed', onStateChange as EventListener)
     return () => {
       mounted = false
-      if (popupTimer) window.clearTimeout(popupTimer)
       window.clearInterval(timer)
       window.removeEventListener('notifications-state-changed', onStateChange as EventListener)
     }
   }, [user])
+
+  useEffect(() => {
+    if (!notificationPopups.length) return
+    const timerId = window.setTimeout(() => {
+      setNotificationPopups((prev) => prev.slice(1))
+    }, 5000)
+    return () => window.clearTimeout(timerId)
+  }, [notificationPopups])
 
   useEffect(() => {
     if (!user) return
@@ -532,13 +538,21 @@ function MainShell() {
           </div>
         </div>
       </div>
-      {notificationPopup ? (
-        <div className="app-notification-popup">
-          <button className="app-notification-popup-close" onClick={() => setNotificationPopup(null)} aria-label="Close">
-            ×
-          </button>
-          <div className="app-notification-popup-title">{notificationPopup.title}</div>
-          <div className="app-notification-popup-sub">{notificationPopup.sub}</div>
+      {notificationPopups.length ? (
+        <div className="app-notification-stack" aria-live="polite" aria-atomic="false">
+          {notificationPopups.slice(0, 1).map((toast) => (
+            <div className="app-notification-popup" key={toast.id}>
+              <button
+                className="app-notification-popup-close"
+                onClick={() => setNotificationPopups((prev) => prev.slice(1))}
+                aria-label="Close"
+              >
+                x
+              </button>
+              <div className="app-notification-popup-title">{toast.title}</div>
+              <div className="app-notification-popup-sub">{toast.sub}</div>
+            </div>
+          ))}
         </div>
       ) : null}
       <main className="main-area" style={panelWidth ? { marginRight: panelWidth } : undefined}>
@@ -973,6 +987,7 @@ export default function App() {
     </Routes>
   )
 }
+
 
 
 

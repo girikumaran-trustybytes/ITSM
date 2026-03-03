@@ -1,5 +1,8 @@
 import api from './api'
 
+const TRUSTED_TWO_FA_DEVICE_KEY = 'trustedTwoFaDeviceToken'
+const TRUSTED_MFA_DEVICE_KEY = 'trustedMfaDeviceToken'
+
 function clearStoredAuth() {
   localStorage.removeItem('accessToken')
   localStorage.removeItem('refreshToken')
@@ -19,14 +22,16 @@ export function storeAuthTokens(accessToken: string, refreshToken: string, remem
 }
 
 export async function login(email: string, password: string, rememberMe = true) {
-  const res = await api.post('/auth/login', { email, password })
+  const trustedDeviceToken = localStorage.getItem(TRUSTED_TWO_FA_DEVICE_KEY) || localStorage.getItem(TRUSTED_MFA_DEVICE_KEY) || ''
+  const res = await api.post('/auth/login', { email, password, trustedDeviceToken: trustedDeviceToken || undefined })
   const data = res.data
   storeAuth(data, rememberMe)
   return data
 }
 
 export async function loginWithGoogle(idToken: string, rememberMe = true) {
-  const res = await api.post('/auth/google', { idToken })
+  const trustedDeviceToken = localStorage.getItem(TRUSTED_TWO_FA_DEVICE_KEY) || localStorage.getItem(TRUSTED_MFA_DEVICE_KEY) || ''
+  const res = await api.post('/auth/google', { idToken, trustedDeviceToken: trustedDeviceToken || undefined })
   const data = res.data
   storeAuth(data, rememberMe)
   return data
@@ -57,9 +62,24 @@ export async function acceptInvite(token: string, password: string, name?: strin
   return res.data
 }
 
-export async function verifyMfa(challengeToken: string, code: string, rememberMe = true) {
-  const res = await api.post('/auth/mfa/verify', { challengeToken, code })
+export async function requestTwoFaChallenge(challengeToken: string, method: 'email' | 'authenticator') {
+  const res = await api.post('/auth/mfa/challenge', { challengeToken, method })
+  return res.data
+}
+
+export async function verifyTwoFa(
+  challengeToken: string,
+  code: string,
+  rememberMe = true,
+  dontAskAgain = false,
+  trustedDeviceLabel = 'browser'
+) {
+  const res = await api.post('/auth/mfa/verify', { challengeToken, code, dontAskAgain, trustedDeviceLabel })
   const data = res.data
+  if (data?.trustedDeviceToken) {
+    localStorage.setItem(TRUSTED_TWO_FA_DEVICE_KEY, String(data.trustedDeviceToken))
+    localStorage.removeItem(TRUSTED_MFA_DEVICE_KEY)
+  }
   storeAuth(data, rememberMe)
   return data
 }
@@ -68,6 +88,54 @@ export async function changePassword(currentPassword: string, newPassword: strin
   const res = await api.post('/auth/change-password', { currentPassword, newPassword })
   return res.data
 }
+
+export async function getMfaPolicy() {
+  const res = await api.get('/auth/mfa/policy')
+  return res.data
+}
+
+export async function updateMfaPolicy(payload: {
+  mfaRequiredForPrivilegedRoles?: boolean
+  primaryMfaMethod?: 'Authenticator App' | 'FIDO2 Key' | 'SMS OTP'
+  enrollmentGracePeriodDays?: number
+  allowEmergencyBypass?: boolean
+}) {
+  const res = await api.put('/auth/mfa/policy', payload)
+  return res.data
+}
+
+export async function getMyMfaSettings() {
+  const res = await api.get('/auth/mfa/me')
+  return res.data
+}
+
+export async function updateMyMfaSettings(enabled: boolean) {
+  const res = await api.put('/auth/mfa/me', { enabled })
+  return res.data
+}
+
+export async function updateUserMfaSettings(userId: number, enabled: boolean) {
+  const res = await api.put(`/auth/mfa/users/${userId}`, { enabled })
+  return res.data
+}
+
+export async function setupAuthenticatorApp() {
+  const res = await api.post('/auth/mfa/authenticator/setup')
+  return res.data
+}
+
+export async function verifyAuthenticatorAppSetup(code: string) {
+  const res = await api.post('/auth/mfa/authenticator/verify', { code })
+  return res.data
+}
+
+export async function resetAuthenticatorApp() {
+  const res = await api.post('/auth/mfa/authenticator/reset')
+  return res.data
+}
+
+export const requestMfaChallenge = requestTwoFaChallenge
+export const verifyMfa = verifyTwoFa
 
 export function logout() {
   clearStoredAuth()
