@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import PrimarySidebar, { primarySidebarModules } from './components/PrimarySidebar'
+import PrimarySidebar from './components/PrimarySidebar'
 import Dashboard from './components/Dashboard'
 import { AssetsView, AssetDetailView } from './modules/assets'
 import { TicketsView, TicketTimeline } from './modules/tickets'
@@ -28,6 +28,7 @@ import { loadNotificationState, saveNotificationState } from './utils/notificati
 import { getUserAvatarUrl, getUserInitials } from './utils/avatar'
 import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from './utils/presence'
 import { getMyPresence, putMyPresence } from './services/presence.service'
+import { canAccessItsmNav, getDefaultItsmRoute } from './security/policy'
 
 const emptyPagination = {
   page: 1,
@@ -76,6 +77,7 @@ function toNotificationId(value: any): number | null {
 }
 
 function MainShell() {
+  type NotificationToast = { id: number; title: string; sub: string }
   const [activeNav, setActiveNav] = useState('dashboard')
   const { user } = useAuth()
   const location = useLocation()
@@ -86,15 +88,9 @@ function MainShell() {
   const presenceHydratedRef = React.useRef(false)
   const lastRemotePresenceRef = React.useRef<PresenceStatus | null>(null)
   const [activePanel, setActivePanel] = useState<null | 'search' | 'notifications' | 'todo' | 'feed'>(null)
-  const [mobilePrimaryMenuOpen, setMobilePrimaryMenuOpen] = useState(false)
-  const [isMobileViewport, setIsMobileViewport] = useState(() => {
-    if (typeof window === 'undefined') return false
-    const viewportWidth = window.visualViewport?.width ?? window.innerWidth
-    return viewportWidth <= 900
-  })
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('All Activity')
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
-  const [notificationPopup, setNotificationPopup] = useState<{ title: string; sub: string } | null>(null)
+  const [notificationPopups, setNotificationPopups] = useState<NotificationToast[]>([])
   const lastSeenNotificationIdRef = React.useRef<number>(0)
   const notificationInitRef = React.useRef(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -108,7 +104,7 @@ function MainShell() {
   const [adminPage, setAdminPage] = useState(1)
   const [adminPagination, setAdminPagination] = useState(emptyPagination)
   const [timeClock, setTimeClock] = useState('')
-  const panelWidth = isMobileViewport ? 0 : (activePanel ? 360 : (showProfileMenu ? 300 : 0))
+  const panelWidth = activePanel ? 360 : (showProfileMenu ? 300 : 0)
   const profileRef = React.useRef<HTMLDivElement | null>(null)
   const profilePanelRef = React.useRef<HTMLDivElement | null>(null)
   const panelRef = React.useRef<HTMLDivElement | null>(null)
@@ -116,23 +112,7 @@ function MainShell() {
 
   useEffect(() => {
     setActiveNav(getNavFromPath(location.pathname))
-    setMobilePrimaryMenuOpen(false)
   }, [location.pathname])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined
-    const syncMobileView = () => {
-      const viewportWidth = window.visualViewport?.width ?? window.innerWidth
-      setIsMobileViewport(viewportWidth <= 900)
-    }
-    syncMobileView()
-    window.addEventListener('resize', syncMobileView)
-    window.visualViewport?.addEventListener('resize', syncMobileView)
-    return () => {
-      window.removeEventListener('resize', syncMobileView)
-      window.visualViewport?.removeEventListener('resize', syncMobileView)
-    }
-  }, [])
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -208,18 +188,15 @@ function MainShell() {
   }, [])
 
   useEffect(() => {
+    const formatTime = () => new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(new Date())
+
     const tick = () => {
-      const now = new Date()
-      const parts = new Intl.DateTimeFormat('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-        timeZoneName: 'short',
-      }).formatToParts(now)
-      const time = `${parts.find((p) => p.type === 'hour')?.value || '00'}:${parts.find((p) => p.type === 'minute')?.value || '00'}:${parts.find((p) => p.type === 'second')?.value || '00'}`
-      const zone = parts.find((p) => p.type === 'timeZoneName')?.value || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local'
-      setTimeClock(`( ${zone} - ${time} )`)
+      setTimeClock(formatTime())
     }
 
     tick()
@@ -259,7 +236,6 @@ function MainShell() {
 
   useEffect(() => {
     let mounted = true
-    let popupTimer: number | null = null
     const refreshUnreadCount = async () => {
       if (!user) {
         if (mounted) setUnreadNotificationCount(0)
@@ -295,17 +271,16 @@ function MainShell() {
 
         const fresh = sorted.filter((n: any) => (toNotificationId(n?.id) || 0) > lastSeenNotificationIdRef.current)
         if (fresh.length > 0 && mounted) {
-          const latest = fresh[fresh.length - 1]
-          const ticketId = String(latest?.ticketId || latest?.meta?.ticketId || '')
-          const title = String(latest?.entity || '').toLowerCase() === 'ticket'
-            ? 'New request logged.'
-            : 'New notification.'
-          const sub = ticketId ? `ID:${ticketId}` : `Action: ${String(latest?.action || 'update')}`
-          setNotificationPopup({ title, sub })
-          if (popupTimer) window.clearTimeout(popupTimer)
-          popupTimer = window.setTimeout(() => {
-            setNotificationPopup(null)
-          }, 3000)
+          const queued = fresh.map((item: any, index: number) => {
+            const id = toNotificationId(item?.id) || (Date.now() + index)
+            const ticketId = String(item?.ticketId || item?.meta?.ticketId || '')
+            const title = String(item?.entity || '').toLowerCase() === 'ticket'
+              ? 'New request logged.'
+              : 'New notification.'
+            const sub = ticketId ? `ID:${ticketId}` : `Action: ${String(item?.action || 'update')}`
+            return { id, title, sub }
+          })
+          setNotificationPopups((prev) => [...prev, ...queued].slice(-6))
         }
         lastSeenNotificationIdRef.current = maxId
       } catch {
@@ -318,26 +293,36 @@ function MainShell() {
     window.addEventListener('notifications-state-changed', onStateChange as EventListener)
     return () => {
       mounted = false
-      if (popupTimer) window.clearTimeout(popupTimer)
       window.clearInterval(timer)
       window.removeEventListener('notifications-state-changed', onStateChange as EventListener)
     }
   }, [user])
 
   useEffect(() => {
-    if (!user?.role) return
+    if (!notificationPopups.length) return
+    const timerId = window.setTimeout(() => {
+      setNotificationPopups((prev) => prev.slice(1))
+    }, 5000)
+    return () => window.clearTimeout(timerId)
+  }, [notificationPopups])
+
+  useEffect(() => {
+    if (!user) return
+    if (location.pathname.startsWith('/admin') && !canAccessItsmNav(user, 'admin')) {
+      navigate(getDefaultItsmRoute(user), { replace: true })
+      return
+    }
+    if (location.pathname.startsWith('/users') && !canAccessItsmNav(user, 'users')) {
+      navigate(getDefaultItsmRoute(user), { replace: true })
+      return
+    }
     if (
-      user.role === 'USER' &&
-      !location.pathname.startsWith('/tickets') &&
-      !location.pathname.startsWith('/reports') &&
-      !location.pathname.startsWith('/security')
+      location.pathname.startsWith('/dashboard') &&
+      !canAccessItsmNav(user, 'dashboard')
     ) {
-      navigate('/tickets', { replace: true })
+      navigate(getDefaultItsmRoute(user), { replace: true })
     }
-    if (user.role === 'AGENT' && (location.pathname.startsWith('/admin') || location.pathname.startsWith('/users'))) {
-      navigate('/tickets', { replace: true })
-    }
-  }, [user?.role, location.pathname, navigate])
+  }, [user, location.pathname, navigate])
 
   const handleNavSelect = (id: string) => {
     setActiveNav(id)
@@ -449,39 +434,13 @@ function MainShell() {
   const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
   const userInitials = getUserInitials(user, 'G')
   const userAvatarUrl = getUserAvatarUrl(user)
-  const mobilePrimaryNavItems = useMemo(() => {
-    const role = String(user?.role || '').trim().toUpperCase()
-    const allowedIds =
-      role === 'ADMIN'
-        ? ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'accounts', 'reports', 'admin']
-        : role === 'AGENT'
-          ? ['dashboard', 'tickets', 'assets', 'suppliers', 'accounts', 'reports']
-          : role === 'USER'
-            ? ['tickets', 'reports']
-            : ['tickets', 'reports']
-    return primarySidebarModules
-      .filter((item) => allowedIds.includes(item.id))
-      .map((item) => ({ ...item, path: navPaths[item.id] || '/dashboard' }))
-  }, [user?.role])
 
   return (
     <div className="app-root">
-      <PrimarySidebar activeNav={activeNav} setActiveNav={handleNavSelect} role={user?.role} />
+      <PrimarySidebar activeNav={activeNav} setActiveNav={handleNavSelect} auth={user} />
       <div id="ticket-left-panel" className="ticket-left-panel" />
       <div className="nav-top-bar">
         <div className="nav-top-bar-left">
-          <button
-            type="button"
-            className="mobile-primary-nav-btn"
-            aria-label="Open navigation"
-            onClick={() => setMobilePrimaryMenuOpen(true)}
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="4" y1="7" x2="20" y2="7" />
-              <line x1="4" y1="12" x2="20" y2="12" />
-              <line x1="4" y1="17" x2="20" y2="17" />
-            </svg>
-          </button>
           <nav className="breadcrumb" aria-label="Breadcrumb">
             {breadcrumbItems.map((item, index) => (
               <React.Fragment key={`${item.label}-${index}`}>
@@ -498,123 +457,102 @@ function MainShell() {
           </nav>
         </div>
         <div className="nav-top-bar-right">
-          {!isMobileViewport && (
-            <>
-              <div className="app-pill-btn app-time-pill" role="status" aria-live="polite">
-                {timeClock}
-              </div>
-              <button
-                className="app-pill-btn"
-                onClick={() => {
-                  if (!location.pathname.startsWith('/tickets')) {
-                    sessionStorage.setItem('openNewTicket', '1')
-                    navigate('/tickets')
-                    return
-                  }
-                  window.dispatchEvent(new CustomEvent('open-new-ticket'))
-                }}
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                New Ticket
-              </button>
-              <button
-                className={`app-icon-btn ${activePanel === 'search' ? 'app-icon-btn-active' : ''}`}
-                data-panel-toggle
-                aria-label="Search"
-                onClick={() => setActivePanel(activePanel === 'search' ? null : 'search')}
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="M20 20l-3.5-3.5" />
-                </svg>
-              </button>
-              <button
-                className={`app-icon-btn ${activePanel === 'todo' ? 'app-icon-btn-active' : ''}`}
-                data-panel-toggle
-                aria-label="To-Do"
-                onClick={() => setActivePanel(activePanel === 'todo' ? null : 'todo')}
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <rect x="4" y="5" width="16" height="15" rx="2" />
-                  <path d="M8 9h8M8 13h8M8 17h5" />
-                </svg>
-              </button>
-              <button
-                className={`app-icon-btn ${activePanel === 'feed' ? 'app-icon-btn-active' : ''}`}
-                data-panel-toggle
-                aria-label="Feed"
-                onClick={() => setActivePanel(activePanel === 'feed' ? null : 'feed')}
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M4 6h16M4 12h16M4 18h10" />
-                </svg>
-              </button>
-              <button
-                className={`app-icon-btn ${activePanel === 'notifications' ? 'app-icon-btn-active' : ''}`}
-                data-panel-toggle
-                aria-label="Notifications"
-                onClick={() => setActivePanel(activePanel === 'notifications' ? null : 'notifications')}
-              >
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M6 17h12l-1.5-2.5V11a4.5 4.5 0 0 0-9 0v3.5L6 17z" />
-                  <path d="M10 19a2 2 0 0 0 4 0" />
-                </svg>
-                {unreadNotificationCount > 0 ? (
-                  <span className="app-icon-badge">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>
-                ) : null}
-              </button>
-              <div className="profile-menu-anchor" ref={profileRef}>
-                <button
-                  className="profile-avatar-btn"
-                  aria-label="Profile menu"
-                  onClick={() => {
-                    setShowProfileMenu((v) => !v)
-                    setShowPresenceMenu(false)
-                  }}
-                  style={{ ['--presence-color' as any]: activePresence.color }}
-                >
-                  {userAvatarUrl ? <img src={userAvatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : userInitials}
-                  <span className={`profile-avatar-presence-dot ${presenceDotClass}`} />
-                </button>
-              </div>
-            </>
-          )}
+          <div className="app-pill-btn app-time-pill" role="status" aria-live="polite">
+            {timeClock}
+          </div>
+          <button
+            className="app-pill-btn"
+            onClick={() => {
+              if (!location.pathname.startsWith('/tickets')) {
+                sessionStorage.setItem('openNewTicket', '1')
+                navigate('/tickets')
+                return
+              }
+              window.dispatchEvent(new CustomEvent('open-new-ticket'))
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New Ticket
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'search' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Search"
+            onClick={() => setActivePanel(activePanel === 'search' ? null : 'search')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'todo' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="To-Do"
+            onClick={() => setActivePanel(activePanel === 'todo' ? null : 'todo')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="4" y="5" width="16" height="15" rx="2" />
+              <path d="M8 9h8M8 13h8M8 17h5" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'feed' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Feed"
+            onClick={() => setActivePanel(activePanel === 'feed' ? null : 'feed')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M4 6h16M4 12h16M4 18h10" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'notifications' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Notifications"
+            onClick={() => setActivePanel(activePanel === 'notifications' ? null : 'notifications')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M6 17h12l-1.5-2.5V11a4.5 4.5 0 0 0-9 0v3.5L6 17z" />
+              <path d="M10 19a2 2 0 0 0 4 0" />
+            </svg>
+            {unreadNotificationCount > 0 ? (
+              <span className="app-icon-badge">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>
+            ) : null}
+          </button>
+          <div className="profile-menu-anchor" ref={profileRef}>
+            <button
+              className="profile-avatar-btn"
+              aria-label="Profile menu"
+              onClick={() => {
+                setShowProfileMenu((v) => !v)
+                setShowPresenceMenu(false)
+              }}
+              style={{ ['--presence-color' as any]: activePresence.color }}
+            >
+              {userAvatarUrl ? <img src={userAvatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : userInitials}
+              <span className={`profile-avatar-presence-dot ${presenceDotClass}`} />
+            </button>
+          </div>
         </div>
       </div>
-      {mobilePrimaryMenuOpen && (
-        <div className="mobile-primary-nav-overlay" onClick={() => setMobilePrimaryMenuOpen(false)}>
-          <aside className="mobile-primary-nav-sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="mobile-primary-nav-head">
-              <span>Menu</span>
-              <button type="button" onClick={() => setMobilePrimaryMenuOpen(false)} aria-label="Close menu">x</button>
+      {notificationPopups.length ? (
+        <div className="app-notification-stack" aria-live="polite" aria-atomic="false">
+          {notificationPopups.slice(0, 1).map((toast) => (
+            <div className="app-notification-popup" key={toast.id}>
+              <button
+                className="app-notification-popup-close"
+                onClick={() => setNotificationPopups((prev) => prev.slice(1))}
+                aria-label="Close"
+              >
+                x
+              </button>
+              <div className="app-notification-popup-title">{toast.title}</div>
+              <div className="app-notification-popup-sub">{toast.sub}</div>
             </div>
-            <div className="mobile-primary-nav-list">
-              {mobilePrimaryNavItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`mobile-primary-nav-item${activeNav === item.id ? ' active' : ''}`}
-                  onClick={() => {
-                    setMobilePrimaryMenuOpen(false)
-                    navigate(item.path)
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </aside>
-        </div>
-      )}
-      {notificationPopup ? (
-        <div className="app-notification-popup">
-          <button className="app-notification-popup-close" onClick={() => setNotificationPopup(null)} aria-label="Close">
-            ×
-          </button>
-          <div className="app-notification-popup-title">{notificationPopup.title}</div>
-          <div className="app-notification-popup-sub">{notificationPopup.sub}</div>
+          ))}
         </div>
       ) : null}
       <main className="main-area" style={panelWidth ? { marginRight: panelWidth } : undefined}>
@@ -814,21 +752,6 @@ function MainShell() {
                   </svg>
                 </span>
               </div>
-              <button
-                className="table-icon-btn mobile-sub-sidebar-btn"
-                title="More options"
-                aria-label="Open tab options"
-                onClick={() => {
-                  if (!toolbarTarget) return
-                  window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'toggle-left-panel', target: toolbarTarget } }))
-                }}
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                  <circle cx="12" cy="5" r="1.8" />
-                  <circle cx="12" cy="12" r="1.8" />
-                  <circle cx="12" cy="19" r="1.8" />
-                </svg>
-              </button>
             </div>
             <div className="tool-bar-right">
               {isAdminListRoute ? (
@@ -940,7 +863,7 @@ function MainShell() {
         )}
         <Routes>
           <Route path="/dashboard" element={<div className="work-main"><Dashboard /></div>} />
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<Navigate to="/portal/login" replace />} />
           <Route
             path="/tickets"
             element={
@@ -1029,98 +952,6 @@ function MainShell() {
           <Route path="*" element={<div className="work-main"><Dashboard /></div>} />
         </Routes>
       </main>
-      <nav className="mobile-bottom-tabs" aria-label="Mobile function navigation">
-        <button
-          type="button"
-          data-panel-toggle
-          className={`mobile-tab-btn${activePanel === 'feed' ? ' active' : ''}`}
-          onClick={() => {
-            setShowProfileMenu(false)
-            setShowPresenceMenu(false)
-            setActivePanel(activePanel === 'feed' ? null : 'feed')
-          }}
-        >
-          <span className="mobile-tab-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="5" y1="7" x2="19" y2="7" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-              <line x1="5" y1="17" x2="15" y2="17" />
-            </svg>
-          </span>
-          <span className="mobile-tab-label">Feed</span>
-        </button>
-        <button
-          type="button"
-          data-panel-toggle
-          className={`mobile-tab-btn${activePanel === 'todo' ? ' active' : ''}`}
-          onClick={() => {
-            setShowProfileMenu(false)
-            setShowPresenceMenu(false)
-            setActivePanel(activePanel === 'todo' ? null : 'todo')
-          }}
-        >
-          <span className="mobile-tab-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="4" y="4" width="16" height="16" rx="2" />
-              <path d="M8 9h8M8 13h6M8 17h5" />
-            </svg>
-          </span>
-          <span className="mobile-tab-label">To do</span>
-        </button>
-        <button
-          type="button"
-          data-panel-toggle
-          className={`mobile-tab-btn${activePanel === 'search' ? ' active' : ''}`}
-          onClick={() => {
-            setShowProfileMenu(false)
-            setShowPresenceMenu(false)
-            setActivePanel(activePanel === 'search' ? null : 'search')
-          }}
-        >
-          <span className="mobile-tab-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="7" />
-              <line x1="16.5" y1="16.5" x2="21" y2="21" />
-            </svg>
-          </span>
-          <span className="mobile-tab-label">Search</span>
-        </button>
-        <button
-          type="button"
-          data-panel-toggle
-          className={`mobile-tab-btn${activePanel === 'notifications' ? ' active' : ''}`}
-          onClick={() => {
-            setShowProfileMenu(false)
-            setShowPresenceMenu(false)
-            setActivePanel(activePanel === 'notifications' ? null : 'notifications')
-          }}
-        >
-          <span className="mobile-tab-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M6 17h12l-1.5-2.5V11a4.5 4.5 0 0 0-9 0v3.5L6 17z" />
-              <path d="M10 19a2 2 0 0 0 4 0" />
-            </svg>
-          </span>
-          <span className="mobile-tab-label">Notification</span>
-          {unreadNotificationCount > 0 ? (
-            <span className="mobile-tab-badge">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          className={`mobile-tab-btn${showProfileMenu ? ' active' : ''}`}
-          onClick={() => {
-            setActivePanel(null)
-            setShowPresenceMenu(false)
-            setShowProfileMenu((v) => !v)
-          }}
-        >
-          <span className="mobile-tab-avatar">
-            {userAvatarUrl ? <img src={userAvatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : userInitials}
-          </span>
-          <span className="mobile-tab-label">Profile</span>
-        </button>
-      </nav>
     </div>
   )
 }
@@ -1129,8 +960,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/auth/Account/ConfirmEmail" element={<Login />} />
       <Route path="/reset-password" element={<Login />} />
-      <Route path="/portal/login" element={<Login />} />
+      <Route path="/portal/login" element={<Navigate to="/login" replace />} />
       <Route path="/portal/dashboard" element={<PortalHome />} />
       <Route path="/portal/tickets" element={<PortalTickets />} />
       <Route path="/portal/assets" element={<PortalAssets />} />
@@ -1155,6 +987,7 @@ export default function App() {
     </Routes>
   )
 }
+
 
 
 
