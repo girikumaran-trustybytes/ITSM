@@ -1122,7 +1122,7 @@ export default function AssetsView({
                   </div>
                   <div className="form-section">
                     <label className="form-label">Linked Changes</label>
-                    <select multiple className="form-select" value={form.changeIds} onChange={(e) => setForm({ ...form, changeIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
+                    <select multiple className="form-select" value={form.changeIds.map(String)} onChange={(e) => setForm({ ...form, changeIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
                       {changes.map((c) => (
                         <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
                       ))}
@@ -1130,7 +1130,7 @@ export default function AssetsView({
                   </div>
                   <div className="form-section">
                     <label className="form-label">Linked Problems</label>
-                    <select multiple className="form-select" value={form.problemIds} onChange={(e) => setForm({ ...form, problemIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
+                    <select multiple className="form-select" value={form.problemIds.map(String)} onChange={(e) => setForm({ ...form, problemIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
                       {problems.map((p) => (
                         <option key={p.id} value={p.id}>{p.code} - {p.title}</option>
                       ))}
@@ -1138,7 +1138,7 @@ export default function AssetsView({
                   </div>
                   <div className="form-section">
                     <label className="form-label">Related Services</label>
-                    <select multiple className="form-select" value={form.serviceIds} onChange={(e) => setForm({ ...form, serviceIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
+                    <select multiple className="form-select" value={form.serviceIds.map(String)} onChange={(e) => setForm({ ...form, serviceIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>{s.name}</option>
                       ))}

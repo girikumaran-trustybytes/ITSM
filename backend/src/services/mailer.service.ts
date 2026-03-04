@@ -36,31 +36,47 @@ function formatTicketReplySubject(ticket: any, subjectOverride?: string) {
 }
 
 function formatTicketReplyTextBody(ticket: any, message: string, agentName?: string) {
-  const signatureName = String(agentName || 'TB Support Team').trim() || 'TB Support Team'
+  const signatureName = String(agentName || 'TrustyBytes Support Team').trim() || 'TrustyBytes Support Team'
   const bodyContext = String(message || '-').trim() || '-'
   return [
     bodyContext,
     '',
     'To update your ticket or provide a response, please reply directly to this email.',
     '',
-    'Thanks and regards,',
+    'Kind regards,',
     '',
     signatureName,
-    'TB Support Team.',
   ].join('\n')
 }
 
 function formatTicketReplyHtmlBody(ticket: any, message: string, agentName?: string) {
-  const signatureName = String(agentName || 'TB Support Team').trim() || 'TB Support Team'
+  const signatureName = String(agentName || 'TrustyBytes Support Team').trim() || 'TrustyBytes Support Team'
   const escapedMessage = htmlEscape(String(message || '-').trim() || '-')
   const htmlLines = escapedMessage.replace(/\r?\n/g, '<br/>')
   return [
     `<p style="margin:0 0 16px 0">${htmlLines}</p>`,
     '<p style="margin:0 0 12px 0">To update your ticket or provide a response, please reply directly to this email.</p>',
-    '<p style="margin:0 0 12px 0">Thanks and regards,</p>',
+    '<p style="margin:0 0 12px 0">Kind regards,</p>',
     '<p style="margin:0 0 8px 0">' + htmlEscape(signatureName) + '</p>',
-    '<p style="margin:0"><strong>TB Support Team.</strong></p>',
   ].join('')
+}
+
+function htmlToPlainText(html: string) {
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 async function safeSend(to: string, subject: string, text: string) {
@@ -116,11 +132,13 @@ export default {
     cc?: string,
     bcc?: string,
     attachments?: Array<{ filename: string; path?: string; contentType?: string }>,
-    agentName?: string
+    agentName?: string,
+    htmlOverride?: string,
+    textOverride?: string
   ) {
     const subject = formatTicketReplySubject(ticket, subjectOverride)
-    const text = formatTicketReplyTextBody(ticket, message, agentName)
-    const html = formatTicketReplyHtmlBody(ticket, message, agentName)
+    const html = String(htmlOverride || '').trim() || formatTicketReplyHtmlBody(ticket, message, agentName)
+    const text = String(textOverride || '').trim() || htmlToPlainText(html) || formatTicketReplyTextBody(ticket, message, agentName)
     await sendSmtpMail({ to: email, cc, bcc, subject, text, html, attachments, from: PLATFORM_BASE_MAIL })
   },
 

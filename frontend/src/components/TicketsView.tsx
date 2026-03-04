@@ -14,6 +14,7 @@ import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../util
 
 const PLATFORM_FROM_MAIL = String((import.meta as any).env?.VITE_PLATFORM_BASE_MAIL || 'girikumaran@trustybytes.in').trim()
 const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
 const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
 
@@ -54,6 +55,14 @@ type MailBannerRecord = {
   title: string
   message: string
   tone: 'info' | 'success' | 'warning' | 'danger'
+  active: boolean
+}
+
+type EmailTemplateRecord = {
+  id: string
+  name: string
+  buttonKey: string
+  body: string
   active: boolean
 }
 
@@ -1034,7 +1043,12 @@ export default function TicketsView() {
     if (isTaskType && staffLabelValue) metaLines.push(`Staff: ${staffLabelValue}`)
     if (isTaskType && String(newIncidentForm.startDate || '').trim()) metaLines.push(`Start Date: ${String(newIncidentForm.startDate).trim()}`)
     if (isTaskType && String(newIncidentForm.endDate || '').trim()) metaLines.push(`End Date: ${String(newIncidentForm.endDate).trim()}`)
-    const finalDescription = metaLines.length > 0 ? `${descriptionValue}\n\n${metaLines.join('\n')}` : descriptionValue
+    let finalDescription = descriptionValue
+    if (metaLines.length > 0) {
+      for (const line of metaLines) {
+        finalDescription = `${finalDescription}\n${line}`
+      }
+    }
 
     // call backend createTicket
     (async () => {
@@ -1645,12 +1659,88 @@ Click below to proceed:
     }
   }
 
+  const resolveComposerTemplateAction = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+  ) => {
+    if (mode === 'acknowledge') return 'Acknowledge'
+    if (mode === 'emailUser') return 'Email User'
+    if (mode === 'logSupplier') return 'Log to Supplier'
+    if (mode === 'emailSupplier') return 'Email Supplier'
+    if (mode === 'callbackSupplier') return 'Call Back Supplier'
+    if (mode === 'approval') return 'Requesting Approval'
+    if (mode === 'resolve') return 'Resolve'
+    if (mode === 'close') return 'Close'
+    return 'Note + Email'
+  }
+
+  const applyTemplateTokens = (rawBody: string) => {
+    const requesterName = String(endUser?.name || selectedTicket?.endUser || 'User').trim() || 'User'
+    const assetId = String((selectedTicket as any)?.asset?.assetId || (selectedTicket as any)?.asset?.id || '').trim() || '-'
+    const assetSite = String((selectedTicket as any)?.asset?.site || (ticketAsset as any)?.site || '-').trim() || '-'
+    const ticketId = String(selectedTicket?.id || '').trim() || '-'
+    const status = String(selectedTicket?.status || '-').trim() || '-'
+    const type = String(selectedTicket?.type || '-').trim() || '-'
+    const category = String(selectedTicket?.category || '-').trim() || '-'
+    const section = String(selectedTicket?.team || '-').trim() || '-'
+    const byKey: Record<string, string> = {
+      user_name: requesterName,
+      asset_id: assetId,
+      ticket_id: ticketId,
+      ticketid: ticketId,
+      faultid: ticketId,
+      status,
+      assettag: assetId,
+      assetsite: assetSite,
+      category2: category,
+      category3: category,
+      section,
+      tickettype: type,
+    }
+    return String(rawBody || '')
+      .replace(/\[\$\s*ticket\s*id\s*\$\]/gi, ticketId)
+      .replace(/\[\$\s*tickcet\s*id\s*\$\]/gi, ticketId)
+      .replace(/\$\s*ticket\s*id\s*\$/gi, ticketId)
+      .replace(/\$\s*tickcet\s*id\s*\$/gi, ticketId)
+      .replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, key: string) => byKey[String(key || '').toLowerCase()] ?? `{{${key}}}`)
+      .replace(/\$([A-Za-z_][A-Za-z0-9_ ]*[A-Za-z0-9_])\$/g, (full, key: string) => {
+        const normalized = String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+        return byKey[normalized] ?? full
+      })
+      .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (full, key: string) => byKey[String(key || '').toLowerCase()] ?? full)
+  }
+
+  const getComposerTemplateBody = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+  ) => {
+    const templates = loadStoredList<EmailTemplateRecord[]>(EMAIL_TEMPLATE_STORAGE_KEY, [])
+    if (!Array.isArray(templates) || templates.length === 0) return ''
+    const actionKey = resolveComposerTemplateAction(mode).toLowerCase()
+    const match = templates.find((t) => {
+      const key = String(t?.buttonKey || '').trim().toLowerCase()
+      return Boolean(t?.active) && key === actionKey
+    })
+    if (!match) return ''
+    return applyTemplateTokens(String(match.body || ''))
+  }
+
+  const toComposerEditorHtml = (body: string) => {
+    const raw = String(body || '')
+    if (!raw.trim()) return ''
+    const hasHtmlTags = /<[a-z][\s\S]*>/i.test(raw)
+    if (hasHtmlTags) return raw
+    return `<div>${escapeHtml(raw).replace(/\n/g, '<br/>')}</div>`
+  }
+
   const buildMailPreviewHtml = () => {
     const bannerList = loadStoredList<MailBannerRecord[]>(MAIL_BANNER_STORAGE_KEY, [])
     const signatureList = loadStoredList<EmailSignatureRecord[]>(EMAIL_SIGNATURE_STORAGE_KEY, [])
     const activeBanner = bannerList.find((b) => b && b.active)
     const userId = user?.id ? String(user.id) : ''
-    const signature = signatureList.find((s) => s && s.active && String(s.userId || '') === userId)
+    const userRole = String(user?.role || '').trim().toUpperCase()
+    const activeSignatures = Array.isArray(signatureList) ? signatureList.filter((s) => s && s.active) : []
+    const signature = activeSignatures.find((s) => String(s.userId || '').trim() === userId)
+      || activeSignatures.find((s) => String(s.userId || '').trim().toUpperCase() === userRole)
+      || activeSignatures.find((s) => String(s.userLabel || '').trim().toUpperCase() === userRole)
     const bannerTone = activeBanner?.tone || 'info'
     const bannerColor =
       bannerTone === 'success' ? '#16a34a' :
@@ -1663,20 +1753,15 @@ Click below to proceed:
           <div style="color:#111827;font-size:13px">${activeBanner.message}</div>
         </div>`
       : ''
-    const recipientName = String(endUser?.name || '').trim()
-    const greeting = recipientName ? `Hi ${recipientName},` : 'Hello,'
     const bodyHtml = composerBodyHtml || '<p>(Empty message)</p>'
-    let signatureHtml = ''
-    if (signature?.signatureHtml) {
-      const raw = String(signature.signatureHtml)
-      const hasTags = /<[^>]+>/.test(raw)
-      const safe = hasTags ? raw : raw.replace(/\n/g, '<br/>')
-      signatureHtml = `<div style="margin-top:18px">${safe}</div>`
-    }
+    const defaultSignature = 'Kind regards,\nTrustyBytes Support Team'
+    const rawSignature = String(signature?.signatureHtml || '').trim() || defaultSignature
+    const hasTags = /<[^>]+>/.test(rawSignature)
+    const safeSignature = hasTags ? rawSignature : rawSignature.replace(/\n/g, '<br/>')
+    const signatureHtml = `<div style="margin-top:18px">${safeSignature}</div>`
 
     return `
       ${bannerHtml}
-      <p>${greeting}</p>
       <div>${bodyHtml}</div>
       ${signatureHtml}
     `
@@ -1765,10 +1850,10 @@ Click below to proceed:
       : ''
     const subjectDefault = buildReplySubject(selectedTicket)
 
-    const defaultBody = mode === 'approval' ? getApprovalTemplate() : ''
-    const defaultBodyHtml = defaultBody
-      ? `<div>${escapeHtml(defaultBody).replace(/\n/g, '<br/>')}</div>`
-      : ''
+    const templateBody = getComposerTemplateBody(mode)
+    const defaultBody = templateBody || (mode === 'approval' ? getApprovalTemplate() : '')
+    const defaultBodyHtml = toComposerEditorHtml(defaultBody)
+    const defaultBodyText = defaultBodyHtml ? htmlToPlainText(defaultBodyHtml) : ''
 
     setComposerForm((prev) => ({
       ...prev,
@@ -1776,14 +1861,14 @@ Click below to proceed:
       cc: '',
       bcc: '',
       subject: subjectDefault,
-      body: defaultBody,
+      body: defaultBodyText,
       actionStatus: 'With User',
       currentAction: '',
       nextAction: '',
       asset: '',
     }))
     setComposerBodyHtml(defaultBodyHtml)
-    setComposerBodyText(defaultBody)
+    setComposerBodyText(defaultBodyText)
     if (composerEditorRef.current) composerEditorRef.current.innerHTML = defaultBodyHtml
     setComposerAttachments([])
     setShowCcField(false)
@@ -1943,7 +2028,7 @@ Click below to proceed:
       const isAgentLike = role === 'AGENT' || role === 'ADMIN' || Boolean(agent?.isServiceAccount)
       if (!isAgentLike) return
 
-      const queueIds = Array.isArray(agent?.queueIds)
+      const queueIds: string[] = Array.isArray(agent?.queueIds)
         ? agent.queueIds.map((queueId: any) => String(queueId || '').trim().toLowerCase()).filter(Boolean)
         : []
       if (queueIds.length === 0) return
@@ -1953,7 +2038,7 @@ Click below to proceed:
       if (!agentKey || !agentLabel) return
 
       const normalize = (value: string) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
-      queueIds.forEach((queueId) => {
+      queueIds.forEach((queueId: string) => {
         const queueIdNorm = normalize(queueId)
         const matchedQueue = visibleTicketQueues.find((queue) => {
           const queueLabel = String(queue.label || '').trim()
@@ -2684,6 +2769,8 @@ Click below to proceed:
     }
 
     try {
+      const finalMailHtml = buildMailPreviewHtml()
+      const finalMailText = htmlToPlainText(finalMailHtml)
       const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, composerAttachments)
       const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
       const attachmentLabel = uploadedItems.length
@@ -2714,6 +2801,8 @@ Click below to proceed:
             bcc: composerForm.bcc.trim() || undefined,
             subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
             attachmentIds,
+            html: finalMailHtml,
+            text: finalMailText,
           })
         } else if (attachmentIds.length) {
           await ticketService.privateNote(selectedTicket.id, {
@@ -2735,6 +2824,8 @@ Click below to proceed:
             bcc: composerForm.bcc.trim() || undefined,
             subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
             attachmentIds,
+            html: finalMailHtml,
+            text: finalMailText,
           })
         }
         addTicketComment(selectedTicket.id, `Note + Email: ${body}`)
@@ -2747,6 +2838,8 @@ Click below to proceed:
           bcc: composerForm.bcc.trim() || undefined,
           subject: composerForm.subject.trim() || undefined,
           attachmentIds,
+          html: composerForm.to.trim() ? finalMailHtml : undefined,
+          text: composerForm.to.trim() ? finalMailText : undefined,
         })
         addTicketComment(selectedTicket.id, `${getComposerHeading()}: ${body}`)
 
@@ -4692,10 +4785,6 @@ Click below to proceed:
               <div className="compose-review-row">
                 <span>Subject:</span>
                 <span>{composerForm.subject || 'Not set'}</span>
-              </div>
-              <div className="compose-review-row">
-                <span>Status:</span>
-                <span>{composerForm.actionStatus || 'Not set'}</span>
               </div>
               {composerAttachments.length > 0 && (
                 <div className="compose-review-row">

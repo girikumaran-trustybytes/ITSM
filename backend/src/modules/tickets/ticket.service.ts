@@ -833,7 +833,18 @@ function appendAttachmentSummary(text: string, rows: any[]) {
 
 export const addResponse = async (
   ticketId: string,
-  opts: { message: string; user?: any; sendEmail?: boolean; to?: string; cc?: string; bcc?: string; subject?: string; attachmentIds?: number[] }
+  opts: {
+    message: string
+    user?: any
+    sendEmail?: boolean
+    to?: string
+    cc?: string
+    bcc?: string
+    subject?: string
+    attachmentIds?: number[]
+    html?: string
+    text?: string
+  }
 ) => {
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
@@ -890,7 +901,9 @@ export const addResponse = async (
         (opts.user && typeof opts.user === 'object'
           ? (opts.user as any).name || (opts.user as any).email
           : '') || ''
-      ).trim() || undefined
+      ).trim() || undefined,
+      opts.html,
+      opts.text
     )
   }
 

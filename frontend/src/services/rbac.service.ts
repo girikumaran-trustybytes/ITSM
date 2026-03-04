@@ -6,6 +6,7 @@ export type RbacUserRow = {
   email: string
   role: string
   status: string
+  mfaEnabled?: boolean
   isServiceAccount?: boolean
   autoUpgradeQueues?: boolean
   queueIds?: string[]
@@ -101,5 +102,10 @@ export async function saveUserPermissions(userId: number, payload: {
 
 export async function addTicketCustomAction(payload: { queue: string; label: string; actionKey?: string }) {
   const res = await api.post('/users/rbac/ticket-actions', payload)
+  return res.data
+}
+
+export async function updateUserMfaSettings(userId: number, enabled: boolean) {
+  const res = await api.put(`/auth/mfa/users/${userId}`, { enabled })
   return res.data
 }

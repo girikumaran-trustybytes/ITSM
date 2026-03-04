@@ -30,7 +30,20 @@ export async function getTicket(id: string) {
   return res.data
 }
 
-export async function respond(id: string, payload: { message: string; sendEmail?: boolean; to?: string; cc?: string; bcc?: string; subject?: string; attachmentIds?: number[] }) {
+export async function respond(
+  id: string,
+  payload: {
+    message: string
+    sendEmail?: boolean
+    to?: string
+    cc?: string
+    bcc?: string
+    subject?: string
+    attachmentIds?: number[]
+    html?: string
+    text?: string
+  }
+) {
   const res = await api.post(`/tickets/${encodeURIComponent(id)}/respond`, payload)
   return res.data
 }

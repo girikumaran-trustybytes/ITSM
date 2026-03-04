@@ -65,6 +65,8 @@ export const ticketsRespondBodySchema = z.object({
   bcc: z.string().optional(),
   subject: z.string().min(1).optional(),
   attachmentIds: z.array(z.number().int().positive()).optional(),
+  html: z.string().optional(),
+  text: z.string().optional(),
 })
 
 export const ticketsPrivateNoteBodySchema = z.object({

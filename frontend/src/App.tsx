@@ -18,7 +18,7 @@ import PortalTickets from './components/portal/PortalTickets'
 import PortalAssets from './components/portal/PortalAssets'
 import PortalNewTicket from './components/portal/PortalNewTicket'
 import AccountSecurityView from './components/AccountSecurityView'
-import { logout } from './services/auth.service'
+import { getLastRoute, logout, persistLastRoute } from './services/auth.service'
 import NotificationsPanel from './components/panels/NotificationsPanel'
 import TodoPanel from './components/panels/TodoPanel'
 import FeedPanel, { FEED_FILTERS, type FeedFilter } from './components/panels/FeedPanel'
@@ -113,6 +113,12 @@ function MainShell() {
   useEffect(() => {
     setActiveNav(getNavFromPath(location.pathname))
   }, [location.pathname])
+
+  useEffect(() => {
+    if (!user) return
+    const route = `${location.pathname || ''}${location.search || ''}`
+    persistLastRoute(route)
+  }, [user, location.pathname, location.search])
 
   useEffect(() => {
     const handleClick = (event: MouseEvent) => {
@@ -434,6 +440,10 @@ function MainShell() {
   const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
   const userInitials = getUserInitials(user, 'G')
   const userAvatarUrl = getUserAvatarUrl(user)
+  const rememberedRoute = String(getLastRoute() || '').trim()
+  const shellDefaultRoute = rememberedRoute && rememberedRoute.startsWith('/') && rememberedRoute !== '/login'
+    ? rememberedRoute
+    : getDefaultItsmRoute(user)
 
   return (
     <div className="app-root">
@@ -863,7 +873,7 @@ function MainShell() {
         )}
         <Routes>
           <Route path="/dashboard" element={<div className="work-main"><Dashboard /></div>} />
-          <Route path="/" element={<Navigate to="/portal/login" replace />} />
+          <Route path="/" element={<Navigate to={shellDefaultRoute} replace />} />
           <Route
             path="/tickets"
             element={

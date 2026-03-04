@@ -37,6 +37,7 @@ async function ensureUserCrudSchema() {
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`)
+      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail")`)
@@ -146,6 +147,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
          u."employmentType",
          u."workMode",
          u."role",
+         COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
          u."status",
          COALESCE(up."status", 'Available') AS "presenceStatus",
          u."createdAt",
@@ -180,6 +182,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
          u."employmentType",
          u."workMode",
          u."role",
+         COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
          u."status",
          COALESCE(up."status", 'Available') AS "presenceStatus",
          u."createdAt",
@@ -231,6 +234,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
        u."employmentType",
        u."workMode",
        u."role",
+       COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
        u."status",
        COALESCE(up."status", 'Available') AS "presenceStatus",
        u."createdAt",
@@ -264,6 +268,7 @@ export async function getUserById(id: number) {
       u."avatarUrl",
       u."email",
       u."role",
+      COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
       u."phone",
       u."client",
       u."site",
@@ -401,6 +406,7 @@ export async function updateUser(id: number, payload: any) {
   if (payload.site !== undefined) data.site = payload.site
   if (payload.accountManager !== undefined) data.accountManager = payload.accountManager
   if (payload.role !== undefined) data.role = normalizeRole(payload.role)
+  if (payload.mfaEnabled !== undefined) data.mfaEnabled = Boolean(payload.mfaEnabled)
   if (payload.status !== undefined) data.status = String(payload.status).trim().toUpperCase()
 
   const explicitServiceAccount = payload.isServiceAccount === true || payload.isServiceAccount === false

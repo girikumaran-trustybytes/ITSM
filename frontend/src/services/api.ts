@@ -36,6 +36,57 @@ function resolveApiBase() {
 }
 
 let BASE = resolveApiBase()
+const REMEMBERED_SESSION_EXPIRES_AT_KEY = 'rememberSessionExpiresAt'
+const LAST_ROUTE_STORAGE_KEY = 'auth.lastRoute'
+const REMEMBER_ME_TTL_MS = 8 * 60 * 60 * 1000
+
+function resolveCurrentAppPath() {
+  if (typeof window === 'undefined') return ''
+  const hash = String(window.location.hash || '').trim()
+  if (hash.startsWith('#/')) return hash.slice(1)
+  return `${window.location.pathname || ''}${window.location.search || ''}` || ''
+}
+
+function persistCurrentRouteForLoginRedirect() {
+  if (typeof window === 'undefined') return
+  const route = resolveCurrentAppPath()
+  if (!route || route === '/login' || route.startsWith('/reset-password') || route.startsWith('/auth/Account/ConfirmEmail')) return
+  try {
+    window.localStorage.setItem(LAST_ROUTE_STORAGE_KEY, route)
+  } catch {
+    // ignore storage access issues
+  }
+}
+
+function clearAuthTokens() {
+  localStorage.removeItem('accessToken')
+  localStorage.removeItem('refreshToken')
+  localStorage.removeItem(REMEMBERED_SESSION_EXPIRES_AT_KEY)
+  sessionStorage.removeItem('accessToken')
+  sessionStorage.removeItem('refreshToken')
+}
+
+function isRememberedSessionExpired() {
+  const expiresRaw = localStorage.getItem(REMEMBERED_SESSION_EXPIRES_AT_KEY)
+  if (!expiresRaw) return false
+  const expiresAt = Number(expiresRaw)
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return false
+  return Date.now() >= expiresAt
+}
+
+function ensureRememberedSessionExpiry() {
+  const hasLocalSession = Boolean(localStorage.getItem('accessToken') || localStorage.getItem('refreshToken'))
+  if (!hasLocalSession) return
+  const existingExpiry = Number(localStorage.getItem(REMEMBERED_SESSION_EXPIRES_AT_KEY) || 0)
+  if (Number.isFinite(existingExpiry) && existingExpiry > 0) return
+  localStorage.setItem(REMEMBERED_SESSION_EXPIRES_AT_KEY, String(Date.now() + REMEMBER_ME_TTL_MS))
+}
+
+function clearExpiredRememberedSession() {
+  ensureRememberedSessionExpiry()
+  if (!isRememberedSessionExpired()) return
+  clearAuthTokens()
+}
 
 const api = axios.create({
   baseURL: BASE,
@@ -57,6 +108,7 @@ function isPublicEndpoint(url: string) {
     url.includes('/auth/forgot-password') ||
     url.includes('/auth/reset-password') ||
     url.includes('/auth/accept-invite') ||
+    url.includes('/auth/mfa/challenge') ||
     url.includes('/auth/mfa/verify') ||
     url.includes('/auth/refresh')
   )
@@ -92,6 +144,7 @@ api.interceptors.request.use((config) => {
     const onLoginRoute = typeof window !== 'undefined'
       && window.location.pathname === '/login'
     if (typeof window !== 'undefined' && !onLoginRoute) {
+      persistCurrentRouteForLoginRedirect()
       window.location.href = '/login'
     }
     return Promise.reject(new Error('Missing access token'))
@@ -122,13 +175,11 @@ api.interceptors.response.use(
         return api(original);
       } catch (e) {
         // fallback
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        sessionStorage.removeItem('accessToken');
-        sessionStorage.removeItem('refreshToken');
+        clearAuthTokens()
         const onLoginRoute = typeof window !== 'undefined'
           && window.location.pathname === '/login'
         if (!onLoginRoute) {
+          persistCurrentRouteForLoginRedirect()
           window.location.href = '/login';
         }
         return Promise.reject(e);

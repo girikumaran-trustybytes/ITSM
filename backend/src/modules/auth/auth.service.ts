@@ -789,9 +789,9 @@ export async function setUserMfaEnabled(userId: number, enabled: boolean) {
 
 export async function requestMfaChallenge(challengeToken: string, method: MfaChallengeMethod) {
   await ensureAuthSchema()
-  const user = await parseMfaPreToken(challengeToken)
-  if (method === 'authenticator') return createAuthenticatorMfaChallenge(user)
-  return createEmailMfaChallenge(user)
+  const parsed = await parseMfaPreToken(challengeToken)
+  if (method === 'authenticator') return createAuthenticatorMfaChallenge(parsed.user, parsed.rememberMe)
+  return createEmailMfaChallenge(parsed.user, parsed.rememberMe)
 }
 
 export async function setupAuthenticator(userId: number) {
@@ -863,7 +863,7 @@ export async function resetAuthenticator(userId: number) {
   return { ok: true, authenticatorConfigured: false }
 }
 
-async function issueTokens(user: AuthUser): Promise<TokenResponse> {
+async function issueTokens(user: AuthUser, rememberMe = false): Promise<TokenResponse> {
   const roles = await getAssignedRoles(user)
   const role = resolvePrimaryRole(roles, user.role)
   const permissions = await getEffectivePermissions(user.id, role, roles)
@@ -893,9 +893,9 @@ async function issueTokens(user: AuthUser): Promise<TokenResponse> {
   }
 }
 
-function signMfaPreToken(user: Pick<AuthUser, 'id' | 'email'>) {
+function signMfaPreToken(user: Pick<AuthUser, 'id' | 'email'>, rememberMe = false) {
   return (jwt as any).sign(
-    { type: 'mfa-pre', sub: user.id, email: user.email },
+    { type: 'mfa-pre', sub: user.id, email: user.email, rememberMe: Boolean(rememberMe) },
     ACCESS_SECRET as any,
     { expiresIn: `${MFA_CODE_TTL_MIN}m` }
   )
@@ -911,11 +911,11 @@ function getMfaMethodsForUser(user: AuthUser, policy: MfaPolicy): MfaChallengeMe
   return Array.from(new Set(methods))
 }
 
-function buildMfaPrompt(user: AuthUser, policy: MfaPolicy) {
+function buildMfaPrompt(user: AuthUser, policy: MfaPolicy, rememberMe = false) {
   const methods = getMfaMethodsForUser(user, policy)
   return {
     mfaRequired: true as const,
-    challengeToken: signMfaPreToken(user),
+    challengeToken: signMfaPreToken(user, rememberMe),
     availableMethods: methods,
     defaultMethod: methods[0] || 'email',
     maskedEmail: maskEmail(user.email),
@@ -956,7 +956,7 @@ function getMfaMailTemplate(user: AuthUser, code: string) {
   return { subject: 'Your TB ITSM Verification Code', text, html }
 }
 
-async function createEmailMfaChallenge(user: AuthUser) {
+async function createEmailMfaChallenge(user: AuthUser, rememberMe = false) {
   const code = randomNumericCode(6)
   const codeHash = hashOpaqueToken(code)
   const expiresAt = nowPlusMinutes(MFA_CODE_TTL_MIN)
@@ -981,7 +981,7 @@ async function createEmailMfaChallenge(user: AuthUser) {
   }
 
   const challengeToken = (jwt as any).sign(
-    { type: 'mfa', method: 'email', sub: user.id, cid: row.id, email: user.email },
+    { type: 'mfa', method: 'email', sub: user.id, cid: row.id, email: user.email, rememberMe: Boolean(rememberMe) },
     ACCESS_SECRET as any,
     { expiresIn: `${MFA_CODE_TTL_MIN}m` }
   )
@@ -1002,11 +1002,11 @@ async function createEmailMfaChallenge(user: AuthUser) {
   }
 }
 
-async function createAuthenticatorMfaChallenge(user: AuthUser) {
+async function createAuthenticatorMfaChallenge(user: AuthUser, rememberMe = false) {
   const secret = String(user.mfaTotpSecret || '').trim()
   if (!secret || !Boolean(user.mfaTotpEnabled)) throw new Error('Authenticator app is not configured for this account')
   const challengeToken = (jwt as any).sign(
-    { type: 'mfa', method: 'authenticator', sub: user.id, email: user.email },
+    { type: 'mfa', method: 'authenticator', sub: user.id, email: user.email, rememberMe: Boolean(rememberMe) },
     ACCESS_SECRET as any,
     { expiresIn: `${MFA_CODE_TTL_MIN}m` }
   )
@@ -1068,7 +1068,10 @@ async function parseMfaPreToken(challengeToken: string) {
     [payload.sub]
   )
   if (!user) throw new Error('User not found')
-  return user
+  return {
+    user,
+    rememberMe: Boolean(payload?.rememberMe),
+  }
 }
 
 async function findActiveUserByEmail(email: string) {
@@ -1133,7 +1136,7 @@ async function createSsoBackedUser(info: { provider: SsoProvider; email: string;
   return created
 }
 
-export async function login(email: string, password: string, trustedDeviceToken?: string | null) {
+export async function login(email: string, password: string, trustedDeviceToken?: string | null, rememberMe = false) {
   await ensureAuthSchema()
   const user = await findActiveUserByEmail(email)
   if (!user || !user.password) throw new Error('Invalid credentials')
@@ -1144,12 +1147,12 @@ export async function login(email: string, password: string, trustedDeviceToken?
   const policy = await getMfaPolicy()
   if (shouldRequireMfa(user, policy)) {
     const trusted = await isTrustedDeviceForUser(user.id, trustedDeviceToken)
-    if (!trusted) return buildMfaPrompt(user, policy)
+    if (!trusted) return buildMfaPrompt(user, policy, rememberMe)
   }
-  return issueTokens(user)
+  return issueTokens(user, rememberMe)
 }
 
-export async function loginWithGoogle(idToken: string, trustedDeviceToken?: string | null) {
+export async function loginWithGoogle(idToken: string, trustedDeviceToken?: string | null, rememberMe = false) {
   await ensureAuthSchema()
   const google = await verifyGoogleIdToken(idToken)
 
@@ -1182,12 +1185,12 @@ export async function loginWithGoogle(idToken: string, trustedDeviceToken?: stri
   const policy = await getMfaPolicy()
   if (shouldRequireMfa(user, policy) || MFA_REQUIRED_FOR_GOOGLE) {
     const trusted = await isTrustedDeviceForUser(user.id, trustedDeviceToken)
-    if (!trusted) return buildMfaPrompt(user, policy)
+    if (!trusted) return buildMfaPrompt(user, policy, rememberMe)
   }
-  return issueTokens(user)
+  return issueTokens(user, rememberMe)
 }
 
-export async function verifyMfa(challengeToken: string, code: string, dontAskAgain = false, trustedDeviceLabel = 'browser') {
+export async function verifyMfa(challengeToken: string, code: string, dontAskAgain = false, trustedDeviceLabel = 'browser', rememberMe = false) {
   await ensureAuthSchema()
   let payload: any
   try {
@@ -1226,7 +1229,8 @@ export async function verifyMfa(challengeToken: string, code: string, dontAskAga
     [payload.sub]
   )
   if (!user) throw new Error('User not found')
-  const auth = await issueTokens(user)
+  const effectiveRememberMe = payload?.rememberMe !== undefined ? Boolean(payload.rememberMe) : Boolean(rememberMe)
+  const auth = await issueTokens(user, effectiveRememberMe)
   if (!dontAskAgain) return auth
   const trustedDeviceToken = await issueTrustedDeviceToken(user.id, trustedDeviceLabel)
   return { ...auth, trustedDeviceToken }
@@ -1392,7 +1396,7 @@ export async function refresh(refreshToken: string) {
   }
 }
 
-export async function loginWithSsoCode(provider: SsoProvider, code: string) {
+export async function loginWithSsoCode(provider: SsoProvider, code: string, rememberMe = false) {
   await ensureAuthSchema()
   const identity = await exchangeCodeForIdentity(provider, code)
   const subField = provider === 'google' ? 'u."googleSub"' : provider === 'zoho' ? 'u."zohoSub"' : 'u."microsoftSub"'
@@ -1428,8 +1432,8 @@ export async function loginWithSsoCode(provider: SsoProvider, code: string) {
   }
 
   const policy = await getMfaPolicy()
-  if (shouldRequireMfa(user, policy) || (provider === 'google' && MFA_REQUIRED_FOR_GOOGLE)) return buildMfaPrompt(user, policy)
-  return issueTokens(user)
+  if (shouldRequireMfa(user, policy) || (provider === 'google' && MFA_REQUIRED_FOR_GOOGLE)) return buildMfaPrompt(user, policy, rememberMe)
+  return issueTokens(user, rememberMe)
 }
 
 export async function completeSsoCallback(
@@ -1439,6 +1443,6 @@ export async function completeSsoCallback(
 ): Promise<{ rememberMe: boolean; auth: any }> {
   const statePayload = verifySsoState(state)
   if (statePayload.provider !== provider) throw new Error('SSO provider mismatch')
-  const auth = await loginWithSsoCode(provider, code)
+  const auth = await loginWithSsoCode(provider, code, statePayload.rememberMe)
   return { rememberMe: statePayload.rememberMe, auth }
 }

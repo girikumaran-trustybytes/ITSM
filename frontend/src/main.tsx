@@ -11,7 +11,7 @@ createRoot(document.getElementById('root')!).render(
     {(() => {
       if (typeof window !== 'undefined') {
         const { pathname, hash, search } = window.location
-        const base = import.meta.env.BASE_URL || '/'
+        const base = (import.meta as any)?.env?.BASE_URL || '/'
         if (pathname !== '/' && hash.startsWith('#/')) {
           window.location.replace(`${base}${hash}`)
           return null

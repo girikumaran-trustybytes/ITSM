@@ -30,6 +30,43 @@ type MailInboundRoutingConfig = {
   defaultQueue: string
 }
 
+function htmlEscape(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function toHtmlFromText(text: string): string {
+  const normalized = String(text || '').trim()
+  if (!normalized) return '<p style="margin:0 0 16px 0;">(No content)</p>'
+  const blocks = normalized
+    .split(/\r?\n\r?\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (blocks.length === 0) return '<p style="margin:0 0 16px 0;">(No content)</p>'
+  return blocks
+    .map((part) => `<p style="margin:0 0 16px 0;">${htmlEscape(part).replace(/\r?\n/g, '<br/>')}</p>`)
+    .join('')
+}
+
+function applyGlobalMailTemplate(contentHtml: string): string {
+  const bodyHtml = String(contentHtml || '').trim() || '<p style="margin:0 0 16px 0;">(No content)</p>'
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notification</title>
+  </head>
+  <body style="margin:0;padding:16px 18px;color:#111827;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;text-align:left;line-height:1.7;font-size:15px;background:#ffffff;">
+    ${bodyHtml}
+  </body>
+</html>`
+}
+
 const MAIL_PROVIDER_PRESETS: Record<MailConfig['provider'], { smtp: { host: string; port: number; secure: boolean }; imap: { host: string; port: number; secure: boolean } }> = {
   gmail: {
     smtp: { host: 'smtp.gmail.com', port: 465, secure: true },
@@ -235,6 +272,9 @@ export async function sendSmtpMail(
   const subject = String(payload.subject || '').trim()
   if (!subject) throw { status: 400, message: 'Subject is required' }
   if (!payload.text && !payload.html) throw { status: 400, message: 'Either text or html body is required' }
+  const normalizedText = String(payload.text || '').trim()
+  const normalizedHtml = String(payload.html || '').trim()
+  const finalHtml = applyGlobalMailTemplate(normalizedHtml || toHtmlFromText(normalizedText))
 
   const transport = nodemailer.createTransport({
     host: cfg.host,
@@ -249,8 +289,8 @@ export async function sendSmtpMail(
     cc: cc.length ? cc : undefined,
     bcc: bcc.length ? bcc : undefined,
     subject,
-    text: payload.text,
-    html: payload.html,
+    text: normalizedText || undefined,
+    html: finalHtml,
     attachments: payload.attachments,
   })
 

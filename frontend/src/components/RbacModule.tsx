@@ -8,6 +8,7 @@ import {
   saveUserPermissions,
   sendServiceAccountInvite,
   sendUserInvite,
+  updateUserMfaSettings,
   type RbacUserRow,
 } from '../services/rbac.service'
 import { updateUser } from '../modules/users/services/user.service'
@@ -263,6 +264,7 @@ export default function RbacModule({ isAdmin }: Props) {
   const [autoUpgradeQueues, setAutoUpgradeQueues] = useState(true)
   const [selectedServiceQueueIds, setSelectedServiceQueueIds] = useState<string[]>([])
   const [serviceInviteBusyUserId, setServiceInviteBusyUserId] = useState<number | null>(null)
+  const [mfaBusyUserId, setMfaBusyUserId] = useState<number | null>(null)
   const [serviceDeactivateBusy, setServiceDeactivateBusy] = useState(false)
   const [deactivateConfirmUser, setDeactivateConfirmUser] = useState<RbacUserRow | null>(null)
 
@@ -278,12 +280,16 @@ export default function RbacModule({ isAdmin }: Props) {
   }
 
   const getUserOptionLabel = (u: RbacUserRow) => {
-    return `${u.email} | ${u.name || 'No name'} | ${titleCase(u.role)} | ${titleCase(u.inviteStatus || u.status || 'none')}`
+    const roleRaw = String(u.role || '').trim().toUpperCase()
+    const roleLabel = roleRaw === 'ADMIN' ? 'Admin' : roleRaw === 'AGENT' ? 'Agent' : 'User'
+    return `${u.email} | ${u.name || 'No name'} | ${roleLabel} | ${titleCase(u.inviteStatus || u.status || 'none')}`
   }
 
   const getRoleLabel = (u: RbacUserRow) => {
-    if (u.isServiceAccount) return 'Service Account (Agent)'
-    return titleCase(u.role || 'user')
+    const roleRaw = String(u.role || '').trim().toUpperCase()
+    if (roleRaw === 'ADMIN') return 'Admin'
+    if (roleRaw === 'AGENT') return 'Agent'
+    return 'User'
   }
 
   const getServiceInviteStatus = (u: RbacUserRow) => {
@@ -295,6 +301,24 @@ export default function RbacModule({ isAdmin }: Props) {
     const apiStatus = String(u.status || '').trim()
     if (!apiStatus) return 'Invited'
     return titleCase(apiStatus)
+  }
+
+  const handleToggleUserMfa = async (user: RbacUserRow, enabled: boolean) => {
+    const userId = Number(user.id || 0)
+    if (!userId) return
+    setMfaBusyUserId(userId)
+    try {
+      await updateUserMfaSettings(userId, enabled)
+      notify('ok', enabled ? '2FA enabled' : '2FA disabled')
+      await loadUsers()
+      if (selectedUserId && selectedUserId === userId) {
+        await loadPermissions(userId)
+      }
+    } catch (error: any) {
+      notify('error', error?.response?.data?.error || 'Failed to update 2FA')
+    } finally {
+      setMfaBusyUserId(null)
+    }
   }
 
   const isAlreadyInvitedStatus = (status: string) => ['invited', 'invited_not_accepted', 'accepted'].includes(status)
@@ -1479,6 +1503,7 @@ export default function RbacModule({ isAdmin }: Props) {
                     <th scope="col">Role</th>
                     <th scope="col">Invite Status</th>
                     <th scope="col">Status</th>
+                    <th scope="col">2FA</th>
                     <th scope="col">Action</th>
                   </tr>
                 </thead>
@@ -1491,6 +1516,7 @@ export default function RbacModule({ isAdmin }: Props) {
                         <td>{getRoleLabel(u)}</td>
                         <td>{titleCase(u.inviteStatus || 'none')}</td>
                         <td>{getDisplayStatus(u)}</td>
+                        <td>{u.mfaEnabled ? 'Enabled' : 'Disabled'}</td>
                         <td>
                           <div className="rbac-service-actions">
                             {(() => {
@@ -1521,6 +1547,17 @@ export default function RbacModule({ isAdmin }: Props) {
                                   >
                                     {serviceDeactivateBusy ? 'Working...' : 'Deactivate'}
                                   </button>
+                                  <button
+                                    className={u.mfaEnabled ? 'admin-settings-ghost' : 'admin-settings-primary'}
+                                    onClick={() => handleToggleUserMfa(u, !u.mfaEnabled)}
+                                    disabled={mfaBusyUserId !== null || !canManageUsers}
+                                  >
+                                    {mfaBusyUserId === Number(u.id)
+                                      ? 'Updating...'
+                                      : u.mfaEnabled
+                                        ? 'Disable 2FA'
+                                        : 'Enable 2FA'}
+                                  </button>
                                 </>
                               )
                             })()}
@@ -1530,7 +1567,7 @@ export default function RbacModule({ isAdmin }: Props) {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6}>
+                      <td colSpan={7}>
                         <div className="rbac-empty-state">No users found.</div>
                       </td>
                     </tr>

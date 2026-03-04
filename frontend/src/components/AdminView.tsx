@@ -13,8 +13,7 @@ import {
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
-import { getMfaPolicy, updateMfaPolicy } from '../services/auth.service'
-import { listUsers } from '../modules/users/services/user.service'
+import * as userService from '../modules/users/services/user.service'
 
 type PaginationMeta = {
   page: number
@@ -57,7 +56,6 @@ const settingsMenu: MenuSection[] = [
     label: 'User & Access Management',
     items: [
       { id: 'roles-permissions', label: 'User & Access management', requiresAdmin: true },
-      { id: 'mfa-settings', label: '2FA settings', requiresAdmin: true },
     ],
   },
   {
@@ -485,7 +483,6 @@ type EmailTemplateRecord = {
   id: string
   name: string
   buttonKey: string
-  subject: string
   body: string
   active: boolean
 }
@@ -498,27 +495,55 @@ type EmailSignatureRecord = {
   active: boolean
 }
 
-type MailBannerRecord = {
-  id: string
-  title: string
-  message: string
-  tone: 'info' | 'success' | 'warning' | 'danger'
-  active: boolean
-}
-
 const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
-const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
 
-const BUTTON_TEMPLATE_OPTIONS = [
-  'Assign',
-  'Reassign',
-  'Retire',
+const BUTTON_TEMPLATE_OPTIONS = Array.from(new Set([
   'Accept',
+  'Acknowledge',
+  'Allocate Asset',
   'Approve',
-  'Reject',
+  'Assign',
+  'Budget Approve',
+  'Call Back Supplier',
+  'Check Stock',
   'Close',
-]
+  'Collect Asset',
+  'Complete',
+  'Complete Change',
+  'Complete Offboarding',
+  'Confirm by HR',
+  'Email User',
+  'Email Supplier',
+  'Fulfill',
+  'HR Confirm',
+  'IT Approve',
+  'Install Software',
+  'Issue Asset',
+  'Log to Supplier',
+  'Mark Completed',
+  'Mark Ready',
+  'Note + Email',
+  'Provision Access',
+  'Quick Close',
+  'Re-open',
+  'Reassign',
+  'Reject',
+  'Request Approval',
+  'Requesting Approval',
+  'Resolve',
+  'Retire',
+  'Revoke Access',
+  'Send for Approval',
+  'Send to HR',
+  'Send to Manager',
+  'Start',
+  'Start Implementation',
+  'Start IT Setup',
+  'Start Procurement',
+  'Start Review',
+  'Verify Asset',
+])).sort((a, b) => a.localeCompare(b))
 
 const loadStoredList = <T,>(key: string, fallback: T[]): T[] => {
   if (typeof window === 'undefined') return fallback
@@ -558,7 +583,7 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   appendToTicketPattern: '[#TICKET-ID]',
   outboundReplyTo: '',
   maxAttachmentSizeMb: '20',
-  signatureTemplate: 'Regards,\nIT Support Team',
+  signatureTemplate: 'Kind regards,\nTrustyBytes Support Team',
   allowExternalEmailCreation: true,
   allowInternalOnly: false,
   allowedDomains: '',
@@ -821,14 +846,6 @@ const settingsTopicPanels: Record<string, PanelDef[]> = {
       { key: 'idpType', label: 'Identity provider', type: 'select', options: ['Azure AD', 'Okta', 'Google Workspace', 'SAML Custom'], adminOnly: true },
       { key: 'ssoJitProvisioning', label: 'JIT provisioning', type: 'toggle', adminOnly: true },
       { key: 'ssoMetadataUrl', label: 'Metadata URL', type: 'text', adminOnly: true },
-    ]},
-  ],
-  'mfa-settings': [
-    { id: 'mfa', title: '2FA Policy', description: 'Second-factor strategy and conditional access rules.', fields: [
-      { key: 'mfaRequired', label: '2FA required for all users', type: 'toggle', adminOnly: true },
-      { key: 'mfaMethod', label: 'Primary 2FA method', type: 'select', options: ['Authenticator App', 'FIDO2 Key', 'SMS OTP'], adminOnly: true },
-      { key: 'mfaGracePeriod', label: 'Enrollment grace period (days)', type: 'text', adminOnly: true },
-      { key: 'mfaBypassEmergency', label: 'Allow emergency bypass', type: 'toggle', adminOnly: true },
     ]},
   ],
   'priority-matrix': [
@@ -1228,12 +1245,10 @@ export default function AdminView(_props: AdminViewProps) {
   const [templateForm, setTemplateForm] = useState<Omit<EmailTemplateRecord, 'id'>>({
     name: '',
     buttonKey: 'Assign',
-    subject: '',
     body: '',
     active: true,
   })
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
-  const [signatureUsers, setSignatureUsers] = useState<any[]>([])
   const [emailSignatures, setEmailSignatures] = useState<EmailSignatureRecord[]>(() =>
     loadStoredList<EmailSignatureRecord>(EMAIL_SIGNATURE_STORAGE_KEY, [])
   )
@@ -1244,16 +1259,7 @@ export default function AdminView(_props: AdminViewProps) {
     active: true,
   })
   const [editingSignatureId, setEditingSignatureId] = useState<string | null>(null)
-  const [mailBanners, setMailBanners] = useState<MailBannerRecord[]>(() =>
-    loadStoredList<MailBannerRecord>(MAIL_BANNER_STORAGE_KEY, [])
-  )
-  const [bannerForm, setBannerForm] = useState<Omit<MailBannerRecord, 'id'>>({
-    title: '',
-    message: '',
-    tone: 'info',
-    active: true,
-  })
-  const [editingBannerId, setEditingBannerId] = useState<string | null>(null)
+  const [signatureUsers, setSignatureUsers] = useState<Array<{ id: string; label: string }>>([])
   const [dbForm, setDbForm] = useState<DatabaseConfigForm>(defaultDatabaseConfigForm())
   const [dbLoading, setDbLoading] = useState(false)
   const [dbBusy, setDbBusy] = useState(false)
@@ -1315,13 +1321,30 @@ export default function AdminView(_props: AdminViewProps) {
     }
   }, [activeItem, role])
   useEffect(() => {
-    if ((activeItem === 'mail-configuration' || activeItem === 'email-signature-templates') && role === 'ADMIN') {
+    if ((activeItem === 'mail-configuration' || activeItem === 'email-signature-templates' || activeItem === 'auto-assignment') && role === 'ADMIN') {
       loadMailConfiguration()
-      listUsers({ limit: 500 }).then((rows: any) => {
-        const data = Array.isArray(rows) ? rows : (Array.isArray(rows?.rows) ? rows.rows : [])
-        const serviceAccounts = data.filter((u: any) => Boolean(u?.isServiceAccount))
-        setSignatureUsers(serviceAccounts.length ? serviceAccounts : data)
-      }).catch(() => setSignatureUsers([]))
+    }
+  }, [activeItem, role])
+  useEffect(() => {
+    if (activeItem !== 'email-signature-templates' || role !== 'ADMIN') return
+    let cancelled = false
+    userService.listUsers({ limit: 1000 })
+      .then((rows: any) => {
+        if (cancelled) return
+        const list = Array.isArray(rows) ? rows : []
+        const normalized = list
+          .map((u: any) => ({
+            id: String(u?.id || '').trim(),
+            label: String(u?.name || u?.email || u?.username || '').trim(),
+          }))
+          .filter((u: { id: string; label: string }) => u.id && u.label)
+        setSignatureUsers(normalized)
+      })
+      .catch(() => {
+        if (!cancelled) setSignatureUsers([])
+      })
+    return () => {
+      cancelled = true
     }
   }, [activeItem, role])
   useEffect(() => {
@@ -1329,12 +1352,6 @@ export default function AdminView(_props: AdminViewProps) {
       loadDatabaseConfiguration()
     }
   }, [activeItem, role])
-  useEffect(() => {
-    if (activeItem === 'mfa-settings' && role === 'ADMIN') {
-      loadMfaPolicyConfiguration()
-    }
-  }, [activeItem, role])
-
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
@@ -1354,17 +1371,14 @@ export default function AdminView(_props: AdminViewProps) {
     } catch {}
   }, [emailSignatures])
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(MAIL_BANNER_STORAGE_KEY, JSON.stringify(mailBanners))
-    } catch {}
-  }, [mailBanners])
-  useEffect(() => {
     if (!workflowDrafts.length) return
     const hasSelectedType = workflowDrafts.some((wf) => wf.name === selectedWorkflowType)
     const hasSelectedName = workflowDrafts.some((wf) => wf.name === selectedWorkflowName)
-    if (!selectedWorkflowType || !hasSelectedType) setSelectedWorkflowType(workflowDrafts[0].name)
-    if (!selectedWorkflowName || !hasSelectedName) setSelectedWorkflowName(workflowDrafts[0].name)
+    if (selectedWorkflowType && !hasSelectedType) setSelectedWorkflowType('')
+    if (selectedWorkflowName && !hasSelectedName) {
+      setSelectedWorkflowName('')
+      setWorkflowEditMode(false)
+    }
   }, [workflowDrafts, selectedWorkflowType, selectedWorkflowName])
 
   const selectedSection = visibleSections.find((s) => s.id === activeSection) || visibleSections[0]
@@ -1650,7 +1664,7 @@ export default function AdminView(_props: AdminViewProps) {
         appendToTicketPattern: '[#TICKET-ID]',
         outboundReplyTo: '',
         maxAttachmentSizeMb: '20',
-        signatureTemplate: 'Regards,\nIT Support Team',
+        signatureTemplate: 'Kind regards,\nTrustyBytes Support Team',
         allowExternalEmailCreation: true,
         allowInternalOnly: false,
         allowedDomains: '',
@@ -1713,47 +1727,6 @@ export default function AdminView(_props: AdminViewProps) {
     } finally {
       setDbLoading(false)
     }
-  }
-
-  const loadMfaPolicyConfiguration = async () => {
-    if (role !== 'ADMIN') return
-    try {
-      const data = await getMfaPolicy()
-      setValues((prev) => ({
-        ...prev,
-        mfaRequired: Boolean(data?.mfaRequiredForPrivilegedRoles),
-        mfaMethod: String(data?.primaryMfaMethod || 'Authenticator App'),
-        mfaGracePeriod: String(data?.enrollmentGracePeriodDays ?? 0),
-        mfaBypassEmergency: Boolean(data?.allowEmergencyBypass),
-      }))
-      setSavedValues((prev) => ({
-        ...prev,
-        mfaRequired: Boolean(data?.mfaRequiredForPrivilegedRoles),
-        mfaMethod: String(data?.primaryMfaMethod || 'Authenticator App'),
-        mfaGracePeriod: String(data?.enrollmentGracePeriodDays ?? 0),
-        mfaBypassEmergency: Boolean(data?.allowEmergencyBypass),
-      }))
-    } catch (error: any) {
-      addActivity(error?.response?.data?.error || 'Failed to load 2FA policy')
-    }
-  }
-
-  const saveMfaPolicyConfiguration = async () => {
-    if (role !== 'ADMIN') return
-    const payload = {
-      mfaRequiredForPrivilegedRoles: Boolean(values.mfaRequired),
-      primaryMfaMethod: String(values.mfaMethod || 'Authenticator App') as 'Authenticator App' | 'FIDO2 Key' | 'SMS OTP',
-      enrollmentGracePeriodDays: Math.max(0, Number(values.mfaGracePeriod || 0) || 0),
-      allowEmergencyBypass: Boolean(values.mfaBypassEmergency),
-    }
-    await updateMfaPolicy(payload)
-    setSavedValues((prev) => ({
-      ...prev,
-      mfaRequired: payload.mfaRequiredForPrivilegedRoles,
-      mfaMethod: payload.primaryMfaMethod,
-      mfaGracePeriod: String(payload.enrollmentGracePeriodDays),
-      mfaBypassEmergency: payload.allowEmergencyBypass,
-    }))
   }
 
   const updateMailRoot = (key: keyof Omit<MailConfigForm, 'smtp' | 'imap'>, value: any) => {
@@ -1969,33 +1942,32 @@ export default function AdminView(_props: AdminViewProps) {
 
   const saveTemplate = () => {
     const name = templateForm.name.trim()
-    const subject = templateForm.subject.trim()
     const body = templateForm.body.trim()
-    if (!name || !subject || !body) {
-      setMailResult('Template name, subject and body are required')
+    if (!name || !body) {
+      setMailResult('Template name and body are required')
       return
     }
     if (editingTemplateId) {
-      setEmailTemplates((prev) => prev.map((row) => (row.id === editingTemplateId ? { ...row, ...templateForm, name, subject, body } : row)))
+      setEmailTemplates((prev) => prev.map((row) => (row.id === editingTemplateId ? { ...row, ...templateForm, name, body } : row)))
       setMailResult('Email template updated')
     } else {
-      setEmailTemplates((prev) => [{ id: `tpl-${Date.now()}`, ...templateForm, name, subject, body }, ...prev])
+      setEmailTemplates((prev) => [{ id: `tpl-${Date.now()}`, ...templateForm, name, body }, ...prev])
       setMailResult('Email template created')
     }
     setEditingTemplateId(null)
-    setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+    setTemplateForm({ name: '', buttonKey: 'Assign', body: '', active: true })
   }
 
   const editTemplate = (row: EmailTemplateRecord) => {
     setEditingTemplateId(row.id)
-    setTemplateForm({ name: row.name, buttonKey: row.buttonKey, subject: row.subject, body: row.body, active: row.active })
+    setTemplateForm({ name: row.name, buttonKey: row.buttonKey, body: row.body, active: row.active })
   }
 
   const deleteTemplate = (id: string) => {
     setEmailTemplates((prev) => prev.filter((row) => row.id !== id))
     if (editingTemplateId === id) {
       setEditingTemplateId(null)
-      setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+      setTemplateForm({ name: '', buttonKey: 'Assign', body: '', active: true })
     }
     setMailResult('Email template deleted')
   }
@@ -2004,11 +1976,11 @@ export default function AdminView(_props: AdminViewProps) {
     const userId = signatureForm.userId.trim()
     const signatureHtml = signatureForm.signatureHtml.trim()
     if (!userId || !signatureHtml) {
-      setMailResult('Service account user and signature content are required')
+      setMailResult('User and signature content are required')
       return
     }
-    const user = signatureUsers.find((u: any) => String(u?.id || '') === userId)
-    const userLabel = String(user?.name || user?.fullName || user?.email || userId)
+    const selectedUser = signatureUsers.find((entry) => entry.id === userId)
+    const userLabel = String(selectedUser?.label || signatureForm.userLabel || userId)
     const payload = { ...signatureForm, userId, userLabel, signatureHtml }
     if (editingSignatureId) {
       setEmailSignatures((prev) => prev.map((row) => (row.id === editingSignatureId ? { ...row, ...payload } : row)))
@@ -2033,38 +2005,6 @@ export default function AdminView(_props: AdminViewProps) {
       setSignatureForm({ userId: '', userLabel: '', signatureHtml: '', active: true })
     }
     setMailResult('Email signature deleted')
-  }
-
-  const saveBanner = () => {
-    const title = bannerForm.title.trim()
-    const message = bannerForm.message.trim()
-    if (!title || !message) {
-      setMailResult('Banner title and message are required')
-      return
-    }
-    if (editingBannerId) {
-      setMailBanners((prev) => prev.map((row) => (row.id === editingBannerId ? { ...row, ...bannerForm, title, message } : row)))
-      setMailResult('Mail banner updated')
-    } else {
-      setMailBanners((prev) => [{ id: `bnr-${Date.now()}`, ...bannerForm, title, message }, ...prev])
-      setMailResult('Mail banner created')
-    }
-    setEditingBannerId(null)
-    setBannerForm({ title: '', message: '', tone: 'info', active: true })
-  }
-
-  const editBanner = (row: MailBannerRecord) => {
-    setEditingBannerId(row.id)
-    setBannerForm({ title: row.title, message: row.message, tone: row.tone, active: row.active })
-  }
-
-  const deleteBanner = (id: string) => {
-    setMailBanners((prev) => prev.filter((row) => row.id !== id))
-    if (editingBannerId === id) {
-      setEditingBannerId(null)
-      setBannerForm({ title: '', message: '', tone: 'info', active: true })
-    }
-    setMailResult('Mail banner deleted')
   }
 
   const openCreatePolicyForm = () => {
@@ -2463,11 +2403,7 @@ export default function AdminView(_props: AdminViewProps) {
 
   const handleSave = async () => {
     try {
-      if (activeItem === 'mfa-settings' && role === 'ADMIN') {
-        await saveMfaPolicyConfiguration()
-      } else {
-        setSavedValues(values)
-      }
+      setSavedValues(values)
       const now = new Date().toLocaleString()
       setLastSavedAt(now)
       addActivity(`${title} configuration saved`)
@@ -2685,9 +2621,6 @@ export default function AdminView(_props: AdminViewProps) {
         }
         if (activeItem === 'database-configuration' && role === 'ADMIN') {
           loadDatabaseConfiguration()
-        }
-        if (activeItem === 'mfa-settings' && role === 'ADMIN') {
-          loadMfaPolicyConfiguration()
         }
       }
     }
@@ -3307,7 +3240,7 @@ export default function AdminView(_props: AdminViewProps) {
               <p>Only administrators can manage mail configuration.</p>
             ) : (
               <>
-                <div className="admin-config-grid two">
+                <div className="admin-config-grid one">
                   <article className="admin-config-card">
                     <h4>Email Provider</h4>
                     <p>Provider type, connection mode, and OAuth status.</p>
@@ -3479,7 +3412,7 @@ export default function AdminView(_props: AdminViewProps) {
                     </div>
                   </article>
                 </div>
-                <div className="admin-config-grid two">
+                <div className="admin-config-grid one">
                   <article className="admin-config-card">
                     <h4>Outgoing Mail</h4>
                     <p>
@@ -3576,23 +3509,7 @@ export default function AdminView(_props: AdminViewProps) {
                   </article>
                 </div>
 
-                <div className="admin-config-grid two">
-                  <article className="admin-config-card">
-                    <h4>Automation & Routing Rules</h4>
-                    <p>Queue and type routing rules for inbound emails.</p>
-                    <label className="admin-field-row">
-                      <span>Rule 1</span>
-                      <input value={mailForm.routingRuleHelpdeskQueue} onChange={(e) => updateMailRoot('routingRuleHelpdeskQueue', e.target.value)} />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Rule 2</span>
-                      <input value={mailForm.routingRuleAccessType} onChange={(e) => updateMailRoot('routingRuleAccessType', e.target.value)} />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Rule 3</span>
-                      <input value={mailForm.routingRuleSupplierType} onChange={(e) => updateMailRoot('routingRuleSupplierType', e.target.value)} />
-                    </label>
-                  </article>
+                <div className="admin-config-grid one">
                   <article className="admin-config-card">
                     <h4>Security & Logging</h4>
                     <p>Domain restrictions, validation posture, and delivery retries.</p>
@@ -3671,7 +3588,7 @@ export default function AdminView(_props: AdminViewProps) {
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-          <div className="admin-config-page">
+          <div className="admin-config-page admin-mail-template-page">
             <div className="admin-config-head">
               <h3>Email & Signature Templates</h3>
               <div className="admin-config-actions">
@@ -3685,10 +3602,10 @@ export default function AdminView(_props: AdminViewProps) {
             ) : (
               <>
                 <div className="admin-config-grid one">
-                  <article className="admin-config-card">
+                  <article className="admin-config-card admin-email-template-card">
                     <h4>Email Templates (CRUD)</h4>
                     <p>Create individual email templates per button action.</p>
-                    <div className="admin-config-row three">
+                    <div className="admin-config-row three admin-template-meta">
                       <label className="admin-field-row">
                         <span>Template Name</span>
                         <input
@@ -3708,7 +3625,7 @@ export default function AdminView(_props: AdminViewProps) {
                           ))}
                         </select>
                       </label>
-                      <label className="admin-field-row switch-row">
+                      <label className="admin-field-row switch-row admin-template-active">
                         <span>Active</span>
                         <input
                           type="checkbox"
@@ -3717,16 +3634,8 @@ export default function AdminView(_props: AdminViewProps) {
                         />
                       </label>
                     </div>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>Subject</span>
-                        <input
-                          value={templateForm.subject}
-                          onChange={(e) => setTemplateForm((prev) => ({ ...prev, subject: e.target.value }))}
-                          placeholder="Asset assigned to {{user_name}}"
-                        />
-                      </label>
-                      <label className="admin-field-row">
+                    <div className="admin-template-compose">
+                      <label className="admin-field-row admin-template-body">
                         <span>Body</span>
                         <textarea
                           value={templateForm.body}
@@ -3735,7 +3644,7 @@ export default function AdminView(_props: AdminViewProps) {
                         />
                       </label>
                     </div>
-                    <div className="admin-config-actions">
+                    <div className="admin-config-actions admin-template-actions">
                       <button className="admin-settings-primary" onClick={saveTemplate}>
                         {editingTemplateId ? 'Update Template' : 'Create Template'}
                       </button>
@@ -3744,7 +3653,7 @@ export default function AdminView(_props: AdminViewProps) {
                           className="admin-settings-ghost"
                           onClick={() => {
                             setEditingTemplateId(null)
-                            setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+                            setTemplateForm({ name: '', buttonKey: 'Assign', body: '', active: true })
                           }}
                         >
                           Cancel
@@ -3758,7 +3667,7 @@ export default function AdminView(_props: AdminViewProps) {
                         <div key={row.id} className="admin-entity-row">
                           <div>
                             <strong>{row.name}</strong> | Action: {row.buttonKey} | {row.active ? 'Active' : 'Inactive'}
-                            <div className="admin-entity-subtext">{row.subject}</div>
+                            <div className="admin-entity-subtext">{row.body}</div>
                           </div>
                           <div className="admin-config-actions">
                             <button className="admin-settings-ghost" onClick={() => editTemplate(row)}>Edit</button>
@@ -3770,22 +3679,23 @@ export default function AdminView(_props: AdminViewProps) {
                   </article>
                 </div>
 
-                <div className="admin-config-grid two">
-                  <article className="admin-config-card">
+                <article className="admin-config-card">
                     <h4>Email Signatures (CRUD)</h4>
-                    <p>Manage individual signatures for service-account users (agents).</p>
+                    <p>Manage signature templates by user.</p>
                     <label className="admin-field-row">
-                      <span>Service Account User</span>
+                      <span>User</span>
                       <select
                         value={signatureForm.userId}
-                        onChange={(e) => setSignatureForm((prev) => ({ ...prev, userId: e.target.value }))}
+                        onChange={(e) => {
+                          const nextUserId = e.target.value
+                          const selectedUser = signatureUsers.find((entry) => entry.id === nextUserId)
+                          setSignatureForm((prev) => ({ ...prev, userId: nextUserId, userLabel: selectedUser?.label || prev.userLabel }))
+                        }}
                       >
                         <option value="">Select user</option>
-                        {signatureUsers.map((u: any) => {
-                          const id = String(u?.id || '')
-                          const label = String(u?.name || u?.fullName || u?.email || `User ${id}`)
-                          return <option key={`sig-user-${id}`} value={id}>{label}</option>
-                        })}
+                        {signatureUsers.map((entry) => (
+                          <option key={`sig-user-${entry.id}`} value={entry.id}>{entry.label}</option>
+                        ))}
                       </select>
                     </label>
                     <label className="admin-field-row">
@@ -3836,83 +3746,7 @@ export default function AdminView(_props: AdminViewProps) {
                         </div>
                       ))}
                     </div>
-                  </article>
-
-                  <article className="admin-config-card">
-                    <h4>Mail Banner (CRUD)</h4>
-                    <p>Banner shown on mail/ticket communications.</p>
-                    <label className="admin-field-row">
-                      <span>Banner Title</span>
-                      <input
-                        value={bannerForm.title}
-                        onChange={(e) => setBannerForm((prev) => ({ ...prev, title: e.target.value }))}
-                        placeholder="Maintenance Window"
-                      />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Banner Message</span>
-                      <textarea
-                        value={bannerForm.message}
-                        onChange={(e) => setBannerForm((prev) => ({ ...prev, message: e.target.value }))}
-                        placeholder="Support response time may be delayed during planned maintenance."
-                      />
-                    </label>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>Tone</span>
-                        <select
-                          value={bannerForm.tone}
-                          onChange={(e) => setBannerForm((prev) => ({ ...prev, tone: e.target.value as MailBannerRecord['tone'] }))}
-                        >
-                          <option value="info">Info</option>
-                          <option value="success">Success</option>
-                          <option value="warning">Warning</option>
-                          <option value="danger">Danger</option>
-                        </select>
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Active</span>
-                        <input
-                          type="checkbox"
-                          checked={bannerForm.active}
-                          onChange={(e) => setBannerForm((prev) => ({ ...prev, active: e.target.checked }))}
-                        />
-                      </label>
-                    </div>
-                    <div className="admin-config-actions">
-                      <button className="admin-settings-primary" onClick={saveBanner}>
-                        {editingBannerId ? 'Update Banner' : 'Create Banner'}
-                      </button>
-                      {editingBannerId ? (
-                        <button
-                          className="admin-settings-ghost"
-                          onClick={() => {
-                            setEditingBannerId(null)
-                            setBannerForm({ title: '', message: '', tone: 'info', active: true })
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="admin-entity-list">
-                      {mailBanners.length === 0 ? (
-                        <div className="admin-entity-empty">No banners configured.</div>
-                      ) : mailBanners.map((row) => (
-                        <div key={row.id} className="admin-entity-row">
-                          <div>
-                            <strong>{row.title}</strong> | Tone: {row.tone} | {row.active ? 'Active' : 'Inactive'}
-                            <div className="admin-entity-subtext">{row.message}</div>
-                          </div>
-                          <div className="admin-config-actions">
-                            <button className="admin-settings-ghost" onClick={() => editBanner(row)}>Edit</button>
-                            <button className="admin-settings-danger" onClick={() => deleteBanner(row.id)}>Delete</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                </div>
+                </article>
                 {mailResult ? <div className="admin-config-result">{mailResult}</div> : null}
               </>
             )}
@@ -4034,6 +3868,7 @@ export default function AdminView(_props: AdminViewProps) {
                             setWorkflowEditMode(false)
                           }}
                         >
+                          <option value="">Select a type/flow to view</option>
                           {workflowDrafts.map((wf) => (
                             <option key={`type-${wf.name}`} value={wf.name}>{wf.name}</option>
                           ))}
@@ -4043,7 +3878,20 @@ export default function AdminView(_props: AdminViewProps) {
                   </article>
                 </div>
 
-                {selectedWorkflow ? (
+                {workflowDrafts.length === 0 ? (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      <p>No workflow available. Add one to continue.</p>
+                      <button className="admin-settings-primary" onClick={addWorkflow}>Add Workflow</button>
+                    </article>
+                  </div>
+                ) : !selectedWorkflowName ? (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      <p>Select a type/flow from the dropdown above to view its states, transitions, and action flow.</p>
+                    </article>
+                  </div>
+                ) : selectedWorkflow ? (
                   <div className="admin-config-grid one">
                     <article className="admin-config-card">
                       {!workflowEditMode ? (
@@ -4154,8 +4002,7 @@ export default function AdminView(_props: AdminViewProps) {
                 ) : (
                   <div className="admin-config-grid one">
                     <article className="admin-config-card">
-                      <p>No workflow available. Add one to continue.</p>
-                      <button className="admin-settings-primary" onClick={addWorkflow}>Add Workflow</button>
+                      <p>Select a valid type/flow to continue.</p>
                     </article>
                   </div>
                 )}
@@ -4447,6 +4294,29 @@ export default function AdminView(_props: AdminViewProps) {
                   )}
                 </article>
               )}
+              {activeItem === 'auto-assignment' ? (
+                <article className="admin-settings-card">
+                  <h3>Automation & Routing Rules</h3>
+                  <p>Queue and type routing rules for inbound emails.</p>
+                  <label className="admin-field-row">
+                    <span>Rule 1</span>
+                    <input value={mailForm.routingRuleHelpdeskQueue} onChange={(e) => updateMailRoot('routingRuleHelpdeskQueue', e.target.value)} />
+                  </label>
+                  <label className="admin-field-row">
+                    <span>Rule 2</span>
+                    <input value={mailForm.routingRuleAccessType} onChange={(e) => updateMailRoot('routingRuleAccessType', e.target.value)} />
+                  </label>
+                  <label className="admin-field-row">
+                    <span>Rule 3</span>
+                    <input value={mailForm.routingRuleSupplierType} onChange={(e) => updateMailRoot('routingRuleSupplierType', e.target.value)} />
+                  </label>
+                  <div className="admin-config-actions">
+                    <button className="admin-settings-primary" onClick={saveMailConfiguration} disabled={mailBusy || mailLoading}>
+                      {mailBusy ? 'Saving...' : 'Save Routing Rules'}
+                    </button>
+                  </div>
+                </article>
+              ) : null}
             </div>
           </section>
         </div>
@@ -4493,6 +4363,7 @@ export default function AdminView(_props: AdminViewProps) {
     </>
   )
 }
+
 
 
 

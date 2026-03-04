@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const authLoginBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  trustedDeviceToken: z.string().optional(),
 })
 
 export const authLoginParamsSchema = z.object({})
@@ -31,4 +32,6 @@ export const authResetPasswordBodySchema = z.object({
 export const authVerifyMfaBodySchema = z.object({
   challengeToken: z.string().min(1),
   code: z.string().min(4).max(8),
+  dontAskAgain: z.boolean().optional(),
+  trustedDeviceLabel: z.string().optional(),
 })

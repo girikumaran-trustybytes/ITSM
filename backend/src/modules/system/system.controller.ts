@@ -72,16 +72,29 @@ export async function getDatabaseConfig(_req: Request, res: Response) {
 export async function testDatabaseConfig(req: Request, res: Response) {
   let pool: Pool | null = null
   try {
+    const rawConnectionString = String(req.body?.connectionString || '').trim()
+    const manualPassword = typeof req.body?.password === 'string' ? req.body.password : ''
     const connectionString = buildDbConnectionString(req.body || {})
     const parsed = parseDbConfigFromUrl(connectionString)
+    if (rawConnectionString && !parsed.hasPassword && !manualPassword) {
+      throw {
+        status: 400,
+        message: 'Connection string password is missing. Add password in the URL or use the Password field.',
+      }
+    }
     const started = Date.now()
-    pool = new Pool({
+    const poolOptions: any = {
       connectionString,
       max: 1,
       connectionTimeoutMillis: 6000,
       idleTimeoutMillis: 1000,
       ssl: parsed.ssl ? { rejectUnauthorized: false } : undefined,
-    })
+    }
+    // Ensure password is always a string in manual mode; optionally allow overriding URL password.
+    if (!rawConnectionString || manualPassword) {
+      poolOptions.password = manualPassword
+    }
+    pool = new Pool(poolOptions)
     const rows = await pool.query('SELECT NOW()::text AS now')
     const latencyMs = Date.now() - started
     return res.json({

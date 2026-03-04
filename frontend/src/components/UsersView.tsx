@@ -111,7 +111,7 @@ export default function UsersView({
   })
   const { widths: colWidths, startResize } = useColumnResize({
     initialWidths: [30, 180, 120, 120, 180, 140, 160, 160, 140, 140, 120, 90],
-    minWidth: 0,
+    minWidth: 80,
   })
 
   const loadUsers = async () => {

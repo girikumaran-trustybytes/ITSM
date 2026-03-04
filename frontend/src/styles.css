@@ -11386,6 +11386,9 @@ body.tickets-view-active.tickets-queue-expanded .tickets-shell.main-only .work-m
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 .users-avatar {
   width: 28px;
@@ -11403,6 +11406,11 @@ body.tickets-view-active.tickets-queue-expanded .tickets-shell.main-only .work-m
 .users-user-name {
   font-weight: 600;
   color: #111827;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .assets-col.check,
@@ -11970,6 +11978,12 @@ body.admin-queue-collapsed .ticket-left-panel {
   white-space: nowrap;
 }
 
+.users-grid th:not(.users-col.check),
+.users-grid td:not(.users-col.check) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .assets-col.check,
 .admin-col.check,
 .users-col.check {
@@ -12198,6 +12212,66 @@ body.admin-queue-collapsed .ticket-left-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.admin-mail-template-page {
+  background: linear-gradient(180deg, #f7fafc 0%, #f3f7fb 100%);
+  border-color: #d7e1ec;
+}
+
+.admin-mail-template-page .admin-config-card {
+  background: #ffffff;
+  border-color: #d8e2ee;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.admin-mail-template-page .admin-field-row input,
+.admin-mail-template-page .admin-field-row select,
+.admin-mail-template-page .admin-field-row textarea,
+.admin-mail-template-page .admin-field-row.switch-row {
+  background: #ffffff;
+  border-color: #c8d4e3;
+}
+
+.admin-mail-template-page .admin-entity-list {
+  background: #f8fbff;
+  border-color: #d6e2f0;
+}
+
+.admin-mail-template-page .admin-email-template-card {
+  background: #fcfdff;
+}
+
+.admin-mail-template-page .admin-template-meta {
+  grid-template-columns: minmax(260px, 1.2fr) minmax(240px, 1fr) 170px;
+  align-items: end;
+}
+
+.admin-mail-template-page .admin-template-active {
+  min-height: 42px;
+  padding: 8px 12px;
+}
+
+.admin-mail-template-page .admin-template-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.admin-mail-template-page .admin-template-body textarea {
+  min-height: 112px;
+}
+
+.admin-mail-template-page .admin-template-actions {
+  border-top: 1px dashed #d9e4ef;
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+@media (max-width: 1120px) {
+  .admin-mail-template-page .admin-template-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .admin-config-head {
@@ -13838,5 +13912,6 @@ body.admin-queue-collapsed .ticket-left-panel {
     grid-template-columns: 1fr;
   }
 }
+
 
 

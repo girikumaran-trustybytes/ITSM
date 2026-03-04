@@ -2,10 +2,36 @@ import api from './api'
 
 const TRUSTED_TWO_FA_DEVICE_KEY = 'trustedTwoFaDeviceToken'
 const TRUSTED_MFA_DEVICE_KEY = 'trustedMfaDeviceToken'
+const REMEMBERED_SESSION_EXPIRES_AT_KEY = 'rememberSessionExpiresAt'
+const LAST_ROUTE_STORAGE_KEY = 'auth.lastRoute'
+const REMEMBER_ME_TTL_MS = 8 * 60 * 60 * 1000
+
+function isRememberedSessionExpired() {
+  const expiresRaw = localStorage.getItem(REMEMBERED_SESSION_EXPIRES_AT_KEY)
+  if (!expiresRaw) return false
+  const expiresAt = Number(expiresRaw)
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return false
+  return Date.now() >= expiresAt
+}
+
+function ensureRememberedSessionExpiry() {
+  const hasLocalSession = Boolean(localStorage.getItem('accessToken') || localStorage.getItem('refreshToken'))
+  if (!hasLocalSession) return
+  const existingExpiry = Number(localStorage.getItem(REMEMBERED_SESSION_EXPIRES_AT_KEY) || 0)
+  if (Number.isFinite(existingExpiry) && existingExpiry > 0) return
+  localStorage.setItem(REMEMBERED_SESSION_EXPIRES_AT_KEY, String(Date.now() + REMEMBER_ME_TTL_MS))
+}
+
+function clearRememberedSessionIfExpired() {
+  ensureRememberedSessionExpiry()
+  if (!isRememberedSessionExpired()) return
+  clearStoredAuth()
+}
 
 function clearStoredAuth() {
   localStorage.removeItem('accessToken')
   localStorage.removeItem('refreshToken')
+  localStorage.removeItem(REMEMBERED_SESSION_EXPIRES_AT_KEY)
   sessionStorage.removeItem('accessToken')
   sessionStorage.removeItem('refreshToken')
 }
@@ -15,6 +41,9 @@ function storeAuth(data: any, rememberMe = true) {
   const target = rememberMe ? localStorage : sessionStorage
   if (data?.accessToken) target.setItem('accessToken', data.accessToken)
   if (data?.refreshToken) target.setItem('refreshToken', data.refreshToken)
+  if (rememberMe) {
+    localStorage.setItem(REMEMBERED_SESSION_EXPIRES_AT_KEY, String(Date.now() + REMEMBER_ME_TTL_MS))
+  }
 }
 
 export function storeAuthTokens(accessToken: string, refreshToken: string, rememberMe = true) {
@@ -23,7 +52,7 @@ export function storeAuthTokens(accessToken: string, refreshToken: string, remem
 
 export async function login(email: string, password: string, rememberMe = true) {
   const trustedDeviceToken = localStorage.getItem(TRUSTED_TWO_FA_DEVICE_KEY) || localStorage.getItem(TRUSTED_MFA_DEVICE_KEY) || ''
-  const res = await api.post('/auth/login', { email, password, trustedDeviceToken: trustedDeviceToken || undefined })
+  const res = await api.post('/auth/login', { email, password, rememberMe, trustedDeviceToken: trustedDeviceToken || undefined })
   const data = res.data
   storeAuth(data, rememberMe)
   return data
@@ -31,7 +60,7 @@ export async function login(email: string, password: string, rememberMe = true) 
 
 export async function loginWithGoogle(idToken: string, rememberMe = true) {
   const trustedDeviceToken = localStorage.getItem(TRUSTED_TWO_FA_DEVICE_KEY) || localStorage.getItem(TRUSTED_MFA_DEVICE_KEY) || ''
-  const res = await api.post('/auth/google', { idToken, trustedDeviceToken: trustedDeviceToken || undefined })
+  const res = await api.post('/auth/google', { idToken, rememberMe, trustedDeviceToken: trustedDeviceToken || undefined })
   const data = res.data
   storeAuth(data, rememberMe)
   return data
@@ -74,7 +103,7 @@ export async function verifyTwoFa(
   dontAskAgain = false,
   trustedDeviceLabel = 'browser'
 ) {
-  const res = await api.post('/auth/mfa/verify', { challengeToken, code, dontAskAgain, trustedDeviceLabel })
+  const res = await api.post('/auth/mfa/verify', { challengeToken, code, rememberMe, dontAskAgain, trustedDeviceLabel })
   const data = res.data
   if (data?.trustedDeviceToken) {
     localStorage.setItem(TRUSTED_TWO_FA_DEVICE_KEY, String(data.trustedDeviceToken))
@@ -144,6 +173,7 @@ export function logout() {
 
 export function getCurrentUser() {
   try {
+    clearRememberedSessionIfExpired()
     const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken')
     if (!token) return null
     const payload = JSON.parse(atob(token.split('.')[1]))
@@ -166,6 +196,24 @@ export function getCurrentUser() {
     }
   } catch {
     return null
+  }
+}
+
+export function persistLastRoute(path: string) {
+  const next = String(path || '').trim()
+  if (!next || next === '/login' || next.startsWith('/reset-password') || next.startsWith('/auth/Account/ConfirmEmail')) return
+  try {
+    localStorage.setItem(LAST_ROUTE_STORAGE_KEY, next)
+  } catch {
+    // ignore storage access issues
+  }
+}
+
+export function getLastRoute() {
+  try {
+    return String(localStorage.getItem(LAST_ROUTE_STORAGE_KEY) || '').trim()
+  } catch {
+    return ''
   }
 }
 
