@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import * as assetService from '../modules/assets/services/asset.service'
@@ -14,7 +14,7 @@ import { loadLeftPanelConfig, type QueueRule, type AssetCategoryConfig } from '.
 type Asset = {
   id: number
   assetId?: string
-  name: string
+  name?: string
   assetType?: string
   category: string
   subcategory?: string | null
@@ -30,11 +30,13 @@ type Asset = {
   assignedTo?: { id: number; name?: string | null; email: string } | null
 }
 
+const DEFAULT_ASSET_CATEGORY = 'Uncategorised'
+
 const emptyForm = {
   assetId: '',
   name: '',
   assetType: 'Laptop',
-  category: '',
+  category: DEFAULT_ASSET_CATEGORY,
   subcategory: '',
   ciType: 'Hardware',
   serial: '',
@@ -89,6 +91,8 @@ const emptyForm = {
   lastSecurityScan: '',
   parentAssetId: '',
   notes: '',
+  slaOverride: 'Do not override',
+  ticketPriorityOverride: '*No Change*',
   linkedTicketIds: [] as string[],
   changeIds: [] as number[],
   problemIds: [] as number[],
@@ -96,13 +100,24 @@ const emptyForm = {
 }
 
 const tabs = [
-  { id: 'identification', label: 'Identification' },
-  { id: 'ownership', label: 'Ownership' },
-  { id: 'hardware', label: 'Hardware' },
-  { id: 'software', label: 'OS & Software' },
-  { id: 'financial', label: 'Financial' },
+  { id: 'details', label: 'Details' },
   { id: 'relationships', label: 'Relationships' },
-  { id: 'notes', label: 'Notes' },
+  { id: 'supplier', label: 'Supplier & Maintenance' },
+  { id: 'documents', label: 'Documents' },
+]
+
+const defaultAssetTypeOptions = [
+  'Laptop',
+  'PC',
+  'Desktop',
+  'Monitor',
+  'Keyboard',
+  'Mouse',
+  'Printer',
+  'TV',
+  'Extension Box',
+  'Power Cord (Monitor)',
+  'Power Adaptor',
 ]
 
 type PaginationMeta = {
@@ -141,8 +156,9 @@ export default function AssetsView({
   const [showModal, setShowModal] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [editing, setEditing] = useState<Asset | null>(null)
+  const [assetUploadFiles, setAssetUploadFiles] = useState<File[]>([])
   const [form, setForm] = useState({ ...emptyForm })
-  const [activeTab, setActiveTab] = useState('identification')
+  const [activeTab, setActiveTab] = useState('details')
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1100
@@ -319,17 +335,31 @@ export default function AssetsView({
   }, [assetCategories, user?.role])
 
   const assetGroupMap = useMemo(() => {
-    if (Object.keys(configuredCategoryMap).length > 0) return configuredCategoryMap
     const grouped = new Map<string, Set<string>>()
+    if (Object.keys(configuredCategoryMap).length > 0) {
+      Object.entries(configuredCategoryMap).forEach(([group, types]) => {
+        if (!grouped.has(group)) grouped.set(group, new Set())
+        types.forEach((type) => grouped.get(group)!.add(type))
+      })
+    }
+    if (!grouped.has(DEFAULT_ASSET_CATEGORY)) grouped.set(DEFAULT_ASSET_CATEGORY, new Set())
     for (const asset of assets) {
-      const group = String(asset.category || '').trim() || 'Uncategorized'
+      const group = String(asset.category || '').trim() || DEFAULT_ASSET_CATEGORY
       const type = getAssetType(asset)
       if (!grouped.has(group)) grouped.set(group, new Set())
       grouped.get(group)!.add(type)
     }
     return Object.fromEntries(
       Array.from(grouped.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
+        .sort(([a], [b]) => {
+          const aKey = String(a || '').trim().toLowerCase()
+          const bKey = String(b || '').trim().toLowerCase()
+          const isAUncategorised = aKey === 'uncategorised' || aKey === 'uncategorized'
+          const isBUncategorised = bKey === 'uncategorised' || bKey === 'uncategorized'
+          if (isAUncategorised && !isBUncategorised) return -1
+          if (!isAUncategorised && isBUncategorised) return 1
+          return a.localeCompare(b)
+        })
         .map(([group, types]) => [group, Array.from(types).sort((a, b) => a.localeCompare(b))])
     ) as Record<string, string[]>
   }, [assets, configuredCategoryMap])
@@ -338,6 +368,15 @@ export default function AssetsView({
     () => Array.from(new Set(assets.map((a) => getAssetType(a)))).sort((a, b) => a.localeCompare(b)),
     [assets]
   )
+  const modalAssetTypeOptions = useMemo(
+    () => Array.from(new Set([...defaultAssetTypeOptions, ...assetTypes])).sort((a, b) => a.localeCompare(b)),
+    [assetTypes]
+  )
+  const generateFallbackAssetId = () => {
+    const nameKey = String(form.name || '').trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toUpperCase()
+    const stamp = Date.now().toString().slice(-6)
+    return `AST-${nameKey || 'ITEM'}-${stamp}`
+  }
   useEffect(() => {
     const groups = new Set(Object.keys(assetGroupMap))
     setExpandedAssetGroups((prev) => prev.filter((g) => groups.has(g)))
@@ -365,7 +404,7 @@ export default function AssetsView({
           }
         }
       }
-      if (filters.name && !match(`${asset.name} ${asset.assetId || ''}`, filters.name)) return false
+      if (filters.name && !match(`${asset.assetId || ''}`, filters.name)) return false
       if (filters.serial && !match(asset.serial, filters.serial)) return false
       if (filters.category && !match(asset.category, filters.category)) return false
       if (filters.status && !match(asset.status, filters.status)) return false
@@ -412,7 +451,8 @@ export default function AssetsView({
   const openCreate = () => {
     setEditing(null)
     setForm({ ...emptyForm })
-    setActiveTab('identification')
+    setAssetUploadFiles([])
+    setActiveTab('details')
     loadUsers()
     loadRelations()
     setShowModal(true)
@@ -425,7 +465,7 @@ export default function AssetsView({
       assetId: asset.assetId || '',
       name: asset.name || '',
       assetType: asset.assetType || 'Laptop',
-      category: asset.category || '',
+      category: asset.category || DEFAULT_ASSET_CATEGORY,
       subcategory: asset.subcategory || '',
       status: asset.status || 'In Use',
       serial: asset.serial || '',
@@ -433,7 +473,8 @@ export default function AssetsView({
       assignedToId: asset.assignedToId ? String(asset.assignedToId) : '',
       purchaseDate: asset.purchaseDate ? asset.purchaseDate.slice(0, 10) : '',
     })
-    setActiveTab('identification')
+    setAssetUploadFiles([])
+    setActiveTab('details')
     loadUsers()
     loadRelations()
     setShowModal(true)
@@ -462,20 +503,21 @@ export default function AssetsView({
   const toIsoDate = (value: string) => (value ? new Date(value).toISOString() : null)
 
   const handleSave = async () => {
-    if (!form.assetId.trim() || !form.name.trim() || !form.assetType.trim() || !form.category.trim() || !form.status.trim()) {
-      alert('Asset ID, Name, Asset Type, Category, and Status are required.')
+    if (!form.assetType.trim() || !form.name.trim() || !form.status.trim()) {
+      alert('Asset Type, Asset Name, and Status are required.')
       return
     }
     setIsSaving(true)
+    const assetId = form.assetId.trim() || generateFallbackAssetId()
     const payload = {
-      assetId: form.assetId.trim(),
+      assetId,
       name: form.name.trim(),
       assetType: form.assetType.trim(),
       category: form.category.trim(),
       subcategory: form.subcategory.trim() || null,
       ciType: form.ciType.trim() || null,
       serial: form.serial.trim() || null,
-      assetTag: form.assetTag.trim() || null,
+      assetTag: form.assetTag.trim() || form.serial.trim() || null,
       barcode: form.barcode.trim() || null,
       assignedToId: form.assignedToId ? Number(form.assignedToId) : null,
       assignedUserEmail: form.assignedUserEmail.trim() || null,
@@ -557,7 +599,7 @@ export default function AssetsView({
   }
 
   const handleDelete = async (asset: Asset) => {
-    if (!confirm(`Delete asset "${asset.name}"? This cannot be undone.`)) return
+    if (!confirm(`Delete asset "${asset.assetId || `AST-${asset.id}`}"? This cannot be undone.`)) return
     try {
       await assetService.deleteAsset(asset.id)
       setAssets((prev) => prev.filter((a) => a.id !== asset.id))
@@ -812,11 +854,17 @@ export default function AssetsView({
           <section className="asset-table-panel">
             <div className="asset-table-header-row">
               <div>Asset ID</div>
-              <div>Name</div>
-              <div>Category</div>
+              <div>Asset Type</div>
+              <div>Model</div>
               <div>Status</div>
+              <div>Assigned User</div>
             </div>
             {cardRows.map((asset) => {
+              const assignedUser =
+                String(asset.assignedTo?.name || '').trim() ||
+                String(asset.assignedTo?.email || '').trim() ||
+                String(asset.assignedUserEmail || '').trim() ||
+                '-'
               return (
                 <button
                   key={asset.id}
@@ -825,11 +873,12 @@ export default function AssetsView({
                   onClick={() => openDetail(asset)}
                 >
                   <div className="asset-table-cell">{asset.assetId || `AST-${asset.id}`}</div>
-                  <div className="asset-table-cell">{asset.name}</div>
-                  <div className="asset-table-cell">{asset.category || '-'}</div>
+                  <div className="asset-table-cell">{asset.assetType || '-'}</div>
+                  <div className="asset-table-cell">{asset.model || '-'}</div>
                   <div className="asset-table-cell">
                     <span className={`asset-status ${String(asset.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{asset.status || 'Active'}</span>
                   </div>
+                  <div className="asset-table-cell">{assignedUser}</div>
                 </button>
               )
             })}
@@ -845,7 +894,7 @@ export default function AssetsView({
           <div className="modal-content asset-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editing ? 'Edit Asset' : 'New Asset'}</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>�</button>
+              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="asset-tabs">
@@ -855,170 +904,141 @@ export default function AssetsView({
                   </button>
                 ))}
               </div>
-              {activeTab === 'identification' && (
+
+              {activeTab === 'details' && (
                 <>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Asset ID *</label>
-                      <input className="form-input" value={form.assetId} onChange={(e) => setForm({ ...form, assetId: e.target.value })} />
+                  <article className="asset-modal-card">
+                    <h3 className="asset-modal-card-title">Basic Info</h3>
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Asset Type *</label>
+                        <select className="form-select" value={form.assetType} onChange={(e) => setForm({ ...form, assetType: e.target.value })}>
+                          <option value="">Select...</option>
+                          {modalAssetTypeOptions.map((assetType) => (
+                            <option key={assetType} value={assetType}>{assetType}</option>
+                          ))}
+                        </select>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 8, marginTop: 8 }}>
+                          {defaultAssetTypeOptions.map((assetType) => (
+                            <button key={assetType} type="button" className={`users-action-btn${form.assetType === assetType ? ' users-action-btn-active' : ''}`} onClick={() => setForm({ ...form, assetType })}>
+                              {renderAssetTypeIcon(assetType)} <span style={{ marginLeft: 6 }}>{assetType}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                    <div className="form-section">
-                      <label className="form-label">Asset Name *</label>
-                      <input className="form-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Asset Name *</label>
+                        <input className="form-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+                      </div>
+                      <div className="form-section">
+                        <label className="form-label">Brand / Manufacturer</label>
+                        <input className="form-input" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Asset Type *</label>
-                      <input className="form-input" value={form.assetType} onChange={(e) => setForm({ ...form, assetType: e.target.value })} />
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Model Number</label>
+                        <input className="form-input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} />
+                      </div>
+                      <div className="form-section">
+                        <label className="form-label">Serial Number / Asset Tag</label>
+                        <input className="form-input" value={form.serial} onChange={(e) => setForm({ ...form, serial: e.target.value, assetTag: e.target.value })} />
+                      </div>
                     </div>
-                    <div className="form-section">
-                      <label className="form-label">Category *</label>
-                      <input className="form-input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                  </article>
+
+                  <article className="asset-modal-card">
+                    <h3 className="asset-modal-card-title">Purchase Info</h3>
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Purchase Date</label>
+                        <input className="form-input" type="date" value={form.purchaseDate} onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })} />
+                      </div>
+                      <div className="form-section">
+                        <label className="form-label">Vendor</label>
+                        <input className="form-input" value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Sub-Category</label>
-                      <input className="form-input" value={form.subcategory} onChange={(e) => setForm({ ...form, subcategory: e.target.value })} />
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Purchase Cost</label>
+                        <input className="form-input" type="number" value={form.purchaseCost} onChange={(e) => setForm({ ...form, purchaseCost: e.target.value })} />
+                      </div>
+                      <div className="form-section">
+                        <label className="form-label">Warranty End Date</label>
+                        <input className="form-input" type="date" value={form.warrantyUntil} onChange={(e) => setForm({ ...form, warrantyUntil: e.target.value })} />
+                      </div>
                     </div>
-                    <div className="form-section">
-                      <label className="form-label">CI Type</label>
-                      <input className="form-input" value={form.ciType} onChange={(e) => setForm({ ...form, ciType: e.target.value })} />
+                  </article>
+
+                  <article className="asset-modal-card">
+                    <h3 className="asset-modal-card-title">Assignment</h3>
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Assigned To</label>
+                        <select className="form-select" value={form.assignedToId} onChange={(e) => setForm({ ...form, assignedToId: e.target.value })}>
+                          <option value="">Employee / Department</option>
+                          {users.map((u) => (
+                            <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-section">
+                        <label className="form-label">Department</label>
+                        <input className="form-input" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Serial Number</label>
-                      <input className="form-input" value={form.serial} onChange={(e) => setForm({ ...form, serial: e.target.value })} />
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Location</label>
+                        <input className="form-input" placeholder="Office / Room / Floor" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
+                      </div>
+                      <div className="form-section">
+                        <label className="form-label">Site</label>
+                        <input className="form-input" value={form.site} onChange={(e) => setForm({ ...form, site: e.target.value })} />
+                      </div>
                     </div>
-                    <div className="form-section">
-                      <label className="form-label">Asset Tag</label>
-                      <input className="form-input" value={form.assetTag} onChange={(e) => setForm({ ...form, assetTag: e.target.value })} />
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Status</label>
+                        <select className="form-select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                          <option>Available</option>
+                          <option>In Use</option>
+                          <option>Maintenance</option>
+                          <option>Retired</option>
+                        </select>
+                      </div>
+                      <div className="form-section">
+                        <label className="form-label">Asset Group</label>
+                        <input className="form-input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value || DEFAULT_ASSET_CATEGORY })} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Barcode / QR</label>
-                      <input className="form-input" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
+                  </article>
+
+                  <article className="asset-modal-card asset-modal-card-tight">
+                    <h3 className="asset-modal-card-title">Attachments</h3>
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Upload Image / Invoice</label>
+                        <input className="form-input" type="file" multiple onChange={(e) => setAssetUploadFiles(Array.from(e.target.files || []))} />
+                        {assetUploadFiles.length > 0 ? (
+                          <small>{assetUploadFiles.map((f) => f.name).join(', ')}</small>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="form-section">
-                      <label className="form-label">Status *</label>
-                      <select className="form-select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                        <option>In Use</option>
-                        <option>Available</option>
-                        <option>In Repair</option>
-                        <option>Retired</option>
-                        <option>Disposed</option>
-                      </select>
+                    <div className="form-row">
+                      <div className="form-section">
+                        <label className="form-label">Notes</label>
+                        <textarea className="form-input" style={{ minHeight: 100 }} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+                      </div>
                     </div>
-                  </div>
+                  </article>
                 </>
               )}
 
-              {activeTab === 'ownership' && (
-                <>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Assigned User</label>
-                      <input className="form-input" placeholder="Search users..." onChange={(e) => loadUsers(e.target.value)} />
-                      <select className="form-select" value={form.assignedToId} onChange={(e) => setForm({ ...form, assignedToId: e.target.value })}>
-                        <option value="">Unassigned</option>
-                        {users.map((u) => (
-                          <option key={u.id} value={u.id}>{u.name || u.email} ({u.email})</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">User Email</label>
-                      <input className="form-input" value={form.assignedUserEmail} onChange={(e) => setForm({ ...form, assignedUserEmail: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Department</label>
-                      <input className="form-input" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Location</label>
-                      <input className="form-input" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Site</label>
-                      <input className="form-input" value={form.site} onChange={(e) => setForm({ ...form, site: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Cost Centre</label>
-                      <input className="form-input" value={form.costCentre} onChange={(e) => setForm({ ...form, costCentre: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Manager</label>
-                      <input className="form-input" value={form.manager} onChange={(e) => setForm({ ...form, manager: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Asset Owner</label>
-                      <input className="form-input" value={form.assetOwner} onChange={(e) => setForm({ ...form, assetOwner: e.target.value })} />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {activeTab === 'hardware' && (
-                <>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Manufacturer</label>
-                      <input className="form-input" value={form.manufacturer} onChange={(e) => setForm({ ...form, manufacturer: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">Model</label>
-                      <input className="form-input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">CPU</label>
-                      <input className="form-input" value={form.cpu} onChange={(e) => setForm({ ...form, cpu: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">RAM</label>
-                      <input className="form-input" value={form.ram} onChange={(e) => setForm({ ...form, ram: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Storage</label>
-                      <input className="form-input" value={form.storage} onChange={(e) => setForm({ ...form, storage: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">MAC Address</label>
-                      <input className="form-input" value={form.macAddress} onChange={(e) => setForm({ ...form, macAddress: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">IP Address</label>
-                      <input className="form-input" value={form.ipAddress} onChange={(e) => setForm({ ...form, ipAddress: e.target.value })} />
-                    </div>
-                    <div className="form-section">
-                      <label className="form-label">BIOS Version</label>
-                      <input className="form-input" value={form.biosVersion} onChange={(e) => setForm({ ...form, biosVersion: e.target.value })} />
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-section">
-                      <label className="form-label">Firmware</label>
-                      <input className="form-input" value={form.firmware} onChange={(e) => setForm({ ...form, firmware: e.target.value })} />
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {activeTab === 'software' && (
+              {activeTab === 'supplier' && (
                 <>
                   <div className="form-row">
                     <div className="form-section">
@@ -1059,7 +1079,7 @@ export default function AssetsView({
                 </>
               )}
 
-              {activeTab === 'financial' && (
+              {activeTab === 'supplier' && (
                 <>
                   <div className="form-row">
                     <div className="form-section">
@@ -1122,7 +1142,7 @@ export default function AssetsView({
                   </div>
                   <div className="form-section">
                     <label className="form-label">Linked Changes</label>
-                    <select multiple className="form-select" value={form.changeIds} onChange={(e) => setForm({ ...form, changeIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
+                    <select multiple className="form-select" value={form.changeIds.map(String)} onChange={(e) => setForm({ ...form, changeIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
                       {changes.map((c) => (
                         <option key={c.id} value={c.id}>{c.code} - {c.title}</option>
                       ))}
@@ -1130,7 +1150,7 @@ export default function AssetsView({
                   </div>
                   <div className="form-section">
                     <label className="form-label">Linked Problems</label>
-                    <select multiple className="form-select" value={form.problemIds} onChange={(e) => setForm({ ...form, problemIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
+                    <select multiple className="form-select" value={form.problemIds.map(String)} onChange={(e) => setForm({ ...form, problemIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
                       {problems.map((p) => (
                         <option key={p.id} value={p.id}>{p.code} - {p.title}</option>
                       ))}
@@ -1138,7 +1158,7 @@ export default function AssetsView({
                   </div>
                   <div className="form-section">
                     <label className="form-label">Related Services</label>
-                    <select multiple className="form-select" value={form.serviceIds} onChange={(e) => setForm({ ...form, serviceIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
+                    <select multiple className="form-select" value={form.serviceIds.map(String)} onChange={(e) => setForm({ ...form, serviceIds: Array.from(e.target.selectedOptions).map(o => Number(o.value)) })}>
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>{s.name}</option>
                       ))}
@@ -1149,14 +1169,14 @@ export default function AssetsView({
                     <select className="form-select" value={form.parentAssetId} onChange={(e) => setForm({ ...form, parentAssetId: e.target.value })}>
                       <option value="">None</option>
                       {assetsAll.map((a) => (
-                        <option key={a.id} value={a.id}>{a.assetId || a.name}</option>
+                        <option key={a.id} value={a.id}>{a.assetId || `AST-${a.id}`}</option>
                       ))}
                     </select>
                   </div>
                 </>
               )}
 
-              {activeTab === 'notes' && (
+              {activeTab === 'documents' && (
                 <>
                   <div className="form-section">
                     <label className="form-label">Notes</label>
@@ -1178,6 +1198,10 @@ export default function AssetsView({
     </>
   )
 }
+
+
+
+
 
 
 

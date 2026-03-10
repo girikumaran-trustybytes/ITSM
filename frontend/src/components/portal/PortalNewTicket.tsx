@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createTicket, uploadAttachments } from '../../services/ticket.service'
 import { listMyAssets } from '../../services/asset.service'
 import { canShowPortalSwitchToItsm } from '../../security/policy'
+import { getMyPresence, putMyPresence } from '../../services/presence.service'
+import { getStoredPresenceStatus, normalizePresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from '../../utils/presence'
 
 const MAX_ATTACHMENT_SIZE_BYTES = 32 * 1024 * 1024
 const PORTAL_TICKET_TYPE = 'Incident'
@@ -35,6 +37,19 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;')
 }
 
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result || '')
+      if (!result) reject(new Error(`Failed to read file "${file.name}"`))
+      else resolve(result)
+    }
+    reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`))
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function PortalNewTicket() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
@@ -43,6 +58,8 @@ export default function PortalNewTicket() {
   const avatarUrl = getUserAvatarUrl(user)
   const canSwitchToItsm = canShowPortalSwitchToItsm(user)
   const editorRef = useRef<HTMLDivElement | null>(null)
+  const mediaInputRef = useRef<HTMLInputElement | null>(null)
+  const mediaPreviewUrlsRef = useRef<string[]>([])
   const insertMenuRef = useRef<HTMLDivElement | null>(null)
   const alignMenuRef = useRef<HTMLDivElement | null>(null)
   const orderedMenuRef = useRef<HTMLDivElement | null>(null)
@@ -51,8 +68,13 @@ export default function PortalNewTicket() {
   const [showAlignMenu, setShowAlignMenu] = useState(false)
   const [showOrderedMenu, setShowOrderedMenu] = useState(false)
   const [showUnorderedMenu, setShowUnorderedMenu] = useState(false)
+  const [mediaAccept, setMediaAccept] = useState('image/*,video/*,audio/*')
 
   const [profileOpen, setProfileOpen] = useState(false)
+  const [showPresenceMenu, setShowPresenceMenu] = useState(false)
+  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
+  const presenceHydratedRef = useRef(false)
+  const lastRemotePresenceRef = useRef<PresenceStatus | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState('')
   const [secondaryContacts, setSecondaryContacts] = useState('')
@@ -74,6 +96,50 @@ export default function PortalNewTicket() {
     }
     navigate(map[location.pathname] || '/')
   }
+
+  useEffect(() => {
+    setStoredPresenceStatus(presenceStatus)
+    if (!presenceHydratedRef.current || !user?.id) return
+    if (lastRemotePresenceRef.current === presenceStatus) return
+    putMyPresence(presenceStatus)
+      .then((res) => {
+        lastRemotePresenceRef.current = normalizePresenceStatus(res?.status)
+      })
+      .catch(() => undefined)
+  }, [presenceStatus, user?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    const hydratePresence = async () => {
+      presenceHydratedRef.current = false
+      lastRemotePresenceRef.current = null
+      const local = getStoredPresenceStatus()
+      setPresenceStatus(local)
+      if (!user?.id) {
+        presenceHydratedRef.current = true
+        return
+      }
+      try {
+        const res = await getMyPresence()
+        if (cancelled) return
+        const next = normalizePresenceStatus(res?.status)
+        lastRemotePresenceRef.current = next
+        setPresenceStatus(next)
+        setStoredPresenceStatus(next)
+      } catch {
+        // fallback to local value on API failure
+      } finally {
+        if (!cancelled) presenceHydratedRef.current = true
+      }
+    }
+    hydratePresence()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  const activePresence = presenceStatuses.find((item) => item.value === presenceStatus) || presenceStatuses[0]
+  const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
 
   useEffect(() => {
     let active = true
@@ -108,6 +174,18 @@ export default function PortalNewTicket() {
     () => attachments.reduce((sum, file) => sum + Number(file?.size || 0), 0),
     [attachments]
   )
+
+  const mergeAttachments = (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setAttachments((prev) => {
+      const next = [...prev]
+      for (const file of Array.from(files)) {
+        const exists = next.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)
+        if (!exists) next.push(file)
+      }
+      return next
+    })
+  }
 
   const syncDescription = () => {
     setDescriptionText((editorRef.current?.innerText || '').trim())
@@ -210,6 +288,86 @@ export default function PortalNewTicket() {
     setShowInsertMenu(false)
   }
 
+  const clearMediaPreviewUrls = () => {
+    mediaPreviewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    mediaPreviewUrlsRef.current = []
+  }
+
+  const insertMediaIntoEditor = async (files: FileList | null) => {
+    if (!editorRef.current || !files || files.length === 0) return
+    editorRef.current.focus()
+    const htmlItems = await Promise.all(Array.from(files).map(async (file) => {
+      const safeName = escapeHtml(file.name || 'media')
+      const type = String(file.type || '').toLowerCase()
+      const dataUrl = await readFileAsDataUrl(file).catch(() => '')
+      if (type.startsWith('image/')) {
+        return dataUrl
+          ? `<div><img src="${dataUrl}" alt="${safeName}" style="max-width:100%;height:auto;border-radius:8px;" /></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('video/')) {
+        return dataUrl
+          ? `<div><video controls style="max-width:100%;height:auto;border-radius:8px;"><source src="${dataUrl}" type="${type}" /></video></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('audio/')) {
+        return dataUrl
+          ? `<div><audio controls style="width:100%;"><source src="${dataUrl}" type="${type}" /></audio></div>`
+          : `<div>${safeName}</div>`
+      }
+      return `<div>${safeName}</div>`
+    }))
+    const html = htmlItems.join('<br/>')
+    document.execCommand('insertHTML', false, html)
+    syncDescription()
+  }
+
+  const openMediaPicker = (accept: string) => {
+    setMediaAccept(accept)
+    mediaInputRef.current?.click()
+  }
+
+  const getClipboardFiles = (event: React.ClipboardEvent<HTMLElement>) => {
+    const files: File[] = []
+    const fromItems = Array.from(event.clipboardData?.items || [])
+    for (const item of fromItems) {
+      if (item.kind !== 'file') continue
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
+    for (const file of Array.from(event.clipboardData?.files || [])) {
+      files.push(file)
+    }
+    const seen = new Set<string>()
+    return files.filter((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}:${file.type}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  const handleEditorPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = getClipboardFiles(event)
+    if (!files.length) return
+    const hasStringItems = Array.from(event.clipboardData?.items || []).some((item) => item.kind === 'string')
+    if (!hasStringItems) event.preventDefault()
+    const transfer = new DataTransfer()
+    files.forEach((file) => transfer.items.add(file))
+    insertMediaIntoEditor(transfer.files)
+    mergeAttachments(transfer.files)
+  }
+
+  const handleEditorDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files || [])
+    if (!droppedFiles.length) return
+    event.preventDefault()
+    const transfer = new DataTransfer()
+    droppedFiles.forEach((file) => transfer.items.add(file))
+    insertMediaIntoEditor(transfer.files)
+    mergeAttachments(transfer.files)
+  }
+
   const insertCode = () => {
     const code = window.prompt('Insert code', '')
     if (code === null) return
@@ -240,6 +398,7 @@ export default function PortalNewTicket() {
     setClassification('')
     setAttachments([])
     setAttachmentInputKey((v) => v + 1)
+    clearMediaPreviewUrls()
     if (editorRef.current) editorRef.current.innerHTML = ''
   }
 
@@ -255,7 +414,7 @@ export default function PortalNewTicket() {
       setResult('Subject is required.')
       return
     }
-    if (!cleanDescription) {
+    if (!cleanDescription && attachments.length === 0) {
       setResult('Description is required.')
       return
     }
@@ -278,7 +437,8 @@ export default function PortalNewTicket() {
     if (assetField.trim()) metaLines.push(`Asset: ${assetField.trim()}`)
     if (secondaryContacts.trim()) metaLines.push(`Secondary Contacts (CCs): ${secondaryContacts.trim()}`)
     if (classification.trim()) metaLines.push(`Classification: ${classification.trim()}`)
-    const finalDescription = metaLines.length > 0 ? `${cleanDescription}\n\n${metaLines.join('\n')}` : cleanDescription
+    const baseDescription = cleanDescription || 'Media attached'
+    const finalDescription = metaLines.length > 0 ? `${baseDescription}\n\n${metaLines.join('\n')}` : baseDescription
 
     try {
       setSubmitting(true)
@@ -344,7 +504,7 @@ export default function PortalNewTicket() {
               My Devices
             </button>
           </nav>
-          <div className="portal-profile" onClick={() => setProfileOpen(true)}>
+          <div className="portal-profile" onClick={() => { setProfileOpen(true); setShowPresenceMenu(false) }}>
             <div className="portal-avatar unified-user-avatar">
               {avatarUrl ? <img src={avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
             </div>
@@ -521,11 +681,7 @@ export default function PortalNewTicket() {
                 <button
                   type="button"
                   className="portal-editor-icon-btn"
-                  onClick={() => {
-                    const url = String(window.prompt('Image URL', 'https://') || '').trim()
-                    if (!url) return
-                    applyCommand('insertImage', url)
-                  }}
+                  onClick={() => openMediaPicker('image/*')}
                   title="Insert image"
                   aria-label="Insert image"
                 >
@@ -535,6 +691,9 @@ export default function PortalNewTicket() {
                     <path d="m6 17 4-4 3 3 3-4 2 2" />
                   </svg>
                 </button>
+                <button type="button" className="portal-editor-plain-btn" onClick={() => openMediaPicker('video/*')}>video</button>
+                <button type="button" className="portal-editor-plain-btn" onClick={() => openMediaPicker('audio/*')}>audio</button>
+                <button type="button" className="portal-editor-plain-btn" onClick={() => openMediaPicker('*/*')}>doc</button>
                 <button type="button" className="portal-editor-icon-btn" onClick={() => applyCommand('removeFormat')} title="Clear formatting" aria-label="Clear formatting">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
                     <path d="M4 20h10" />
@@ -579,7 +738,22 @@ export default function PortalNewTicket() {
                 contentEditable
                 suppressContentEditableWarning
                 data-placeholder="Describe your issue"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleEditorDrop}
+                onPaste={handleEditorPaste}
                 onInput={() => setDescriptionText((editorRef.current?.innerText || '').trim())}
+              />
+              <input
+                ref={mediaInputRef}
+                type="file"
+                accept={mediaAccept}
+                multiple
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  insertMediaIntoEditor(e.target.files)
+                  mergeAttachments(e.target.files)
+                  e.currentTarget.value = ''
+                }}
               />
             </div>
           </label>
@@ -643,7 +817,7 @@ export default function PortalNewTicket() {
                 key={attachmentInputKey}
                 type="file"
                 multiple
-                onChange={(e) => setAttachments(Array.from(e.target.files || []))}
+                onChange={(e) => mergeAttachments(e.target.files)}
               />
               <span className="portal-submit-ticket-upload-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -680,9 +854,9 @@ export default function PortalNewTicket() {
       </section>
 
       {profileOpen && (
-        <div className="portal-profile-overlay" onClick={() => setProfileOpen(false)}>
+        <div className="portal-profile-overlay" onClick={() => { setProfileOpen(false); setShowPresenceMenu(false) }}>
           <aside className="portal-profile-panel" onClick={(e) => e.stopPropagation()}>
-            <button className="portal-profile-close" onClick={() => setProfileOpen(false)} aria-label="Close">
+            <button className="portal-profile-close" onClick={() => { setProfileOpen(false); setShowPresenceMenu(false) }} aria-label="Close">
               x
             </button>
             <div className="portal-profile-header">
@@ -690,16 +864,74 @@ export default function PortalNewTicket() {
               <div>
                 <div className="portal-profile-title">{user?.name || 'User'}</div>
                 <div className="portal-profile-email">{user?.email || 'user@example.com'}</div>
-                <div className="portal-profile-status">
-                  <span className="portal-status-dot" />
-                  Available
+                <div className="profile-panel-status-wrap">
+                  <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
+                    <span
+                      className={`profile-panel-status-indicator ${presenceDotClass}`}
+                      style={{ ['--presence-color' as any]: activePresence.color }}
+                    />
+                    {presenceStatus}
+                  </button>
+                  {showPresenceMenu && (
+                    <div className="profile-panel-status-menu">
+                      {presenceStatuses.map((item) => (
+                        <button
+                          key={item.value}
+                          className={`profile-panel-status-option${item.value === presenceStatus ? ' active' : ''}`}
+                          onClick={() => {
+                            setPresenceStatus(item.value)
+                            setShowPresenceMenu(false)
+                          }}
+                        >
+                          <span
+                            className={`profile-panel-status-indicator ${item.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'}`}
+                            style={{ ['--presence-color' as any]: item.color }}
+                          />
+                          <span className="profile-panel-status-option-main">
+                            <span className="profile-panel-status-option-title">{item.value}</span>
+                          </span>
+                          <span className="profile-panel-status-option-check" aria-hidden="true">
+                            {item.value === presenceStatus ? '✓' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
             <div className="portal-profile-links">
-              <button onClick={() => { setProfileOpen(false); navigate('/security') }}>Account &amp; Password</button>
-              {canSwitchToItsm ? <button onClick={() => { setProfileOpen(false); switchToAgentApp() }}>Switch to Agent Application</button> : null}
-              <button onClick={() => { logout(); navigate('/login') }}>Log out</button>
+              <button onClick={() => { setProfileOpen(false); setShowPresenceMenu(false); navigate('/security') }}>
+                <span className="portal-profile-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                  </svg>
+                </span>
+                Account &amp; Password
+              </button>
+              {canSwitchToItsm ? (
+                <button onClick={() => { setProfileOpen(false); setShowPresenceMenu(false); switchToAgentApp() }}>
+                  <span className="portal-profile-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M14 3h7v7" />
+                      <path d="M10 14L21 3" />
+                      <path d="M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6" />
+                    </svg>
+                  </span>
+                  Switch to Agent Application
+                </button>
+              ) : null}
+              <button onClick={() => { logout(); navigate('/login') }}>
+                <span className="portal-profile-link-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <path d="M10 17l5-5-5-5" />
+                    <path d="M15 12H3" />
+                  </svg>
+                </span>
+                Log out
+              </button>
             </div>
           </aside>
         </div>

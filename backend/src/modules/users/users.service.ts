@@ -1,5 +1,10 @@
 import { query, queryOne } from '../../db'
 import bcrypt from 'bcrypt'
+import {
+  enforceProtectedAdminBaseline,
+  enforceProtectedAdminRoleByUserId,
+  isProtectedAdminEmail,
+} from './protected-admin'
 
 function normalizeRole(input: any) {
   const value = String(input || 'USER').trim().toUpperCase()
@@ -32,6 +37,8 @@ async function ensureUserCrudSchema() {
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`)
+      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE`)
+      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail")`)
@@ -54,6 +61,7 @@ async function ensureUserCrudSchema() {
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `)
+      await enforceProtectedAdminBaseline()
     })()
   }
   await userSchemaReady
@@ -115,11 +123,14 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
   const take = opts.limit && opts.limit > 0 ? opts.limit : 50
   params.push(take)
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  const inviteTable = await queryOne<{ exists: string }>(
-    `SELECT to_regclass('public.user_invites')::text AS exists`
+  const inviteTables = await queryOne<{ modern_exists: string | null; legacy_exists: string | null }>(
+    `SELECT
+       to_regclass('public.invitations')::text AS modern_exists,
+       to_regclass('public.user_invites')::text AS legacy_exists`
   )
-  const hasInvites = Boolean(inviteTable?.exists)
-  if (!hasInvites) {
+  const hasModernInvites = Boolean(inviteTables?.modern_exists)
+  const hasLegacyInvites = Boolean(inviteTables?.legacy_exists)
+  if (!hasModernInvites && !hasLegacyInvites) {
     return query(
       `SELECT
          u."id",
@@ -137,6 +148,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
          u."employmentType",
          u."workMode",
          u."role",
+         COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
          u."status",
          COALESCE(up."status", 'Available') AS "presenceStatus",
          u."createdAt",
@@ -147,6 +159,59 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
        FROM "User" u
        LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
        LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+       ${where}
+       ORDER BY u."name" ASC NULLS LAST, u."email" ASC
+       LIMIT $${params.length}`,
+      params
+    )
+  }
+  if (hasModernInvites) {
+    return query(
+      `SELECT
+         u."id",
+         u."name",
+         u."avatarUrl",
+         u."email",
+         u."personalEmail",
+         u."workEmail",
+         u."phone",
+         u."employeeId",
+         u."designation",
+         u."department",
+         u."reportingManager",
+         u."dateOfJoining",
+         u."employmentType",
+         u."workMode",
+         u."role",
+         COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
+         u."status",
+         COALESCE(up."status", 'Available') AS "presenceStatus",
+         u."createdAt",
+         COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
+         COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
+         COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds",
+         COALESCE(
+           CASE
+             WHEN i.status = 'PENDING' AND i.last_sent_at IS NULL THEN 'invite_pending'
+             WHEN i.status = 'PENDING' THEN 'invited_not_accepted'
+             WHEN i.status = 'ACCEPTED' THEN 'accepted'
+             WHEN i.status = 'EXPIRED' THEN 'expired'
+             WHEN i.status = 'REVOKED' THEN 'revoked'
+             ELSE LOWER(i.status)
+           END,
+           'none'
+         ) AS "inviteStatus"
+       FROM "User" u
+       LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+       LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+       LEFT JOIN LATERAL (
+         SELECT status, last_sent_at
+         FROM invitations
+         WHERE user_id = u."id"
+            OR LOWER(email) = LOWER(u."email")
+         ORDER BY created_at DESC
+         LIMIT 1
+       ) i ON TRUE
        ${where}
        ORDER BY u."name" ASC NULLS LAST, u."email" ASC
        LIMIT $${params.length}`,
@@ -170,6 +235,7 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
        u."employmentType",
        u."workMode",
        u."role",
+       COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
        u."status",
        COALESCE(up."status", 'Available') AS "presenceStatus",
        u."createdAt",
@@ -203,6 +269,7 @@ export async function getUserById(id: number) {
       u."avatarUrl",
       u."email",
       u."role",
+      COALESCE(u."mfaEnabled", FALSE) AS "mfaEnabled",
       u."phone",
       u."client",
       u."site",
@@ -217,6 +284,7 @@ export async function getUserById(id: number) {
       u."employmentType",
       u."workMode",
       u."status",
+      u."lastLogin",
       COALESCE(up."status", 'Available') AS "presenceStatus",
       u."createdAt",
       u."updatedAt",
@@ -264,14 +332,21 @@ export async function createUser(payload: any) {
     site: payload.site ?? null,
     accountManager: payload.accountManager ?? null,
     role: normalizeRole(payload.role),
-    status: String(payload.status || 'ACTIVE').trim().toUpperCase(),
+    status: 'INVITED',
   }
+  const protectedAdmin = isProtectedAdminEmail(email)
   const explicitServiceAccount = payload.isServiceAccount === true || payload.isServiceAccount === false
     ? Boolean(payload.isServiceAccount)
     : null
-  const shouldEnableServiceAccount = explicitServiceAccount !== null
+  const shouldEnableServiceAccount = protectedAdmin
+    ? false
+    : explicitServiceAccount !== null
     ? explicitServiceAccount
     : data.role === 'AGENT'
+  if (protectedAdmin) {
+    data.role = 'ADMIN'
+    data.status = 'ACTIVE'
+  }
   if (shouldEnableServiceAccount) data.role = 'AGENT'
 
   try {
@@ -298,6 +373,7 @@ export async function createUser(payload: any) {
         queueIds: payload.queueIds,
       }
     )
+    await enforceProtectedAdminRoleByUserId(Number(created.id))
     return getUserById(Number(created.id))
   } catch (err: any) {
     if (err?.code === '23505') throw { status: 409, message: 'Email already exists' }
@@ -307,11 +383,12 @@ export async function createUser(payload: any) {
 
 export async function updateUser(id: number, payload: any) {
   await ensureUserCrudSchema()
-  const currentUser = await queryOne<{ id: number; role: string }>(
-    'SELECT "id", "role" FROM "User" WHERE "id" = $1',
+  const currentUser = await queryOne<{ id: number; role: string; email: string; status: string | null }>(
+    'SELECT "id", "role", "email", "status" FROM "User" WHERE "id" = $1',
     [id]
   )
   if (!currentUser) throw { status: 404, message: 'User not found' }
+  const protectedAdmin = isProtectedAdminEmail(currentUser.email)
 
   const data: any = {}
   if (payload.email !== undefined) data.email = String(payload.email).trim().toLowerCase()
@@ -331,6 +408,7 @@ export async function updateUser(id: number, payload: any) {
   if (payload.site !== undefined) data.site = payload.site
   if (payload.accountManager !== undefined) data.accountManager = payload.accountManager
   if (payload.role !== undefined) data.role = normalizeRole(payload.role)
+  if (payload.mfaEnabled !== undefined) data.mfaEnabled = Boolean(payload.mfaEnabled)
   if (payload.status !== undefined) data.status = String(payload.status).trim().toUpperCase()
 
   const explicitServiceAccount = payload.isServiceAccount === true || payload.isServiceAccount === false
@@ -344,6 +422,23 @@ export async function updateUser(id: number, payload: any) {
   if (payload.password) {
     if (String(payload.password).length < 6) throw { status: 400, message: 'Password must be at least 6 characters' }
     data.password = await bcrypt.hash(String(payload.password), 12)
+  }
+
+  if (protectedAdmin) {
+    const requestedEmail = payload.email !== undefined
+      ? String(payload.email || '').trim().toLowerCase()
+      : String(currentUser.email || '').trim().toLowerCase()
+    if (requestedEmail !== String(currentUser.email || '').trim().toLowerCase()) {
+      throw { status: 403, message: 'Protected admin email cannot be changed.' }
+    }
+    const requestedStatus = payload.status !== undefined
+      ? String(payload.status || '').trim().toUpperCase()
+      : String(currentUser.status || '').trim().toUpperCase()
+    if (requestedStatus && requestedStatus !== 'ACTIVE') {
+      throw { status: 403, message: 'Protected admin cannot be deactivated.' }
+    }
+    data.role = 'ADMIN'
+    data.status = 'ACTIVE'
   }
 
   try {
@@ -362,14 +457,14 @@ export async function updateUser(id: number, payload: any) {
     )
     if (!rows[0]) throw { status: 404, message: 'User not found' }
     const shouldSyncServiceAccount =
-      explicitServiceAccount !== null ||
+      (explicitServiceAccount !== null && !protectedAdmin) ||
       payload.role !== undefined ||
       payload.autoUpgradeQueues !== undefined ||
       payload.queueIds !== undefined
 
     if (shouldSyncServiceAccount) {
       const nextRole = String((rows[0] as any)?.role || currentUser.role || '').toUpperCase()
-      const enabled = explicitServiceAccount !== null ? explicitServiceAccount : nextRole === 'AGENT'
+      const enabled = protectedAdmin ? false : (explicitServiceAccount !== null ? explicitServiceAccount : nextRole === 'AGENT')
       await syncServiceAccount(
         id,
         enabled,
@@ -379,6 +474,7 @@ export async function updateUser(id: number, payload: any) {
         }
       )
     }
+    await enforceProtectedAdminRoleByUserId(id)
     return getUserById(id)
   } catch (err: any) {
     if (err?.status === 404) throw err
@@ -390,6 +486,27 @@ export async function updateUser(id: number, payload: any) {
 export async function deleteUser(id: number) {
   await ensureUserCrudSchema()
   try {
+    const deleting = await queryOne<{ email: string | null; role: string | null; status: string | null; isServiceAccount: boolean }>(
+      `SELECT u."email", u."role", u."status", COALESCE(sa."enabled", FALSE) AS "isServiceAccount"
+       FROM "User" u
+       LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+       WHERE u."id" = $1`,
+      [id]
+    )
+    if (!deleting) throw { status: 404, message: 'User not found' }
+    if (isProtectedAdminEmail(deleting?.email || '')) {
+      throw { status: 403, message: 'Protected admin user cannot be deleted.' }
+    }
+    const role = String(deleting.role || '').trim().toUpperCase()
+    const status = String(deleting.status || '').trim().toUpperCase()
+    const isDeactivatedAccount =
+      (role === 'USER' && !Boolean(deleting.isServiceAccount)) ||
+      ['DEACTIVATED', 'DISABLED', 'INACTIVE'].includes(status)
+    if (!isDeactivatedAccount) {
+      throw { status: 409, message: 'Only deactivated accounts can be deleted.' }
+    }
+    // RefreshToken uses ON DELETE RESTRICT in init schema, so clear tokens before deleting user.
+    await query('DELETE FROM "RefreshToken" WHERE "userId" = $1', [id])
     await query('DELETE FROM "ServiceAccounts" WHERE "userId" = $1', [id])
     const rows = await query(
       'DELETE FROM "User" WHERE "id" = $1 RETURNING "id", "name", "email"',
@@ -399,6 +516,9 @@ export async function deleteUser(id: number) {
     return rows[0]
   } catch (err: any) {
     if (err?.status === 404) throw err
+    if (err?.code === '23503') {
+      throw { status: 409, message: 'Cannot delete user because related records still exist.' }
+    }
     throw err
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
@@ -13,8 +13,7 @@ import {
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
-import { getMfaPolicy, updateMfaPolicy } from '../services/auth.service'
-import { listUsers } from '../modules/users/services/user.service'
+import * as userService from '../modules/users/services/user.service'
 
 type PaginationMeta = {
   page: number
@@ -54,10 +53,9 @@ const settingsMenu: MenuSection[] = [
   },
   {
     id: 'user-access',
-    label: 'User & Access Management',
+    label: 'User Management',
     items: [
-      { id: 'roles-permissions', label: 'User & Access management', requiresAdmin: true },
-      { id: 'mfa-settings', label: '2FA settings', requiresAdmin: true },
+      { id: 'roles-permissions', label: 'User Management', requiresAdmin: true },
     ],
   },
   {
@@ -69,9 +67,9 @@ const settingsMenu: MenuSection[] = [
   },
   {
     id: 'workflow-automation',
-    label: 'Workflow and Automation',
+    label: 'Types and Workflow',
     items: [
-      { id: 'workflow-automation', label: 'Workflow and Automation', requiresAdmin: true },
+      { id: 'workflow-automation', label: 'Types and Workflow', requiresAdmin: true },
     ],
   },
   {
@@ -417,6 +415,9 @@ type MailConfigForm = {
   supportMail: string
   inboundEmailAddress: string
   inboundDefaultQueue: string
+  inboundSupportEmail: string
+  inboundHrEmail: string
+  inboundManagementEmail: string
   inboundDefaultTicketType: string
   inboundDefaultPriority: string
   autoAssignRule: string
@@ -432,6 +433,9 @@ type MailConfigForm = {
   stripQuotedReplies: boolean
   appendToTicketPattern: string
   outboundReplyTo: string
+  outboundSupportFrom: string
+  outboundHrFrom: string
+  outboundManagementFrom: string
   maxAttachmentSizeMb: string
   signatureTemplate: string
   allowExternalEmailCreation: boolean
@@ -485,7 +489,6 @@ type EmailTemplateRecord = {
   id: string
   name: string
   buttonKey: string
-  subject: string
   body: string
   active: boolean
 }
@@ -498,27 +501,55 @@ type EmailSignatureRecord = {
   active: boolean
 }
 
-type MailBannerRecord = {
-  id: string
-  title: string
-  message: string
-  tone: 'info' | 'success' | 'warning' | 'danger'
-  active: boolean
-}
-
 const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
-const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
 
-const BUTTON_TEMPLATE_OPTIONS = [
-  'Assign',
-  'Reassign',
-  'Retire',
+const BUTTON_TEMPLATE_OPTIONS = Array.from(new Set([
   'Accept',
+  'Acknowledge',
+  'Allocate Asset',
   'Approve',
-  'Reject',
+  'Assign',
+  'Budget Approve',
+  'Call Back Supplier',
+  'Check Stock',
   'Close',
-]
+  'Collect Asset',
+  'Complete',
+  'Complete Change',
+  'Complete Offboarding',
+  'Confirm by HR',
+  'Email User',
+  'Email Supplier',
+  'Fulfill',
+  'HR Confirm',
+  'IT Approve',
+  'Install Software',
+  'Issue Asset',
+  'Log to Supplier',
+  'Mark Completed',
+  'Mark Ready',
+  'Note + Email',
+  'Provision Access',
+  'Quick Close',
+  'Re-open',
+  'Reassign',
+  'Reject',
+  'Request Approval',
+  'Requesting Approval',
+  'Resolve',
+  'Retire',
+  'Revoke Access',
+  'Send for Approval',
+  'Send to HR',
+  'Send to Manager',
+  'Start',
+  'Start Implementation',
+  'Start IT Setup',
+  'Start Procurement',
+  'Start Review',
+  'Verify Asset',
+])).sort((a, b) => a.localeCompare(b))
 
 const loadStoredList = <T,>(key: string, fallback: T[]): T[] => {
   if (typeof window === 'undefined') return fallback
@@ -541,7 +572,10 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   workspaceProvider: 'custom',
   supportMail: '',
   inboundEmailAddress: '',
-  inboundDefaultQueue: 'Helpdesk',
+  inboundDefaultQueue: 'Support Team',
+  inboundSupportEmail: 'support@trustybytes.in',
+  inboundHrEmail: 'hr@trustybytes.in',
+  inboundManagementEmail: 'management@trustybytes.in',
   inboundDefaultTicketType: 'Incident',
   inboundDefaultPriority: 'Medium',
   autoAssignRule: '',
@@ -557,8 +591,11 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   stripQuotedReplies: true,
   appendToTicketPattern: '[#TICKET-ID]',
   outboundReplyTo: '',
+  outboundSupportFrom: 'support@trustybytes.in',
+  outboundHrFrom: 'hr@trustybytes.in',
+  outboundManagementFrom: 'management@trustybytes.in',
   maxAttachmentSizeMb: '20',
-  signatureTemplate: 'Regards,\nIT Support Team',
+  signatureTemplate: 'Kind regards,\nTrustyBytes Support Team',
   allowExternalEmailCreation: true,
   allowInternalOnly: false,
   allowedDomains: '',
@@ -567,7 +604,7 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   emailLogRetentionDays: '90',
   retryFailedSend: true,
   maxRetryCount: '3',
-  routingRuleHelpdeskQueue: 'If email sent to helpdesk@ -> Queue = Helpdesk',
+  routingRuleHelpdeskQueue: 'If email sent to support@ -> Queue = Support Team',
   routingRuleAccessType: 'If subject contains "Access" -> Type = Access Request',
   routingRuleSupplierType: 'If sender domain = vendor.com -> Type = Supplier Ticket',
   lastSyncTime: '',
@@ -821,14 +858,6 @@ const settingsTopicPanels: Record<string, PanelDef[]> = {
       { key: 'idpType', label: 'Identity provider', type: 'select', options: ['Azure AD', 'Okta', 'Google Workspace', 'SAML Custom'], adminOnly: true },
       { key: 'ssoJitProvisioning', label: 'JIT provisioning', type: 'toggle', adminOnly: true },
       { key: 'ssoMetadataUrl', label: 'Metadata URL', type: 'text', adminOnly: true },
-    ]},
-  ],
-  'mfa-settings': [
-    { id: 'mfa', title: '2FA Policy', description: 'Second-factor strategy and conditional access rules.', fields: [
-      { key: 'mfaRequired', label: '2FA required for all users', type: 'toggle', adminOnly: true },
-      { key: 'mfaMethod', label: 'Primary 2FA method', type: 'select', options: ['Authenticator App', 'FIDO2 Key', 'SMS OTP'], adminOnly: true },
-      { key: 'mfaGracePeriod', label: 'Enrollment grace period (days)', type: 'text', adminOnly: true },
-      { key: 'mfaBypassEmergency', label: 'Allow emergency bypass', type: 'toggle', adminOnly: true },
     ]},
   ],
   'priority-matrix': [
@@ -1189,13 +1218,22 @@ export default function AdminView(_props: AdminViewProps) {
     'Backup retention adjusted to 90 days',
   ])
   const [leftPanelConfig, setLeftPanelConfig] = useState<LeftPanelConfig>(() => loadLeftPanelConfig())
+  const [queueSyncBusy, setQueueSyncBusy] = useState(false)
+  const inboundQueueOptions = useMemo(() => {
+    const labels = (leftPanelConfig.ticketQueues || [])
+      .map((queue) => String(queue?.label || '').trim())
+      .filter((label) => label && label.toLowerCase() !== 'helpdesk' && label.toLowerCase() !== 'service request')
+    const unique = Array.from(new Set(labels))
+    return unique.length ? unique : ['Support Team']
+  }, [leftPanelConfig.ticketQueues])
+  const inboundTicketTypeOptions = useMemo(() => ['Incident', 'Service request', 'HR request', 'Task', 'New starter'], [])
+  const inboundPriorityOptions = useMemo(() => ['Low', 'Medium', 'High', 'Critical'], [])
   const [queuePanelKey, setQueuePanelKey] = useState<'ticketsMyLists' | 'users' | 'assets' | 'suppliers'>('ticketsMyLists')
   const [queueSettingsView, setQueueSettingsView] = useState<QueueSettingsView>('ticket')
   const [ticketQueueModalMode, setTicketQueueModalMode] = useState<TicketQueueModalMode | null>(null)
   const [ticketQueueModalOpen, setTicketQueueModalOpen] = useState(false)
   const [ticketQueueTargetId, setTicketQueueTargetId] = useState('')
   const [ticketQueueLabelInput, setTicketQueueLabelInput] = useState('')
-  const [ticketQueueServiceAccountInput, setTicketQueueServiceAccountInput] = useState('')
   const [ticketQueueVisibilityInput, setTicketQueueVisibilityInput] = useState('ADMIN,AGENT')
   const [ticketQueueModalError, setTicketQueueModalError] = useState('')
   const [assetCategoryModalMode, setAssetCategoryModalMode] = useState<AssetCategoryModalMode | null>(null)
@@ -1223,18 +1261,33 @@ export default function AdminView(_props: AdminViewProps) {
   const [mailBusy, setMailBusy] = useState(false)
   const [mailResult, setMailResult] = useState('')
   const [mailTestRecipient, setMailTestRecipient] = useState('')
+  const [mailCompanyLink, setMailCompanyLink] = useState('')
+  const [mailEditing, setMailEditing] = useState(false)
+  const mailDraftRef = useRef<MailConfigForm | null>(null)
+  const mailCompanyDraftRef = useRef<string>('')
+  const [mailProvider, setMailProvider] = useState<'gmail' | 'outlook' | 'zoho' | 'custom' | null>(null)
+  const [imapHost, setImapHost] = useState('')
+  const [imapPort, setImapPort] = useState('993')
+  const [imapSsl, setImapSsl] = useState(true)
+  const [imapAuthMode, setImapAuthMode] = useState<'plain' | 'login'>('plain')
+  const [imapUser, setImapUser] = useState('')
+  const [imapPass, setImapPass] = useState('')
+  const [smtpHost, setSmtpHost] = useState('')
+  const [smtpPort, setSmtpPort] = useState('587')
+  const [smtpSsl, setSmtpSsl] = useState(true)
+  const [smtpAuthMode, setSmtpAuthMode] = useState<'plain' | 'login'>('plain')
+  const [smtpUser, setSmtpUser] = useState('')
+  const [smtpPass, setSmtpPass] = useState('')
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplateRecord[]>(() =>
     loadStoredList<EmailTemplateRecord>(EMAIL_TEMPLATE_STORAGE_KEY, [])
   )
   const [templateForm, setTemplateForm] = useState<Omit<EmailTemplateRecord, 'id'>>({
     name: '',
     buttonKey: 'Assign',
-    subject: '',
     body: '',
     active: true,
   })
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null)
-  const [signatureUsers, setSignatureUsers] = useState<any[]>([])
   const [emailSignatures, setEmailSignatures] = useState<EmailSignatureRecord[]>(() =>
     loadStoredList<EmailSignatureRecord>(EMAIL_SIGNATURE_STORAGE_KEY, [])
   )
@@ -1245,16 +1298,72 @@ export default function AdminView(_props: AdminViewProps) {
     active: true,
   })
   const [editingSignatureId, setEditingSignatureId] = useState<string | null>(null)
-  const [mailBanners, setMailBanners] = useState<MailBannerRecord[]>(() =>
-    loadStoredList<MailBannerRecord>(MAIL_BANNER_STORAGE_KEY, [])
-  )
-  const [bannerForm, setBannerForm] = useState<Omit<MailBannerRecord, 'id'>>({
-    title: '',
-    message: '',
-    tone: 'info',
-    active: true,
-  })
-  const [editingBannerId, setEditingBannerId] = useState<string | null>(null)
+  const [signatureUsers, setSignatureUsers] = useState<Array<{ id: string; label: string }>>([])
+
+  const refreshTicketQueues = async (localOverride?: TicketQueueConfig[]) => {
+    try {
+      setQueueSyncBusy(true)
+      const serverQueues = await userService.listTicketQueues()
+      const normalized = Array.isArray(serverQueues) ? serverQueues : []
+      const localQueues = Array.isArray(localOverride) ? localOverride : leftPanelConfig.ticketQueues
+      const serverKeys = new Set(
+        normalized.map((q: any) => String(q?.queue_key || '').trim().toLowerCase()).filter(Boolean)
+      )
+
+      for (const label of ['Support Team', 'HR Team', 'Management']) {
+        if (serverKeys.has(label.toLowerCase())) continue
+        try {
+          const created = await userService.createTicketQueue({ label })
+          normalized.push(created)
+          serverKeys.add(label.toLowerCase())
+        } catch {
+          // ignore if backend restricts or already created
+        }
+      }
+
+      const mergedQueues: TicketQueueConfig[] = normalized.map((q: any) => {
+        const label = String(q?.queue_label || '').trim()
+        const id = String(q?.queue_id || '').trim()
+        const localMatch = localQueues.find((l) => String(l?.label || '').trim().toLowerCase() === label.toLowerCase())
+        return {
+          id: id || String(localMatch?.id || `q-${Date.now()}`),
+          queueId: q?.queue_id ? Number(q.queue_id) : localMatch?.queueId,
+          queueKey: q?.queue_key ? String(q.queue_key).trim() : localMatch?.queueKey,
+          label,
+          serviceAccount: String(localMatch?.serviceAccount || '').trim(),
+          visibilityRoles: Array.isArray(localMatch?.visibilityRoles) && localMatch?.visibilityRoles.length
+            ? localMatch.visibilityRoles
+            : ['ADMIN', 'AGENT'],
+        }
+      })
+
+      const mergedMap = mergedQueues.reduce<Record<string, TicketQueueConfig>>((acc, queue) => {
+        const key = String(queue.label || '').trim().toLowerCase()
+        if (!key) return acc
+        acc[key] = queue
+        return acc
+      }, {})
+      const nextConfig = {
+        ...leftPanelConfig,
+        ticketQueues: Object.values(mergedMap),
+      }
+      setLeftPanelConfig(nextConfig)
+      saveLeftPanelConfig(nextConfig)
+    } finally {
+      setQueueSyncBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    const preferred = inboundQueueOptions.find((label) => label.toLowerCase().includes('support')) || inboundQueueOptions[0] || 'Support Team'
+    setMailForm((prev) => {
+      const current = String(prev.inboundDefaultQueue || '').trim()
+      if (!current || current.toLowerCase() === 'helpdesk' || !inboundQueueOptions.includes(current)) {
+        return { ...prev, inboundDefaultQueue: preferred }
+      }
+      return prev
+    })
+  }, [inboundQueueOptions])
   const [dbForm, setDbForm] = useState<DatabaseConfigForm>(defaultDatabaseConfigForm())
   const [dbLoading, setDbLoading] = useState(false)
   const [dbBusy, setDbBusy] = useState(false)
@@ -1311,18 +1420,47 @@ export default function AdminView(_props: AdminViewProps) {
     return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
   }, [])
   useEffect(() => {
+    if (role !== 'ADMIN') return
+    let cancelled = false
+    refreshTicketQueues()
+      .catch(() => {})
+      .finally(() => {
+        if (cancelled) return
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [role])
+  useEffect(() => {
     if (activeItem === 'sla-policies' && role === 'ADMIN') {
       loadSlaRows()
     }
   }, [activeItem, role])
   useEffect(() => {
-    if ((activeItem === 'mail-configuration' || activeItem === 'email-signature-templates') && role === 'ADMIN') {
+    if ((activeItem === 'mail-configuration' || activeItem === 'email-signature-templates' || activeItem === 'auto-assignment') && role === 'ADMIN') {
       loadMailConfiguration()
-      listUsers({ limit: 500 }).then((rows: any) => {
-        const data = Array.isArray(rows) ? rows : (Array.isArray(rows?.rows) ? rows.rows : [])
-        const serviceAccounts = data.filter((u: any) => Boolean(u?.isServiceAccount))
-        setSignatureUsers(serviceAccounts.length ? serviceAccounts : data)
-      }).catch(() => setSignatureUsers([]))
+    }
+  }, [activeItem, role])
+  useEffect(() => {
+    if (activeItem !== 'email-signature-templates' || role !== 'ADMIN') return
+    let cancelled = false
+    userService.listUsers({ limit: 1000 })
+      .then((rows: any) => {
+        if (cancelled) return
+        const list = Array.isArray(rows) ? rows : []
+        const normalized = list
+          .map((u: any) => ({
+            id: String(u?.id || '').trim(),
+            label: String(u?.name || u?.email || u?.username || '').trim(),
+          }))
+          .filter((u: { id: string; label: string }) => u.id && u.label)
+        setSignatureUsers(normalized)
+      })
+      .catch(() => {
+        if (!cancelled) setSignatureUsers([])
+      })
+    return () => {
+      cancelled = true
     }
   }, [activeItem, role])
   useEffect(() => {
@@ -1330,12 +1468,6 @@ export default function AdminView(_props: AdminViewProps) {
       loadDatabaseConfiguration()
     }
   }, [activeItem, role])
-  useEffect(() => {
-    if (activeItem === 'mfa-settings' && role === 'ADMIN') {
-      loadMfaPolicyConfiguration()
-    }
-  }, [activeItem, role])
-
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
@@ -1355,17 +1487,14 @@ export default function AdminView(_props: AdminViewProps) {
     } catch {}
   }, [emailSignatures])
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    try {
-      window.localStorage.setItem(MAIL_BANNER_STORAGE_KEY, JSON.stringify(mailBanners))
-    } catch {}
-  }, [mailBanners])
-  useEffect(() => {
     if (!workflowDrafts.length) return
     const hasSelectedType = workflowDrafts.some((wf) => wf.name === selectedWorkflowType)
     const hasSelectedName = workflowDrafts.some((wf) => wf.name === selectedWorkflowName)
-    if (!selectedWorkflowType || !hasSelectedType) setSelectedWorkflowType(workflowDrafts[0].name)
-    if (!selectedWorkflowName || !hasSelectedName) setSelectedWorkflowName(workflowDrafts[0].name)
+    if (selectedWorkflowType && !hasSelectedType) setSelectedWorkflowType('')
+    if (selectedWorkflowName && !hasSelectedName) {
+      setSelectedWorkflowName('')
+      setWorkflowEditMode(false)
+    }
   }, [workflowDrafts, selectedWorkflowType, selectedWorkflowName])
 
   const selectedSection = visibleSections.find((s) => s.id === activeSection) || visibleSections[0]
@@ -1387,6 +1516,79 @@ export default function AdminView(_props: AdminViewProps) {
   const isOauthProvider = mailForm.providerType === 'google-workspace-oauth' || mailForm.providerType === 'microsoft-365-oauth'
   const isOauthMode = mailForm.connectionMode === 'oauth2'
   const isAppPasswordMode = mailForm.connectionMode === 'app-password'
+  const mailFieldDisabled = mailBusy || mailLoading || !mailEditing
+  const oauthUrls = {
+    gmail: (import.meta.env.VITE_MAIL_OAUTH_GOOGLE_URL as string | undefined) || '',
+    outlook: (import.meta.env.VITE_MAIL_OAUTH_OUTLOOK_URL as string | undefined) || '',
+    zoho: (import.meta.env.VITE_MAIL_OAUTH_ZOHO_URL as string | undefined) || '',
+  }
+  const buildMailOauthUrl = (provider: keyof typeof oauthUrls) => {
+    const overrideUrl = oauthUrls[provider]
+    if (overrideUrl) return overrideUrl
+    if (provider === 'gmail') {
+      const clientId = String(import.meta.env.VITE_MAIL_GOOGLE_CLIENT_ID || '').trim()
+      const redirectUri = String(import.meta.env.VITE_MAIL_GOOGLE_REDIRECT_URI || '').trim()
+      const scope = String(import.meta.env.VITE_MAIL_GOOGLE_SCOPES || 'https://mail.google.com/').trim()
+      if (!clientId || !redirectUri) return ''
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        access_type: 'offline',
+        prompt: 'consent',
+        scope,
+      })
+      return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+    }
+    if (provider === 'outlook') {
+      const tenant = String(import.meta.env.VITE_MAIL_OUTLOOK_TENANT || 'common').trim()
+      const clientId = String(import.meta.env.VITE_MAIL_OUTLOOK_CLIENT_ID || '').trim()
+      const redirectUri = String(import.meta.env.VITE_MAIL_OUTLOOK_REDIRECT_URI || '').trim()
+      const scope = String(
+        import.meta.env.VITE_MAIL_OUTLOOK_SCOPES ||
+        'https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access',
+      ).trim()
+      if (!clientId || !redirectUri) return ''
+      const params = new URLSearchParams({
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: 'code',
+        response_mode: 'query',
+        scope,
+      })
+      return `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize?${params.toString()}`
+    }
+    const clientId = String(import.meta.env.VITE_MAIL_ZOHO_CLIENT_ID || '').trim()
+    const redirectUri = String(import.meta.env.VITE_MAIL_ZOHO_REDIRECT_URI || '').trim()
+    const scope = String(import.meta.env.VITE_MAIL_ZOHO_SCOPES || 'ZohoMail.accounts.READ,ZohoMail.messages.ALL').trim()
+    const accountsBase = String(import.meta.env.VITE_MAIL_ZOHO_ACCOUNTS_BASE || 'https://accounts.zoho.com')
+      .trim()
+      .replace(/\/+$/, '')
+    if (!clientId || !redirectUri) return ''
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      access_type: 'offline',
+      prompt: 'consent',
+      scope,
+    })
+    return `${accountsBase}/oauth/v2/auth?${params.toString()}`
+  }
+  const openOAuthProvider = (provider: keyof typeof oauthUrls) => {
+    const url = buildMailOauthUrl(provider)
+    if (!url) {
+      setMailResult('OAuth is not configured. Please set the provider client ID and redirect URI.')
+      return
+    }
+    window.open(url, '_blank', 'noopener')
+  }
+
+  useEffect(() => {
+    if (mailProvider !== 'custom') return
+    setImapPort((prev) => prev || '993')
+    setSmtpPort((prev) => prev || '587')
+  }, [mailProvider])
   const isManualCredentialsMode = mailForm.connectionMode === 'manual-credentials'
   const disableImapSmtpCredentials = isOauthMode
   const disableImapSmtpProtocolConfig = isApiProvider
@@ -1619,6 +1821,12 @@ export default function AdminView(_props: AdminViewProps) {
       const provider = String(data?.provider || 'custom') as MailProvider
       const smtp = data?.smtp || {}
       const imap = data?.imap || {}
+      const inboundRoutes: any[] = Array.isArray((data as any)?.inbound?.inboundRoutes) ? (data as any).inbound.inboundRoutes : []
+      const outboundRoutes: any[] = Array.isArray((data as any)?.inbound?.outboundRoutes) ? (data as any).inbound.outboundRoutes : []
+      const findInboundEmail = (queue: string, fallback: string) =>
+        String(inboundRoutes.find((row: any) => String(row?.queue || '').trim().toLowerCase() === queue.toLowerCase())?.email || fallback)
+      const findOutboundFrom = (queue: string, fallback: string) =>
+        String(outboundRoutes.find((row: any) => String(row?.queue || '').trim().toLowerCase() === queue.toLowerCase())?.from || fallback)
       const nowStamp = new Date().toLocaleString()
       setMailForm({
         provider,
@@ -1634,7 +1842,10 @@ export default function AdminView(_props: AdminViewProps) {
         workspaceProvider: toWorkspaceProvider(provider),
         supportMail: String(smtp?.from || ''),
         inboundEmailAddress: String(smtp?.from || ''),
-        inboundDefaultQueue: String(data?.inbound?.defaultQueue || 'Helpdesk'),
+        inboundDefaultQueue: String(data?.inbound?.defaultQueue || 'Support Team'),
+        inboundSupportEmail: findInboundEmail('Support Team', 'support@trustybytes.in'),
+        inboundHrEmail: findInboundEmail('HR Team', 'hr@trustybytes.in'),
+        inboundManagementEmail: findInboundEmail('Management Team', 'management@trustybytes.in'),
         inboundDefaultTicketType: 'Incident',
         inboundDefaultPriority: 'Medium',
         autoAssignRule: '',
@@ -1650,8 +1861,11 @@ export default function AdminView(_props: AdminViewProps) {
         stripQuotedReplies: true,
         appendToTicketPattern: '[#TICKET-ID]',
         outboundReplyTo: '',
+        outboundSupportFrom: findOutboundFrom('Support Team', 'support@trustybytes.in'),
+        outboundHrFrom: findOutboundFrom('HR Team', 'hr@trustybytes.in'),
+        outboundManagementFrom: findOutboundFrom('Management Team', 'management@trustybytes.in'),
         maxAttachmentSizeMb: '20',
-        signatureTemplate: 'Regards,\nIT Support Team',
+        signatureTemplate: 'Kind regards,\nTrustyBytes Support Team',
         allowExternalEmailCreation: true,
         allowInternalOnly: false,
         allowedDomains: '',
@@ -1660,7 +1874,7 @@ export default function AdminView(_props: AdminViewProps) {
         emailLogRetentionDays: '90',
         retryFailedSend: true,
         maxRetryCount: '3',
-        routingRuleHelpdeskQueue: 'If email sent to helpdesk@ -> Queue = Helpdesk',
+        routingRuleHelpdeskQueue: 'If email sent to support@ -> Queue = Support Team',
         routingRuleAccessType: 'If subject contains "Access" -> Type = Access Request',
         routingRuleSupplierType: 'If sender domain = vendor.com -> Type = Supplier Ticket',
         lastSyncTime: nowStamp,
@@ -1714,47 +1928,6 @@ export default function AdminView(_props: AdminViewProps) {
     } finally {
       setDbLoading(false)
     }
-  }
-
-  const loadMfaPolicyConfiguration = async () => {
-    if (role !== 'ADMIN') return
-    try {
-      const data = await getMfaPolicy()
-      setValues((prev) => ({
-        ...prev,
-        mfaRequired: Boolean(data?.mfaRequiredForPrivilegedRoles),
-        mfaMethod: String(data?.primaryMfaMethod || 'Authenticator App'),
-        mfaGracePeriod: String(data?.enrollmentGracePeriodDays ?? 0),
-        mfaBypassEmergency: Boolean(data?.allowEmergencyBypass),
-      }))
-      setSavedValues((prev) => ({
-        ...prev,
-        mfaRequired: Boolean(data?.mfaRequiredForPrivilegedRoles),
-        mfaMethod: String(data?.primaryMfaMethod || 'Authenticator App'),
-        mfaGracePeriod: String(data?.enrollmentGracePeriodDays ?? 0),
-        mfaBypassEmergency: Boolean(data?.allowEmergencyBypass),
-      }))
-    } catch (error: any) {
-      addActivity(error?.response?.data?.error || 'Failed to load 2FA policy')
-    }
-  }
-
-  const saveMfaPolicyConfiguration = async () => {
-    if (role !== 'ADMIN') return
-    const payload = {
-      mfaRequiredForPrivilegedRoles: Boolean(values.mfaRequired),
-      primaryMfaMethod: String(values.mfaMethod || 'Authenticator App') as 'Authenticator App' | 'FIDO2 Key' | 'SMS OTP',
-      enrollmentGracePeriodDays: Math.max(0, Number(values.mfaGracePeriod || 0) || 0),
-      allowEmergencyBypass: Boolean(values.mfaBypassEmergency),
-    }
-    await updateMfaPolicy(payload)
-    setSavedValues((prev) => ({
-      ...prev,
-      mfaRequired: payload.mfaRequiredForPrivilegedRoles,
-      mfaMethod: payload.primaryMfaMethod,
-      mfaGracePeriod: String(payload.enrollmentGracePeriodDays),
-      mfaBypassEmergency: payload.allowEmergencyBypass,
-    }))
   }
 
   const updateMailRoot = (key: keyof Omit<MailConfigForm, 'smtp' | 'imap'>, value: any) => {
@@ -1914,7 +2087,19 @@ export default function AdminView(_props: AdminViewProps) {
     try {
       setMailBusy(true)
       setMailResult('')
-      await updateInboundMailConfig({ defaultQueue })
+      await updateInboundMailConfig({
+        defaultQueue,
+        inboundRoutes: [
+          { email: String(mailForm.inboundSupportEmail || '').trim().toLowerCase(), queue: 'Support Team' },
+          { email: String(mailForm.inboundHrEmail || '').trim().toLowerCase(), queue: 'HR Team' },
+          { email: String(mailForm.inboundManagementEmail || '').trim().toLowerCase(), queue: 'Management Team' },
+        ],
+        outboundRoutes: [
+          { queue: 'Support Team', from: String(mailForm.outboundSupportFrom || '').trim().toLowerCase() },
+          { queue: 'HR Team', from: String(mailForm.outboundHrFrom || '').trim().toLowerCase() },
+          { queue: 'Management Team', from: String(mailForm.outboundManagementFrom || '').trim().toLowerCase() },
+        ],
+      })
       setMailResult(`Inbound mails will be routed to "${defaultQueue}"`)
     } catch (error: any) {
       setMailResult(error?.response?.data?.error || 'Failed to save inbound routing')
@@ -1970,33 +2155,32 @@ export default function AdminView(_props: AdminViewProps) {
 
   const saveTemplate = () => {
     const name = templateForm.name.trim()
-    const subject = templateForm.subject.trim()
     const body = templateForm.body.trim()
-    if (!name || !subject || !body) {
-      setMailResult('Template name, subject and body are required')
+    if (!name || !body) {
+      setMailResult('Template name and body are required')
       return
     }
     if (editingTemplateId) {
-      setEmailTemplates((prev) => prev.map((row) => (row.id === editingTemplateId ? { ...row, ...templateForm, name, subject, body } : row)))
+      setEmailTemplates((prev) => prev.map((row) => (row.id === editingTemplateId ? { ...row, ...templateForm, name, body } : row)))
       setMailResult('Email template updated')
     } else {
-      setEmailTemplates((prev) => [{ id: `tpl-${Date.now()}`, ...templateForm, name, subject, body }, ...prev])
+      setEmailTemplates((prev) => [{ id: `tpl-${Date.now()}`, ...templateForm, name, body }, ...prev])
       setMailResult('Email template created')
     }
     setEditingTemplateId(null)
-    setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+    setTemplateForm({ name: '', buttonKey: 'Assign', body: '', active: true })
   }
 
   const editTemplate = (row: EmailTemplateRecord) => {
     setEditingTemplateId(row.id)
-    setTemplateForm({ name: row.name, buttonKey: row.buttonKey, subject: row.subject, body: row.body, active: row.active })
+    setTemplateForm({ name: row.name, buttonKey: row.buttonKey, body: row.body, active: row.active })
   }
 
   const deleteTemplate = (id: string) => {
     setEmailTemplates((prev) => prev.filter((row) => row.id !== id))
     if (editingTemplateId === id) {
       setEditingTemplateId(null)
-      setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+      setTemplateForm({ name: '', buttonKey: 'Assign', body: '', active: true })
     }
     setMailResult('Email template deleted')
   }
@@ -2005,11 +2189,11 @@ export default function AdminView(_props: AdminViewProps) {
     const userId = signatureForm.userId.trim()
     const signatureHtml = signatureForm.signatureHtml.trim()
     if (!userId || !signatureHtml) {
-      setMailResult('Service account user and signature content are required')
+      setMailResult('User and signature content are required')
       return
     }
-    const user = signatureUsers.find((u: any) => String(u?.id || '') === userId)
-    const userLabel = String(user?.name || user?.fullName || user?.email || userId)
+    const selectedUser = signatureUsers.find((entry) => entry.id === userId)
+    const userLabel = String(selectedUser?.label || signatureForm.userLabel || userId)
     const payload = { ...signatureForm, userId, userLabel, signatureHtml }
     if (editingSignatureId) {
       setEmailSignatures((prev) => prev.map((row) => (row.id === editingSignatureId ? { ...row, ...payload } : row)))
@@ -2034,38 +2218,6 @@ export default function AdminView(_props: AdminViewProps) {
       setSignatureForm({ userId: '', userLabel: '', signatureHtml: '', active: true })
     }
     setMailResult('Email signature deleted')
-  }
-
-  const saveBanner = () => {
-    const title = bannerForm.title.trim()
-    const message = bannerForm.message.trim()
-    if (!title || !message) {
-      setMailResult('Banner title and message are required')
-      return
-    }
-    if (editingBannerId) {
-      setMailBanners((prev) => prev.map((row) => (row.id === editingBannerId ? { ...row, ...bannerForm, title, message } : row)))
-      setMailResult('Mail banner updated')
-    } else {
-      setMailBanners((prev) => [{ id: `bnr-${Date.now()}`, ...bannerForm, title, message }, ...prev])
-      setMailResult('Mail banner created')
-    }
-    setEditingBannerId(null)
-    setBannerForm({ title: '', message: '', tone: 'info', active: true })
-  }
-
-  const editBanner = (row: MailBannerRecord) => {
-    setEditingBannerId(row.id)
-    setBannerForm({ title: row.title, message: row.message, tone: row.tone, active: row.active })
-  }
-
-  const deleteBanner = (id: string) => {
-    setMailBanners((prev) => prev.filter((row) => row.id !== id))
-    if (editingBannerId === id) {
-      setEditingBannerId(null)
-      setBannerForm({ title: '', message: '', tone: 'info', active: true })
-    }
-    setMailResult('Mail banner deleted')
   }
 
   const openCreatePolicyForm = () => {
@@ -2265,7 +2417,6 @@ export default function AdminView(_props: AdminViewProps) {
     setTicketQueueModalMode(null)
     setTicketQueueTargetId('')
     setTicketQueueLabelInput('')
-    setTicketQueueServiceAccountInput('')
     setTicketQueueVisibilityInput('ADMIN,AGENT')
     setTicketQueueModalError('')
   }
@@ -2273,7 +2424,6 @@ export default function AdminView(_props: AdminViewProps) {
     const target = leftPanelConfig.ticketQueues.find((q) => q.id === id)
     if (!target) return
     setTicketQueueLabelInput(target.label)
-    setTicketQueueServiceAccountInput(target.serviceAccount || '')
     setTicketQueueVisibilityInput((target.visibilityRoles || []).join(',') || 'ADMIN,AGENT')
   }
   const handleTicketQueueAdd = () => {
@@ -2282,7 +2432,6 @@ export default function AdminView(_props: AdminViewProps) {
     setTicketQueueModalError('')
     setTicketQueueTargetId('')
     setTicketQueueLabelInput('')
-    setTicketQueueServiceAccountInput('')
     setTicketQueueVisibilityInput('ADMIN,AGENT')
   }
   const handleTicketQueueEdit = () => {
@@ -2292,7 +2441,6 @@ export default function AdminView(_props: AdminViewProps) {
     if (!leftPanelConfig.ticketQueues.length) {
       setTicketQueueTargetId('')
       setTicketQueueLabelInput('')
-      setTicketQueueServiceAccountInput('')
       setTicketQueueVisibilityInput('ADMIN,AGENT')
       setTicketQueueModalError('No ticket queue available.')
       return
@@ -2312,7 +2460,7 @@ export default function AdminView(_props: AdminViewProps) {
     }
     setTicketQueueTargetId(leftPanelConfig.ticketQueues[0].id)
   }
-  const submitTicketQueueModal = () => {
+  const submitTicketQueueModal = async () => {
     if (!ticketQueueModalMode) return
     setTicketQueueModalError('')
     const reservedQueueNames = new Set(['service request', 'helpdesk'])
@@ -2324,18 +2472,24 @@ export default function AdminView(_props: AdminViewProps) {
       }
       const exists = leftPanelConfig.ticketQueues.some((q) => q.label.trim().toLowerCase() === label.toLowerCase())
       if (exists) return setTicketQueueModalError(`Queue "${label}" already exists.`)
-      const serviceAccount = ticketQueueServiceAccountInput.trim()
-      if (!serviceAccount) return setTicketQueueModalError('Service account is required.')
       const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
-      persistQueueConfig({
+      try {
+        await userService.createTicketQueue({ label })
+      } catch (error: any) {
+        setTicketQueueModalError(error?.response?.data?.error || 'Failed to create queue')
+        return
+      }
+      const nextConfig = {
         ...leftPanelConfig,
         ticketQueues: [...leftPanelConfig.ticketQueues, {
           id: `tq-${Date.now()}`,
           label,
-          serviceAccount,
+          serviceAccount: '',
           visibilityRoles,
         }],
-      })
+      }
+      persistQueueConfig(nextConfig)
+      await refreshTicketQueues(nextConfig.ticketQueues)
       closeTicketQueueModal()
       return
     }
@@ -2350,15 +2504,31 @@ export default function AdminView(_props: AdminViewProps) {
       }
       const duplicate = leftPanelConfig.ticketQueues.some((q) => q.id !== target.id && q.label.trim().toLowerCase() === label.toLowerCase())
       if (duplicate) return setTicketQueueModalError(`Queue "${label}" already exists.`)
-      const serviceAccount = ticketQueueServiceAccountInput.trim()
-      if (!serviceAccount) return setTicketQueueModalError('Service account is required.')
       const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
-      persistQueueConfig({
+      const queueId = Number(target.queueId || target.id)
+      if (Number.isFinite(queueId) && queueId > 0) {
+        try {
+          await userService.updateTicketQueue(queueId, { label })
+        } catch (error: any) {
+          setTicketQueueModalError(error?.response?.data?.error || 'Failed to update queue')
+          return
+        }
+      } else {
+        try {
+          await userService.createTicketQueue({ label })
+        } catch (error: any) {
+          setTicketQueueModalError(error?.response?.data?.error || 'Failed to sync queue')
+          return
+        }
+      }
+      const nextConfig = {
         ...leftPanelConfig,
         ticketQueues: leftPanelConfig.ticketQueues.map((q) => q.id === target.id
-          ? { ...q, label, serviceAccount, visibilityRoles }
+          ? { ...q, label, visibilityRoles }
           : q),
-      })
+      }
+      persistQueueConfig(nextConfig)
+      await refreshTicketQueues(nextConfig.ticketQueues)
       closeTicketQueueModal()
       return
     }
@@ -2366,10 +2536,21 @@ export default function AdminView(_props: AdminViewProps) {
     const target = leftPanelConfig.ticketQueues.find((q) => q.id === ticketQueueTargetId)
     if (!target) return setTicketQueueModalError('Queue not found.')
     if (target.label.trim().toLowerCase() === 'unassigned') return setTicketQueueModalError('Unassigned cannot be deleted.')
-    persistQueueConfig({
+    const queueId = Number(target.queueId || target.id)
+    if (Number.isFinite(queueId) && queueId > 0) {
+      try {
+        await userService.deleteTicketQueue(queueId)
+      } catch (error: any) {
+        setTicketQueueModalError(error?.response?.data?.error || 'Failed to delete queue')
+        return
+      }
+    }
+    const nextConfig = {
       ...leftPanelConfig,
       ticketQueues: leftPanelConfig.ticketQueues.filter((q) => q.id !== target.id),
-    })
+    }
+    persistQueueConfig(nextConfig)
+    await refreshTicketQueues(nextConfig.ticketQueues)
     closeTicketQueueModal()
   }
   const closeAssetCategoryModal = () => {
@@ -2472,11 +2653,7 @@ export default function AdminView(_props: AdminViewProps) {
 
   const handleSave = async () => {
     try {
-      if (activeItem === 'mfa-settings' && role === 'ADMIN') {
-        await saveMfaPolicyConfiguration()
-      } else {
-        setSavedValues(values)
-      }
+      setSavedValues(values)
       const now = new Date().toLocaleString()
       setLastSavedAt(now)
       addActivity(`${title} configuration saved`)
@@ -2695,9 +2872,6 @@ export default function AdminView(_props: AdminViewProps) {
         if (activeItem === 'database-configuration' && role === 'ADMIN') {
           loadDatabaseConfiguration()
         }
-        if (activeItem === 'mfa-settings' && role === 'ADMIN') {
-          loadMfaPolicyConfiguration()
-        }
       }
     }
     window.addEventListener('shared-toolbar-action', handler as EventListener)
@@ -2873,13 +3047,13 @@ export default function AdminView(_props: AdminViewProps) {
                         value={policyName}
                         disabled={slaBusy}
                         onChange={(e) => setPolicyName(e.target.value)}
-                        style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                        className="admin-inline-input"
                       />
                       <select
                         value={policyFormat}
                         disabled={slaBusy}
                         onChange={(e) => setPolicyFormat(e.target.value as SlaFormat)}
-                        style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                        className="admin-inline-input"
                       >
                         <option value="critical_set">Critical, High, Medium, Low</option>
                         <option value="p_set">P1, P2, P3, P4</option>
@@ -2889,7 +3063,7 @@ export default function AdminView(_props: AdminViewProps) {
                         value={policyTimeZone}
                         disabled={slaBusy}
                         onChange={(e) => setPolicyTimeZone(e.target.value)}
-                        style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                        className="admin-inline-input"
                       >
                         {TIME_ZONE_OPTIONS.map((zone) => (
                           <option key={zone} value={zone}>
@@ -2911,7 +3085,7 @@ export default function AdminView(_props: AdminViewProps) {
                           value={customFormatText}
                           disabled={slaBusy}
                           onChange={(e) => setCustomFormatText(e.target.value)}
-                          style={{ height: 34, borderRadius: 8, border: '1px solid #cbd5e1', padding: '0 10px', background: '#fff' }}
+                          className="admin-inline-input"
                         />
                       </div>
                     ) : null}
@@ -2963,17 +3137,7 @@ export default function AdminView(_props: AdminViewProps) {
                                   </td>
                                   <td>{policyPriorityLabels[SLA_PRIORITIES.indexOf(priority)]}</td>
                                   <td>
-                                    <div
-                                      style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: '1fr 74px',
-                                        minWidth: 156,
-                                        border: '1px solid #cbd5e1',
-                                        borderRadius: 8,
-                                        overflow: 'hidden',
-                                        background: '#fff',
-                                      }}
-                                    >
+                                    <div className="admin-inline-gridbox">
                                       <input
                                         type="number"
                                         min={0}
@@ -2986,7 +3150,7 @@ export default function AdminView(_props: AdminViewProps) {
                                             [priority]: { ...prev[priority], responseTimeMin: e.target.value },
                                           }))
                                         }
-                                        style={{ border: 'none', borderRight: '1px solid #cbd5e1', padding: '0 8px', height: 30 }}
+                                        className="admin-inline-grid-input"
                                       />
                                       <select
                                         value={policy.responseTimeUnit}
@@ -2997,7 +3161,7 @@ export default function AdminView(_props: AdminViewProps) {
                                             [priority]: { ...prev[priority], responseTimeUnit: e.target.value as SlaTimeUnit },
                                           }))
                                         }
-                                        style={{ border: 'none', padding: '0 6px', height: 30, background: '#f8fafc' }}
+                                        className="admin-inline-grid-select"
                                       >
                                         {SLA_TIME_UNITS.map((unit) => (
                                           <option key={unit} value={unit}>{unit}</option>
@@ -3006,17 +3170,7 @@ export default function AdminView(_props: AdminViewProps) {
                                     </div>
                                   </td>
                                   <td>
-                                    <div
-                                      style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: '1fr 74px',
-                                        minWidth: 156,
-                                        border: '1px solid #cbd5e1',
-                                        borderRadius: 8,
-                                        overflow: 'hidden',
-                                        background: '#fff',
-                                      }}
-                                    >
+                                    <div className="admin-inline-gridbox">
                                       <input
                                         type="number"
                                         min={0}
@@ -3029,7 +3183,7 @@ export default function AdminView(_props: AdminViewProps) {
                                             [priority]: { ...prev[priority], resolutionTimeMin: e.target.value },
                                           }))
                                         }
-                                        style={{ border: 'none', borderRight: '1px solid #cbd5e1', padding: '0 8px', height: 30 }}
+                                        className="admin-inline-grid-input"
                                       />
                                       <select
                                         value={policy.resolutionTimeUnit}
@@ -3040,7 +3194,7 @@ export default function AdminView(_props: AdminViewProps) {
                                             [priority]: { ...prev[priority], resolutionTimeUnit: e.target.value as SlaTimeUnit },
                                           }))
                                         }
-                                        style={{ border: 'none', padding: '0 6px', height: 30, background: '#f8fafc' }}
+                                        className="admin-inline-grid-select"
                                       >
                                         {SLA_TIME_UNITS.map((unit) => (
                                           <option key={unit} value={unit}>{unit}</option>
@@ -3081,7 +3235,7 @@ export default function AdminView(_props: AdminViewProps) {
                         </table>
                       </div>
                       {anyBusinessHoursEnabled ? (
-                        <div style={{ border: '1px solid #d7dee8', borderRadius: 10, padding: 10, background: '#fff', width: '100%' }}>
+                        <div className="admin-inline-card">
                         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Business Hours Schedule</div>
                         <div style={{ display: 'grid', gap: 6 }}>
                           {BUSINESS_DAYS.map((day) => {
@@ -3304,369 +3458,291 @@ export default function AdminView(_props: AdminViewProps) {
             <div className="admin-config-head">
               <h3>Mail Provider, Routing & Automation</h3>
               <div className="admin-config-actions">
-                <button className="admin-settings-ghost" onClick={loadMailConfiguration} disabled={mailBusy || mailLoading}>
-                  {mailLoading ? 'Loading...' : 'Reload'}
-                </button>
-                <button className="admin-settings-primary" onClick={saveMailConfiguration} disabled={mailBusy || mailLoading}>
-                  {mailBusy ? 'Working...' : 'Save'}
-                </button>
+                {!mailEditing ? (
+                  <button
+                    className="admin-settings-primary"
+                    onClick={() => {
+                      mailDraftRef.current = mailForm
+                      mailCompanyDraftRef.current = mailCompanyLink
+                      setMailEditing(true)
+                    }}
+                    disabled={mailBusy || mailLoading}
+                  >
+                    Edit
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="admin-settings-ghost"
+                      onClick={() => {
+                        if (mailDraftRef.current) setMailForm(mailDraftRef.current)
+                        setMailCompanyLink(mailCompanyDraftRef.current || '')
+                        setMailEditing(false)
+                      }}
+                      disabled={mailBusy || mailLoading}
+                    >
+                      X
+                    </button>
+                    <button
+                      className="admin-settings-primary"
+                      onClick={async () => {
+                        await saveMailConfiguration()
+                        setMailEditing(false)
+                      }}
+                      disabled={mailBusy || mailLoading}
+                    >
+                      {mailBusy ? 'Working...' : 'Save'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
             {role !== 'ADMIN' ? (
               <p>Only administrators can manage mail configuration.</p>
             ) : (
               <>
-                <div className="admin-config-grid two">
+                <div className="admin-config-grid one">
+                  <article className={`admin-config-card${mailEditing ? '' : ' admin-config-card-readonly'}`}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <h4 style={{ margin: 0 }}>Add mailbox</h4>
+                    </div>
+                    <div className="admin-config-row one">
+                      <label className="admin-field-row">
+                        <span>Mailbox name</span>
+                        <input
+                          readOnly={mailFieldDisabled}
+                          value={mailForm.smtp.from}
+                          onChange={(e) => {
+                            const next = e.target.value
+                            updateSmtpField('from', next)
+                          }}
+                          placeholder="Name of the sender that will be used in ticket replies"
+                        />
+                      </label>
+                    </div>
+                    <div className="admin-config-row one">
+                      <label className="admin-field-row">
+                        <span>Your service desk email *</span>
+                        <input
+                          readOnly={mailFieldDisabled}
+                          value={mailForm.inboundEmailAddress}
+                          onChange={(e) => {
+                            const next = e.target.value
+                            setMailForm((prev) => ({ ...prev, inboundEmailAddress: next, supportMail: next }))
+                          }}
+                          placeholder="This is also your Reply-to address"
+                        />
+                      </label>
+                    </div>
+                    <div className="admin-config-row one">
+                      <label className="admin-field-row">
+                        <span>Assign tickets to agent group</span>
+                        <select
+                          disabled={mailFieldDisabled}
+                          value={mailForm.inboundDefaultQueue}
+                          onChange={(e) => updateMailRoot('inboundDefaultQueue', e.target.value)}
+                        >
+                          {inboundQueueOptions.map((queueName) => (
+                            <option key={`mailbox-queue-${queueName}`} value={queueName}>{queueName}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </article>
+                </div>
+                <div className="admin-config-grid one">
                   <article className="admin-config-card">
-                    <h4>Email Provider</h4>
-                    <p>Provider type, connection mode, and OAuth status.</p>
-                    <label className="admin-field-row">
-                      <span>Provider Type</span>
-                      <select
-                        value={mailForm.providerType}
-                        onChange={(e) => {
-                          const providerType = e.target.value as MailConfigForm['providerType']
-                          applyProviderAndConnectionPreset(providerType, mailForm.connectionMode)
-                        }}
-                      >
-                        <option value="google-workspace-oauth">Google Workspace (OAuth)</option>
-                        <option value="microsoft-365-oauth">Microsoft 365 (OAuth)</option>
-                        <option value="smtp-imap-custom">SMTP/IMAP (Custom)</option>
-                        <option value="api-provider">API Provider (SendGrid / Mailgun)</option>
-                      </select>
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Connection Mode</span>
-                      <select
-                        value={mailForm.connectionMode}
-                        onChange={(e) => applyProviderAndConnectionPreset(mailForm.providerType, e.target.value as MailConfigForm['connectionMode'])}
-                      >
-                        <option value="oauth2">OAuth 2.0</option>
-                        <option value="app-password">App Password</option>
-                        <option value="manual-credentials">Manual Credentials</option>
-                      </select>
-                    </label>
-                    {mailForm.connectionMode === 'oauth2' ? (
-                      <>
+                    <h4>Email service provider</h4>
+                    <div className="mail-provider-grid">
+                      {([
+                        { id: 'gmail', label: 'Gmail', sub: 'Connect via OAuth' },
+                        { id: 'outlook', label: 'Microsoft Outlook', sub: 'Connect via OAuth' },
+                        { id: 'zoho', label: 'Zoho Mail', sub: 'Connect via OAuth' },
+                        { id: 'custom', label: 'Custom email server', sub: 'Connect via SMTP / IMAP' },
+                      ] as const).map((item) => (
+                        <button
+                          key={item.id}
+                          className={`mail-provider-card${mailProvider === item.id ? ' active' : ''}`}
+                          onClick={() => setMailProvider(item.id)}
+                        >
+                          <div className="mail-provider-title">{item.label}</div>
+                          <div className="mail-provider-sub">{item.sub}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </article>
+                </div>
+                {mailProvider && mailProvider !== 'custom' ? (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      <h4>Select OAuth method</h4>
+                      <p>Select one of the options below to connect your {mailProvider === 'gmail' ? 'Google' : mailProvider === 'outlook' ? 'Microsoft' : 'Zoho'} account.</p>
+                      <div className="admin-config-actions">
+                        <button
+                          className="admin-settings-primary"
+                          onClick={() => openOAuthProvider(mailProvider)}
+                          disabled={!mailEditing}
+                        >
+                          Configure {mailProvider === 'gmail' ? 'Gmail' : mailProvider === 'outlook' ? 'Outlook' : 'Zoho'} OAuth
+                        </button>
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
+                {mailProvider === 'custom' ? (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      <h4>Incoming Mail Server</h4>
+                      <div className="admin-config-row two">
                         <label className="admin-field-row">
-                          <span>Connected Status</span>
-                          <div className={`mail-status-badge ${mailForm.oauthConnected ? 'success' : 'danger'}`}>
-                            {mailForm.oauthConnected ? 'Connected' : 'Not Connected'}
-                          </div>
+                          <span>IMAP Server Name</span>
+                          <input
+                            readOnly={mailFieldDisabled}
+                            value={imapHost}
+                            onChange={(e) => setImapHost(e.target.value)}
+                            placeholder="Enter IMAP Server Name"
+                          />
                         </label>
                         <label className="admin-field-row">
-                          <span>Token Expiry</span>
-                          <input value={mailForm.oauthTokenExpiry} onChange={(e) => updateMailRoot('oauthTokenExpiry', e.target.value)} placeholder="mm/dd/yyyy hh:mm" />
-                        </label>
-                        <div className="admin-config-actions">
-                          <button className="admin-settings-ghost" onClick={connectOAuthAccount} disabled={mailBusy || mailLoading}>Connect Account</button>
-                          <button className="admin-settings-ghost" onClick={reconnectOAuthAccount} disabled={mailBusy || mailLoading}>Reconnect</button>
-                        </div>
-                      </>
-                    ) : null}
-                    {mailForm.providerType === 'api-provider' ? (
-                      <div className="admin-config-row three">
-                        <label className="admin-field-row">
-                          <span>API Provider</span>
-                          <input value={mailForm.apiProviderName} onChange={(e) => updateMailRoot('apiProviderName', e.target.value)} placeholder="SendGrid / Mailgun" />
-                        </label>
-                        <label className="admin-field-row">
-                          <span>API Base URL</span>
-                          <input value={mailForm.apiBaseUrl} onChange={(e) => updateMailRoot('apiBaseUrl', e.target.value)} placeholder="https://api.provider.com" />
-                        </label>
-                        <label className="admin-field-row">
-                          <span>API Key</span>
-                          <input value={mailForm.apiKey} onChange={(e) => updateMailRoot('apiKey', e.target.value)} />
+                          <span>Port</span>
+                          <input
+                            readOnly={mailFieldDisabled}
+                            value={imapPort}
+                            onChange={(e) => setImapPort(e.target.value)}
+                            placeholder="Port"
+                          />
                         </label>
                       </div>
-                    ) : null}
-                  </article>
-                  <article className="admin-config-card">
-                    <h4>Inbound Mail Processing</h4>
-                    <p>
-                      Mode:
-                      {' '}
-                      {isApiProvider ? 'API provider mode (IMAP disabled)' : isOauthMode ? 'OAuth mode' : isAppPasswordMode ? 'App password mode' : 'Manual credentials mode'}
-                    </p>
-                    <label className="admin-field-row">
-                      <span>Inbound Email Address</span>
-                      <input
-                        value={mailForm.inboundEmailAddress}
-                        onChange={(e) => {
-                          const next = e.target.value
-                          setMailForm((prev) => ({ ...prev, inboundEmailAddress: next, supportMail: next }))
-                        }}
-                        placeholder="support@domain.com"
-                      />
-                    </label>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>IMAP Host</span>
-                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.host} onChange={(e) => updateImapField('host', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Port</span>
-                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.port} onChange={(e) => updateImapField('port', e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>Username</span>
-                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.user} onChange={(e) => updateImapField('user', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>{isOauthMode ? 'OAuth Managed' : isAppPasswordMode ? 'App Password' : 'Password'}</span>
-                        <input
-                          type={isOauthMode ? 'text' : 'password'}
-                          disabled={disableImapSmtpProtocolConfig || disableImapSmtpCredentials}
-                          value={isOauthMode ? 'Managed via OAuth' : mailForm.imap.pass}
-                          onChange={(e) => updateImapField('pass', e.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="admin-config-row three">
-                      <label className="admin-field-row">
-                        <span>Encryption</span>
-                        <select disabled={disableImapSmtpProtocolConfig} value={mailForm.imapEncryption} onChange={(e) => updateMailRoot('imapEncryption', e.target.value as MailConfigForm['imapEncryption'])}>
-                          <option value="SSL">SSL</option>
-                          <option value="TLS">TLS</option>
-                          <option value="None">None</option>
-                        </select>
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Poll Interval (ms)</span>
-                        <input value={mailForm.pollIntervalMs} onChange={(e) => updateMailRoot('pollIntervalMs', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Enable Push (Webhook)</span>
-                        <input type="checkbox" checked={mailForm.enablePush} onChange={(e) => updateMailRoot('enablePush', e.target.checked)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row three">
-                      <label className="admin-field-row">
-                        <span>Default Queue</span>
-                        <input value={mailForm.inboundDefaultQueue} onChange={(e) => updateMailRoot('inboundDefaultQueue', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Default Ticket Type</span>
-                        <input value={mailForm.inboundDefaultTicketType} onChange={(e) => updateMailRoot('inboundDefaultTicketType', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Default Priority</span>
-                        <input value={mailForm.inboundDefaultPriority} onChange={(e) => updateMailRoot('inboundDefaultPriority', e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>Auto Assign Rule</span>
-                        <input value={mailForm.autoAssignRule} onChange={(e) => updateMailRoot('autoAssignRule', e.target.value)} placeholder="Round robin / skill based" />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Mailbox</span>
-                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.imap.mailbox} onChange={(e) => updateImapField('mailbox', e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row three">
-                      <label className="admin-field-row switch-row">
-                        <span>Ignore Auto-Reply Emails</span>
-                        <input type="checkbox" checked={mailForm.ignoreAutoReply} onChange={(e) => updateMailRoot('ignoreAutoReply', e.target.checked)} />
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Prevent Email Loop</span>
-                        <input type="checkbox" checked={mailForm.preventEmailLoop} onChange={(e) => updateMailRoot('preventEmailLoop', e.target.checked)} />
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Process Attachments</span>
-                        <input type="checkbox" checked={mailForm.processAttachments} onChange={(e) => updateMailRoot('processAttachments', e.target.checked)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-actions">
-                      <button className="admin-settings-ghost" onClick={() => runMailAction('imap')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test IMAP</button>
-                      <button className="admin-settings-ghost" onClick={testInboundProcessing} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test Inbound Processing</button>
-                      <button className="admin-settings-ghost" onClick={viewLastSyncTime} disabled={mailBusy || mailLoading}>View Last Sync Time</button>
-                      <button className="admin-settings-ghost" onClick={syncInboundNow} disabled={mailBusy || mailLoading}>Sync Now</button>
-                    </div>
-                  </article>
-                </div>
-                <div className="admin-config-grid two">
-                  <article className="admin-config-card">
-                    <h4>Outgoing Mail</h4>
-                    <p>
-                      SMTP channel for ticket updates sent to users.
-                      {' '}
-                      {isApiProvider ? '(disabled in API provider mode)' : isOauthMode ? '(OAuth-managed auth)' : ''}
-                    </p>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>SMTP Host</span>
-                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.smtp.host} onChange={(e) => updateSmtpField('host', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Port</span>
-                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.smtp.port} onChange={(e) => updateSmtpField('port', e.target.value)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row three">
-                      <label className="admin-field-row">
-                        <span>Encryption</span>
-                        <select disabled={disableImapSmtpProtocolConfig} value={mailForm.smtpEncryption} onChange={(e) => updateMailRoot('smtpEncryption', e.target.value as MailConfigForm['smtpEncryption'])}>
-                          <option value="SSL">SSL</option>
-                          <option value="TLS">TLS</option>
-                          <option value="None">None</option>
-                        </select>
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Username</span>
-                        <input disabled={disableImapSmtpProtocolConfig} value={mailForm.smtp.user} onChange={(e) => updateSmtpField('user', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>{isOauthMode ? 'OAuth Managed' : isAppPasswordMode ? 'App Password' : 'Password'}</span>
-                        <input
-                          type={isOauthMode ? 'text' : 'password'}
-                          disabled={disableImapSmtpProtocolConfig || disableImapSmtpCredentials}
-                          value={isOauthMode ? 'Managed via OAuth' : mailForm.smtp.pass}
-                          onChange={(e) => updateSmtpField('pass', e.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="admin-config-row three">
-                      <label className="admin-field-row">
-                        <span>From Address</span>
-                        <input value={mailForm.smtp.from} onChange={(e) => updateSmtpField('from', e.target.value)} placeholder="support@domain.com" />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Reply-To Address</span>
-                        <input value={mailForm.outboundReplyTo} onChange={(e) => updateMailRoot('outboundReplyTo', e.target.value)} placeholder="helpdesk@domain.com" />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Max Attachment Size (MB)</span>
-                        <input value={mailForm.maxAttachmentSizeMb} onChange={(e) => updateMailRoot('maxAttachmentSizeMb', e.target.value)} />
-                      </label>
-                    </div>
-                    <label className="admin-field-row">
-                      <span>Signature Template</span>
-                      <textarea value={mailForm.signatureTemplate} onChange={(e) => updateMailRoot('signatureTemplate', e.target.value)} />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Test Recipient</span>
-                      <input value={mailTestRecipient} onChange={(e) => setMailTestRecipient(e.target.value)} placeholder="admin@yourdomain.com" />
-                    </label>
-                    <div className="admin-config-actions">
-                      <button className="admin-settings-ghost" onClick={() => runMailAction('smtp')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test SMTP</button>
-                      <button className="admin-settings-ghost" onClick={() => runMailAction('send')} disabled={mailBusy || mailLoading}>Send Test Mail</button>
-                    </div>
-                  </article>
-                  <article className="admin-config-card">
-                    <h4>Mail to Ticket Rules</h4>
-                    <p>Rule engine for creating and appending ticket threads.</p>
-                    <label className="admin-field-row switch-row">
-                      <span>Create new ticket when subject has no ticket ID</span>
-                      <input type="checkbox" checked readOnly />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Append to ticket pattern</span>
-                      <input value={mailForm.appendToTicketPattern} onChange={(e) => updateMailRoot('appendToTicketPattern', e.target.value)} />
-                    </label>
-                    <div className="admin-config-row three">
-                      <label className="admin-field-row switch-row">
-                        <span>Overwrite status on reply</span>
-                        <input type="checkbox" checked={mailForm.overwriteStatusOnReply} onChange={(e) => updateMailRoot('overwriteStatusOnReply', e.target.checked)} />
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Auto reopen on reply</span>
-                        <input type="checkbox" checked={mailForm.autoReopenOnReply} onChange={(e) => updateMailRoot('autoReopenOnReply', e.target.checked)} />
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Strip quoted replies</span>
-                        <input type="checkbox" checked={mailForm.stripQuotedReplies} onChange={(e) => updateMailRoot('stripQuotedReplies', e.target.checked)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-result">Example: Subject: Re: Printer Issue [#INC-1023]</div>
-                  </article>
-                </div>
-
-                <div className="admin-config-grid two">
-                  <article className="admin-config-card">
-                    <h4>Automation & Routing Rules</h4>
-                    <p>Queue and type routing rules for inbound emails.</p>
-                    <label className="admin-field-row">
-                      <span>Rule 1</span>
-                      <input value={mailForm.routingRuleHelpdeskQueue} onChange={(e) => updateMailRoot('routingRuleHelpdeskQueue', e.target.value)} />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Rule 2</span>
-                      <input value={mailForm.routingRuleAccessType} onChange={(e) => updateMailRoot('routingRuleAccessType', e.target.value)} />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Rule 3</span>
-                      <input value={mailForm.routingRuleSupplierType} onChange={(e) => updateMailRoot('routingRuleSupplierType', e.target.value)} />
-                    </label>
-                  </article>
-                  <article className="admin-config-card">
-                    <h4>Security & Logging</h4>
-                    <p>Domain restrictions, validation posture, and delivery retries.</p>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row switch-row">
-                        <span>Allow External Email Creation</span>
-                        <input type="checkbox" checked={mailForm.allowExternalEmailCreation} onChange={(e) => updateMailRoot('allowExternalEmailCreation', e.target.checked)} />
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Allow Internal Only</span>
-                        <input type="checkbox" checked={mailForm.allowInternalOnly} onChange={(e) => updateMailRoot('allowInternalOnly', e.target.checked)} />
-                      </label>
-                    </div>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>Allowed Domains</span>
-                        <input value={mailForm.allowedDomains} onChange={(e) => updateMailRoot('allowedDomains', e.target.value)} placeholder="company.com, partner.com" />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Blocked Domains</span>
-                        <input value={mailForm.blockedDomains} onChange={(e) => updateMailRoot('blockedDomains', e.target.value)} placeholder="spam.com, blocked.com" />
-                      </label>
-                    </div>
-                    <div className="admin-config-row three">
-                      <label className="admin-field-row">
-                        <span>SPF/DKIM Validation</span>
-                        <select value={mailForm.spfDkimStatus} onChange={(e) => updateMailRoot('spfDkimStatus', e.target.value as MailConfigForm['spfDkimStatus'])}>
-                          <option value="Unknown">Unknown</option>
-                          <option value="Valid">Valid</option>
-                          <option value="Invalid">Invalid</option>
-                        </select>
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Email Logging Retention (days)</span>
-                        <input value={mailForm.emailLogRetentionDays} onChange={(e) => updateMailRoot('emailLogRetentionDays', e.target.value)} />
-                      </label>
-                      <label className="admin-field-row">
-                        <span>Max Retry Count</span>
-                        <input value={mailForm.maxRetryCount} onChange={(e) => updateMailRoot('maxRetryCount', e.target.value)} />
-                      </label>
-                    </div>
-                    <label className="admin-field-row switch-row">
-                      <span>Retry Failed Send Attempts</span>
-                      <input type="checkbox" checked={mailForm.retryFailedSend} onChange={(e) => updateMailRoot('retryFailedSend', e.target.checked)} />
-                    </label>
-                    <div className="admin-status-grid">
-                      <div className={`mail-status-badge ${mailForm.oauthConnected ? 'success' : 'danger'}`}>OAuth {mailForm.oauthConnected ? 'Connected' : 'Disconnected'}</div>
-                      <div className={`mail-status-badge ${mailForm.errorLogs ? 'danger' : 'success'}`}>{mailForm.errorLogs ? 'Failed' : 'Healthy'}</div>
-                      <div className={`mail-status-badge ${mailForm.oauthTokenExpiry ? 'warning' : 'neutral'}`}>{mailForm.oauthTokenExpiry ? 'Token Expiring' : 'Token Unknown'}</div>
-                    </div>
-                    <div className="admin-log-panel">
-                      <div><strong>Last Sync:</strong> {mailForm.lastSyncTime || '-'}</div>
-                      <div><strong>Last Email Received:</strong> {mailForm.lastEmailReceived || '-'}</div>
-                      <div><strong>Last Email Sent:</strong> {mailForm.lastEmailSent || '-'}</div>
-                      <div><strong>Error Logs:</strong> {mailForm.errorLogs || '-'}</div>
-                    </div>
-                  </article>
-                </div>
-                <div className="admin-config-actions admin-mail-footer-actions">
-                  <button className="admin-settings-ghost" onClick={() => runMailAction('imap')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test IMAP</button>
-                  <button className="admin-settings-ghost" onClick={() => runMailAction('smtp')} disabled={mailBusy || mailLoading || disableMailProtocolTests}>Test SMTP</button>
-                  <button className="admin-settings-ghost" onClick={syncInboundNow} disabled={mailBusy || mailLoading}>Sync Now</button>
-                  <button className="admin-settings-primary" onClick={saveMailConfiguration} disabled={mailBusy || mailLoading}>Save</button>
-                </div>
-                {mailResult ? <div className="admin-config-result">{mailResult}</div> : null}
+                      <div className="admin-config-row two">
+                        <label className="admin-field-row switch-row">
+                          <span>Use SSL/TLS</span>
+                          <input
+                            type="checkbox"
+                            disabled={mailFieldDisabled}
+                            checked={imapSsl}
+                            onChange={(e) => setImapSsl(e.target.checked)}
+                          />
+                        </label>
+                      </div>
+                      <div className="admin-config-row two mail-auth-row">
+                        <label className="admin-field-row switch-row">
+                          <span>Authentication: Plain</span>
+                          <input
+                            type="radio"
+                            disabled={mailFieldDisabled}
+                            checked={imapAuthMode === 'plain'}
+                            onChange={() => setImapAuthMode('plain')}
+                          />
+                        </label>
+                        <label className="admin-field-row switch-row">
+                          <span>Authentication: Login</span>
+                          <input
+                            type="radio"
+                            disabled={mailFieldDisabled}
+                            checked={imapAuthMode === 'login'}
+                            onChange={() => setImapAuthMode('login')}
+                          />
+                        </label>
+                      </div>
+                      <div className="admin-config-row two">
+                        <label className="admin-field-row">
+                          <span>Email address</span>
+                          <input
+                            readOnly={mailFieldDisabled}
+                            value={imapUser}
+                            onChange={(e) => setImapUser(e.target.value)}
+                            placeholder="Enter your email address"
+                          />
+                        </label>
+                        <label className="admin-field-row">
+                          <span>Password</span>
+                          <input
+                            type="password"
+                            readOnly={mailFieldDisabled}
+                            value={imapPass}
+                            onChange={(e) => setImapPass(e.target.value)}
+                            placeholder="Password"
+                          />
+                        </label>
+                      </div>
+                    </article>
+                    <article className="admin-config-card">
+                      <h4>Outgoing Mail Server</h4>
+                      <div className="admin-config-row two">
+                        <label className="admin-field-row">
+                          <span>SMTP Server Name</span>
+                          <input
+                            readOnly={mailFieldDisabled}
+                            value={smtpHost}
+                            onChange={(e) => setSmtpHost(e.target.value)}
+                            placeholder="Enter SMTP Server Name"
+                          />
+                        </label>
+                        <label className="admin-field-row">
+                          <span>Port</span>
+                          <input
+                            readOnly={mailFieldDisabled}
+                            value={smtpPort}
+                            onChange={(e) => setSmtpPort(e.target.value)}
+                            placeholder="Port"
+                          />
+                        </label>
+                      </div>
+                      <div className="admin-config-row two">
+                        <label className="admin-field-row switch-row">
+                          <span>Use SSL/TLS</span>
+                          <input
+                            type="checkbox"
+                            disabled={mailFieldDisabled}
+                            checked={smtpSsl}
+                            onChange={(e) => setSmtpSsl(e.target.checked)}
+                          />
+                        </label>
+                      </div>
+                      <div className="admin-config-row two mail-auth-row">
+                        <label className="admin-field-row switch-row">
+                          <span>Authentication: Plain</span>
+                          <input
+                            type="radio"
+                            disabled={mailFieldDisabled}
+                            checked={smtpAuthMode === 'plain'}
+                            onChange={() => setSmtpAuthMode('plain')}
+                          />
+                        </label>
+                        <label className="admin-field-row switch-row">
+                          <span>Authentication: Login</span>
+                          <input
+                            type="radio"
+                            disabled={mailFieldDisabled}
+                            checked={smtpAuthMode === 'login'}
+                            onChange={() => setSmtpAuthMode('login')}
+                          />
+                        </label>
+                      </div>
+                      <div className="admin-config-row two">
+                        <label className="admin-field-row">
+                          <span>Email address</span>
+                          <input
+                            readOnly={mailFieldDisabled}
+                            value={smtpUser}
+                            onChange={(e) => setSmtpUser(e.target.value)}
+                            placeholder="Enter your email address"
+                          />
+                        </label>
+                        <label className="admin-field-row">
+                          <span>Password</span>
+                          <input
+                            type="password"
+                            readOnly={mailFieldDisabled}
+                            value={smtpPass}
+                            onChange={(e) => setSmtpPass(e.target.value)}
+                            placeholder="Password"
+                          />
+                        </label>
+                      </div>
+                    </article>
+                  </div>
+                ) : null}
               </>
             )}
           </div>
@@ -3680,7 +3756,7 @@ export default function AdminView(_props: AdminViewProps) {
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-          <div className="admin-config-page">
+          <div className="admin-config-page admin-mail-template-page">
             <div className="admin-config-head">
               <h3>Email & Signature Templates</h3>
               <div className="admin-config-actions">
@@ -3694,10 +3770,10 @@ export default function AdminView(_props: AdminViewProps) {
             ) : (
               <>
                 <div className="admin-config-grid one">
-                  <article className="admin-config-card">
+                  <article className="admin-config-card admin-email-template-card">
                     <h4>Email Templates (CRUD)</h4>
                     <p>Create individual email templates per button action.</p>
-                    <div className="admin-config-row three">
+                    <div className="admin-config-row three admin-template-meta">
                       <label className="admin-field-row">
                         <span>Template Name</span>
                         <input
@@ -3717,7 +3793,7 @@ export default function AdminView(_props: AdminViewProps) {
                           ))}
                         </select>
                       </label>
-                      <label className="admin-field-row switch-row">
+                      <label className="admin-field-row switch-row admin-template-active">
                         <span>Active</span>
                         <input
                           type="checkbox"
@@ -3726,16 +3802,8 @@ export default function AdminView(_props: AdminViewProps) {
                         />
                       </label>
                     </div>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>Subject</span>
-                        <input
-                          value={templateForm.subject}
-                          onChange={(e) => setTemplateForm((prev) => ({ ...prev, subject: e.target.value }))}
-                          placeholder="Asset assigned to {{user_name}}"
-                        />
-                      </label>
-                      <label className="admin-field-row">
+                    <div className="admin-template-compose">
+                      <label className="admin-field-row admin-template-body">
                         <span>Body</span>
                         <textarea
                           value={templateForm.body}
@@ -3744,7 +3812,7 @@ export default function AdminView(_props: AdminViewProps) {
                         />
                       </label>
                     </div>
-                    <div className="admin-config-actions">
+                    <div className="admin-config-actions admin-template-actions">
                       <button className="admin-settings-primary" onClick={saveTemplate}>
                         {editingTemplateId ? 'Update Template' : 'Create Template'}
                       </button>
@@ -3753,7 +3821,7 @@ export default function AdminView(_props: AdminViewProps) {
                           className="admin-settings-ghost"
                           onClick={() => {
                             setEditingTemplateId(null)
-                            setTemplateForm({ name: '', buttonKey: 'Assign', subject: '', body: '', active: true })
+                            setTemplateForm({ name: '', buttonKey: 'Assign', body: '', active: true })
                           }}
                         >
                           Cancel
@@ -3767,7 +3835,7 @@ export default function AdminView(_props: AdminViewProps) {
                         <div key={row.id} className="admin-entity-row">
                           <div>
                             <strong>{row.name}</strong> | Action: {row.buttonKey} | {row.active ? 'Active' : 'Inactive'}
-                            <div className="admin-entity-subtext">{row.subject}</div>
+                            <div className="admin-entity-subtext">{row.body}</div>
                           </div>
                           <div className="admin-config-actions">
                             <button className="admin-settings-ghost" onClick={() => editTemplate(row)}>Edit</button>
@@ -3779,22 +3847,23 @@ export default function AdminView(_props: AdminViewProps) {
                   </article>
                 </div>
 
-                <div className="admin-config-grid two">
-                  <article className="admin-config-card">
+                <article className="admin-config-card">
                     <h4>Email Signatures (CRUD)</h4>
-                    <p>Manage individual signatures for service-account users (agents).</p>
+                    <p>Manage signature templates by user.</p>
                     <label className="admin-field-row">
-                      <span>Service Account User</span>
+                      <span>User</span>
                       <select
                         value={signatureForm.userId}
-                        onChange={(e) => setSignatureForm((prev) => ({ ...prev, userId: e.target.value }))}
+                        onChange={(e) => {
+                          const nextUserId = e.target.value
+                          const selectedUser = signatureUsers.find((entry) => entry.id === nextUserId)
+                          setSignatureForm((prev) => ({ ...prev, userId: nextUserId, userLabel: selectedUser?.label || prev.userLabel }))
+                        }}
                       >
                         <option value="">Select user</option>
-                        {signatureUsers.map((u: any) => {
-                          const id = String(u?.id || '')
-                          const label = String(u?.name || u?.fullName || u?.email || `User ${id}`)
-                          return <option key={`sig-user-${id}`} value={id}>{label}</option>
-                        })}
+                        {signatureUsers.map((entry) => (
+                          <option key={`sig-user-${entry.id}`} value={entry.id}>{entry.label}</option>
+                        ))}
                       </select>
                     </label>
                     <label className="admin-field-row">
@@ -3845,83 +3914,7 @@ export default function AdminView(_props: AdminViewProps) {
                         </div>
                       ))}
                     </div>
-                  </article>
-
-                  <article className="admin-config-card">
-                    <h4>Mail Banner (CRUD)</h4>
-                    <p>Banner shown on mail/ticket communications.</p>
-                    <label className="admin-field-row">
-                      <span>Banner Title</span>
-                      <input
-                        value={bannerForm.title}
-                        onChange={(e) => setBannerForm((prev) => ({ ...prev, title: e.target.value }))}
-                        placeholder="Maintenance Window"
-                      />
-                    </label>
-                    <label className="admin-field-row">
-                      <span>Banner Message</span>
-                      <textarea
-                        value={bannerForm.message}
-                        onChange={(e) => setBannerForm((prev) => ({ ...prev, message: e.target.value }))}
-                        placeholder="Support response time may be delayed during planned maintenance."
-                      />
-                    </label>
-                    <div className="admin-config-row two">
-                      <label className="admin-field-row">
-                        <span>Tone</span>
-                        <select
-                          value={bannerForm.tone}
-                          onChange={(e) => setBannerForm((prev) => ({ ...prev, tone: e.target.value as MailBannerRecord['tone'] }))}
-                        >
-                          <option value="info">Info</option>
-                          <option value="success">Success</option>
-                          <option value="warning">Warning</option>
-                          <option value="danger">Danger</option>
-                        </select>
-                      </label>
-                      <label className="admin-field-row switch-row">
-                        <span>Active</span>
-                        <input
-                          type="checkbox"
-                          checked={bannerForm.active}
-                          onChange={(e) => setBannerForm((prev) => ({ ...prev, active: e.target.checked }))}
-                        />
-                      </label>
-                    </div>
-                    <div className="admin-config-actions">
-                      <button className="admin-settings-primary" onClick={saveBanner}>
-                        {editingBannerId ? 'Update Banner' : 'Create Banner'}
-                      </button>
-                      {editingBannerId ? (
-                        <button
-                          className="admin-settings-ghost"
-                          onClick={() => {
-                            setEditingBannerId(null)
-                            setBannerForm({ title: '', message: '', tone: 'info', active: true })
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="admin-entity-list">
-                      {mailBanners.length === 0 ? (
-                        <div className="admin-entity-empty">No banners configured.</div>
-                      ) : mailBanners.map((row) => (
-                        <div key={row.id} className="admin-entity-row">
-                          <div>
-                            <strong>{row.title}</strong> | Tone: {row.tone} | {row.active ? 'Active' : 'Inactive'}
-                            <div className="admin-entity-subtext">{row.message}</div>
-                          </div>
-                          <div className="admin-config-actions">
-                            <button className="admin-settings-ghost" onClick={() => editBanner(row)}>Edit</button>
-                            <button className="admin-settings-danger" onClick={() => deleteBanner(row.id)}>Delete</button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                </div>
+                </article>
                 {mailResult ? <div className="admin-config-result">{mailResult}</div> : null}
               </>
             )}
@@ -4011,7 +4004,7 @@ export default function AdminView(_props: AdminViewProps) {
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div className="admin-config-page">
             <div className="admin-config-head">
-              <h3>Workflow and Automation</h3>
+              <h3>Types and Workflow</h3>
               <div className="admin-config-actions">
                 {!workflowEditMode && selectedWorkflow ? (
                   <button className="admin-settings-primary" onClick={() => setWorkflowEditMode(true)}>Edit</button>
@@ -4043,6 +4036,7 @@ export default function AdminView(_props: AdminViewProps) {
                             setWorkflowEditMode(false)
                           }}
                         >
+                          <option value="">Select a type/flow to view</option>
                           {workflowDrafts.map((wf) => (
                             <option key={`type-${wf.name}`} value={wf.name}>{wf.name}</option>
                           ))}
@@ -4052,7 +4046,20 @@ export default function AdminView(_props: AdminViewProps) {
                   </article>
                 </div>
 
-                {selectedWorkflow ? (
+                {workflowDrafts.length === 0 ? (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      <p>No workflow available. Add one to continue.</p>
+                      <button className="admin-settings-primary" onClick={addWorkflow}>Add Workflow</button>
+                    </article>
+                  </div>
+                ) : !selectedWorkflowName ? (
+                  <div className="admin-config-grid one">
+                    <article className="admin-config-card">
+                      <p>Select a type/flow from the dropdown above to view its states, transitions, and action flow.</p>
+                    </article>
+                  </div>
+                ) : selectedWorkflow ? (
                   <div className="admin-config-grid one">
                     <article className="admin-config-card">
                       {!workflowEditMode ? (
@@ -4163,8 +4170,7 @@ export default function AdminView(_props: AdminViewProps) {
                 ) : (
                   <div className="admin-config-grid one">
                     <article className="admin-config-card">
-                      <p>No workflow available. Add one to continue.</p>
-                      <button className="admin-settings-primary" onClick={addWorkflow}>Add Workflow</button>
+                      <p>Select a valid type/flow to continue.</p>
                     </article>
                   </div>
                 )}
@@ -4248,16 +4254,16 @@ export default function AdminView(_props: AdminViewProps) {
                   {panel.fields.map((field) => renderField(field))}
                 </article>
               )) : (
-                <article className="admin-settings-card">
-                  <div className="admin-settings-toolbar-actions">
+                <article className="admin-settings-card queue-panel-card">
+                  <div className="queue-panel-tabs">
                     <button
-                      className={`admin-settings-ghost${queueSettingsView === 'ticket' ? ' active' : ''}`}
+                      className={`queue-panel-tab${queueSettingsView === 'ticket' ? ' active' : ''}`}
                       onClick={() => setQueueSettingsView('ticket')}
                     >
                       Ticket
                     </button>
                     <button
-                      className={`admin-settings-ghost${queueSettingsView === 'asset' ? ' active' : ''}`}
+                      className={`queue-panel-tab${queueSettingsView === 'asset' ? ' active' : ''}`}
                       onClick={() => setQueueSettingsView('asset')}
                     >
                       Asset
@@ -4266,7 +4272,7 @@ export default function AdminView(_props: AdminViewProps) {
                   {queueSettingsView === 'ticket' ? (
                     <>
                       <h3 style={{ marginTop: 0 }}>Ticket Team Queues</h3>
-                      <p>Create/edit/delete queues with service account (app user) and visibility scope.</p>
+                      <p>Create/edit/delete queues and manage visibility scope.</p>
                       <div className="admin-settings-toolbar-actions">
                         <button className="admin-settings-ghost" onClick={handleTicketQueueAdd}>Add Queue</button>
                         <button className="admin-settings-ghost" onClick={handleTicketQueueEdit}>Edit Queue</button>
@@ -4301,15 +4307,7 @@ export default function AdminView(_props: AdminViewProps) {
                                 <input
                                   value={ticketQueueLabelInput}
                                   onChange={(e) => setTicketQueueLabelInput(e.target.value)}
-                                  placeholder="L1 Team, L2 Team, Accounts Team, HR Team"
-                                />
-                              </label>
-                              <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Service account</span>
-                                <input
-                                  value={ticketQueueServiceAccountInput}
-                                  onChange={(e) => setTicketQueueServiceAccountInput(e.target.value)}
-                                  placeholder="app.user"
+                                  placeholder="Support Team"
                                 />
                               </label>
                               <label className="admin-field-row" style={{ marginTop: 10 }}>
@@ -4352,14 +4350,36 @@ export default function AdminView(_props: AdminViewProps) {
                       <div className="admin-queue-rules-plain">
                         {leftPanelConfig.ticketQueues.length === 0 ? (
                           <div className="admin-queue-rule-row"><small>No ticket queues configured.</small></div>
-                        ) : leftPanelConfig.ticketQueues.map((queue) => (
-                          <div key={queue.id} className="admin-queue-rule-row">
-                            <span>{queue.label}</span>
-                            <small>
-                              App User: {queue.serviceAccount || 'Not set'} | Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
-                            </small>
-                          </div>
-                        ))}
+                        ) : Array.from(
+                          leftPanelConfig.ticketQueues.reduce((acc, queue) => {
+                            const label = String(queue?.label || '').trim()
+                            if (!label) return acc
+                            const key = label.toLowerCase()
+                            const queueId = queue.queueId ?? Number(queue.id)
+                            const existing = acc.get(key)
+                            if (!existing || (Number.isFinite(queueId) && queueId > 0 && (!Number.isFinite(existing.queueId) || existing.queueId <= 0))) {
+                              acc.set(key, { ...queue, queueId })
+                            }
+                            return acc
+                          }, new Map<string, TicketQueueConfig & { queueId?: number }>() ).values()
+                        )
+                          .sort((a, b) => {
+                            const aId = Number.isFinite(a.queueId) ? Number(a.queueId) : Number.MAX_SAFE_INTEGER
+                            const bId = Number.isFinite(b.queueId) ? Number(b.queueId) : Number.MAX_SAFE_INTEGER
+                            return aId - bId
+                          })
+                          .map((queue) => {
+                          const queueId = queue.queueId ?? Number(queue.id)
+                          const queueIdLabel = Number.isFinite(queueId) && queueId > 0 ? ` (ID ${queueId})` : ''
+                          return (
+                            <div key={`${queue.label}-${queueIdLabel}`} className="admin-queue-rule-row">
+                              <span>{queue.label}{queueIdLabel}</span>
+                              <small>
+                                Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
+                              </small>
+                            </div>
+                          )
+                        })}
                       </div>
                     </>
                   ) : (
@@ -4464,6 +4484,29 @@ export default function AdminView(_props: AdminViewProps) {
                   )}
                 </article>
               )}
+              {activeItem === 'auto-assignment' ? (
+                <article className="admin-settings-card">
+                  <h3>Automation & Routing Rules</h3>
+                  <p>Queue and type routing rules for inbound emails.</p>
+                  <label className="admin-field-row">
+                    <span>Rule 1</span>
+                    <input value={mailForm.routingRuleHelpdeskQueue} onChange={(e) => updateMailRoot('routingRuleHelpdeskQueue', e.target.value)} />
+                  </label>
+                  <label className="admin-field-row">
+                    <span>Rule 2</span>
+                    <input value={mailForm.routingRuleAccessType} onChange={(e) => updateMailRoot('routingRuleAccessType', e.target.value)} />
+                  </label>
+                  <label className="admin-field-row">
+                    <span>Rule 3</span>
+                    <input value={mailForm.routingRuleSupplierType} onChange={(e) => updateMailRoot('routingRuleSupplierType', e.target.value)} />
+                  </label>
+                  <div className="admin-config-actions">
+                    <button className="admin-settings-primary" onClick={saveMailConfiguration} disabled={mailBusy || mailLoading}>
+                      {mailBusy ? 'Saving...' : 'Save Routing Rules'}
+                    </button>
+                  </div>
+                </article>
+              ) : null}
             </div>
           </section>
         </div>
@@ -4510,6 +4553,7 @@ export default function AdminView(_props: AdminViewProps) {
     </>
   )
 }
+
 
 
 

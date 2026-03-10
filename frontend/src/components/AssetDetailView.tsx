@@ -320,7 +320,7 @@ export default function AssetDetailView() {
             <div className="asset-card-icon">{renderAssetTypeIcon(asset.assetType || asset.category)}</div>
             <div className="asset-detail-head-main">
               <div className="asset-card-title-row">
-                <h3>{asset.assetId || asset.name || assetId}</h3>
+                <h3>{asset.assetId || assetId}</h3>
                 <span className={`asset-status ${String(asset.status || '').toLowerCase().replace(/\s+/g, '-')}`}>{asset.status || 'Active'}</span>
               </div>
               <div className="asset-card-divider" />
@@ -329,7 +329,6 @@ export default function AssetDetailView() {
           <div className="asset-detail-grid">
             <div className="asset-detail-col">
               <div><span>Asset ID:</span><strong>{formatText(asset.assetId || assetId)}</strong></div>
-              <div><span>Asset Name:</span><strong>{formatText(asset.name)}</strong></div>
               <div><span>Asset Type:</span><strong>{formatText(asset.assetType)}</strong></div>
               <div><span>Category:</span><strong>{formatText(asset.category)}</strong></div>
               <div><span>Sub-Category:</span><strong>{formatText(asset.subcategory)}</strong></div>

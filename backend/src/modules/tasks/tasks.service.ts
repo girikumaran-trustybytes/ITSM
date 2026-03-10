@@ -40,3 +40,7 @@ export async function updateTaskStatus(taskId: number, status: string) {
   )
   return rows[0] ?? null
 }
+
+export async function getTaskById(taskId: number) {
+  return queryOne<any>('SELECT * FROM "Task" WHERE "id" = $1', [taskId])
+}

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { acceptInvite, getCurrentUser, getGoogleConfig, getSsoConfig, login, loginWithGoogle, requestTwoFaChallenge, requestPasswordReset, resetPassword, storeAuthTokens, verifyTwoFa } from '../services/auth.service'
+import { acceptInvite, getCurrentUser, getGoogleConfig, getLastRoute, getSsoConfig, login, loginWithGoogle, requestTwoFaChallenge, requestPasswordReset, resetPassword, storeAuthTokens, verifyTwoFa } from '../services/auth.service'
 import { buildApiUrl } from '../services/api'
 import { useAuth } from '../contexts/AuthContext'
 import { getDefaultItsmRoute } from '../security/policy'
@@ -74,6 +74,27 @@ export default function Login() {
       permissions: payloadUser?.permissions || tokenUser?.permissions,
     })
   }
+
+  const getPostLoginRoute = (authPayload?: any) => {
+    const rememberedRoute = String(getLastRoute() || '').trim()
+    if (
+      rememberedRoute &&
+      rememberedRoute.startsWith('/') &&
+      rememberedRoute !== '/login' &&
+      !rememberedRoute.startsWith('/reset-password') &&
+      !rememberedRoute.startsWith('/auth/Account/ConfirmEmail')
+    ) {
+      return rememberedRoute
+    }
+    return getRoleBasedPostLoginRoute(authPayload)
+  }
+
+  useEffect(() => {
+    if (mode !== 'login') return
+    const current = getCurrentUser()
+    if (!current) return
+    navigate(getPostLoginRoute(current), { replace: true })
+  }, [mode, navigate])
 
   useEffect(() => {
     try {
@@ -152,7 +173,7 @@ export default function Login() {
       const remember = String(searchParams.get('rememberMe') || '1').trim() !== '0'
       storeAuthTokens(accessToken, refreshToken, remember)
       refreshUser()
-      navigate(getRoleBasedPostLoginRoute(), { replace: true })
+      navigate(getPostLoginRoute(), { replace: true })
       return
     }
 
@@ -209,7 +230,7 @@ export default function Login() {
       return
     }
     refreshUser()
-    navigate(getRoleBasedPostLoginRoute(data), { replace: true })
+    navigate(getPostLoginRoute(data), { replace: true })
   }
 
   async function onPasswordLogin(e: React.FormEvent) {

@@ -7,7 +7,11 @@ export async function getMailConfig() {
   return res.data
 }
 
-export async function updateInboundMailConfig(payload: { defaultQueue: string }) {
+export async function updateInboundMailConfig(payload: {
+  defaultQueue: string
+  inboundRoutes?: Array<{ email: string; queue: string }>
+  outboundRoutes?: Array<{ queue: string; from: string }>
+}) {
   const res = await api.post('/mail/config/inbound', payload)
   return res.data
 }

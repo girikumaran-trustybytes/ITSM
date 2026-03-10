@@ -32,7 +32,7 @@ function toRelativeTime(value: string | undefined) {
 function toTitle(action: string) {
   const key = String(action || '').trim().toLowerCase()
   if (key === 'create_ticket') return 'New Ticket Logged'
-  if (key === 'add_history') return 'Public Note'
+  if (key === 'add_history') return 'Internal Note'
   if (key === 'assign_asset') return 'Asset Assigned'
   if (key === 'unassign_asset') return 'Asset Unassigned'
   if (key === 'transition') return 'Ticket Status Updated'

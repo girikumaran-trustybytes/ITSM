@@ -2,6 +2,8 @@ import { Request, Response } from 'express'
 import * as svc from './assets.service'
 import { auditLog } from '../../common/logger/logger'
 
+const DEFAULT_ASSET_CATEGORY = 'Uncategorised'
+
 function parseOptionalDate(value: any): Date | undefined {
   if (!value) return undefined
   const d = new Date(value)
@@ -14,9 +16,9 @@ function buildAssetData(body: any, req: Request, isUpdate = false) {
   const set = (key: string, value: any) => { if (value !== undefined) data[key] = value }
 
   set('assetId', body.assetId)
-  set('name', body.name)
+  if (!isUpdate) set('name', body.assetId || body.name || null)
   set('assetType', body.assetType)
-  set('category', body.category)
+  set('category', String(body.category || '').trim() || DEFAULT_ASSET_CATEGORY)
   set('subcategory', body.subcategory || null)
   set('ciType', body.ciType || null)
   set('serial', body.serial || null)
@@ -176,13 +178,11 @@ export async function create(req: Request, res: Response) {
   const body = req.body || {}
   const {
     assetId,
-    name,
     assetType,
-    category,
     status,
   } = body
-  if (!assetId || !name || !assetType || !category || !status) {
-    return res.status(400).json({ error: 'Missing required fields: assetId, name, assetType, category, status' })
+  if (!assetId || !assetType || !status) {
+    return res.status(400).json({ error: 'Missing required fields: assetId, assetType, status' })
   }
   const created = await svc.createAsset(buildAssetData(body, req))
   // link tickets if provided

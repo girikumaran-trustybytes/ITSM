@@ -2,7 +2,7 @@ import api from './api'
 
 export type AssetPayload = {
   assetId: string
-  name: string
+  name?: string
   assetType: string
   category: string
   subcategory?: string | null

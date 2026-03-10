@@ -2,8 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  // Required for GitHub Pages project site deployment at /ITSM/
-  base: '/ITSM/',
+  // Use relative asset paths to keep deployment path-agnostic.
+  base: './',
   plugins: [react()],
   server: {
     port: 3000,

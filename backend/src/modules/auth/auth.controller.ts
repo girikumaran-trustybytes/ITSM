@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import * as authService from './auth.service'
+import { acceptInvitationToken } from '../users/invitations.service'
 
 function isDbError(err: any): boolean {
   const name = err?.constructor?.name ?? ''
@@ -19,10 +20,18 @@ function isDbError(err: any): boolean {
   )
 }
 
+function toBool(value: unknown, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback
+  const normalized = String(value).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  return fallback
+}
+
 export async function login(req: Request, res: Response) {
-  const { email, password, trustedDeviceToken } = req.body || {}
+  const { email, password, trustedDeviceToken, rememberMe } = req.body || {}
   try {
-    const result = await authService.login(email, password, trustedDeviceToken)
+    const result = await authService.login(email, password, trustedDeviceToken, toBool(rememberMe, false))
     res.json(result)
   } catch (err: any) {
     if (isDbError(err)) {
@@ -34,9 +43,9 @@ export async function login(req: Request, res: Response) {
 }
 
 export async function loginWithGoogle(req: Request, res: Response) {
-  const { idToken, trustedDeviceToken } = req.body || {}
+  const { idToken, trustedDeviceToken, rememberMe } = req.body || {}
   try {
-    const result = await authService.loginWithGoogle(idToken, trustedDeviceToken)
+    const result = await authService.loginWithGoogle(idToken, trustedDeviceToken, toBool(rememberMe, false))
     res.json(result)
   } catch (err: any) {
     if (isDbError(err)) {
@@ -75,10 +84,30 @@ export async function resetPassword(req: Request, res: Response) {
   }
 }
 
-export async function verifyMfa(req: Request, res: Response) {
-  const { challengeToken, code, dontAskAgain, trustedDeviceLabel } = req.body || {}
+export async function acceptInvite(req: Request, res: Response) {
+  const { token, password, name } = req.body || {}
   try {
-    const result = await authService.verifyMfa(challengeToken, code, Boolean(dontAskAgain), String(trustedDeviceLabel || 'browser'))
+    const result = await acceptInvitationToken(String(token || ''), String(password || ''), String(name || '') || null, { ipAddress: req.ip })
+    res.json(result)
+  } catch (err: any) {
+    if (isDbError(err)) {
+      res.status(503).json({ error: 'Service temporarily unavailable. Please try again later.' })
+      return
+    }
+    res.status(err.status || 400).json({ error: err.message || 'Unable to accept invitation' })
+  }
+}
+
+export async function verifyMfa(req: Request, res: Response) {
+  const { challengeToken, code, dontAskAgain, trustedDeviceLabel, rememberMe } = req.body || {}
+  try {
+    const result = await authService.verifyMfa(
+      challengeToken,
+      code,
+      Boolean(dontAskAgain),
+      String(trustedDeviceLabel || 'browser'),
+      toBool(rememberMe, false)
+    )
     res.json(result)
   } catch (err: any) {
     if (isDbError(err)) {

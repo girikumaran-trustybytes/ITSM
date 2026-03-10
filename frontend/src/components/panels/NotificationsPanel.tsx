@@ -48,16 +48,17 @@ function toMessage(item: NotificationRow) {
     return { title: `${ticketLabel} updated`, sub: `Action: ${item.action}` }
   }
 
-  if (entity === 'sla') {
-    return { title: `Maintenance / SLA policy update`, sub: `Action: ${item.action}` }
-  }
-  if (entity === 'asset') {
-    return { title: `Asset updated`, sub: `Action: ${item.action}` }
-  }
-  if (entity === 'change' || entity === 'problem' || entity === 'service' || entity === 'supplier') {
-    return { title: `${entity[0].toUpperCase()}${entity.slice(1)} updated`, sub: `Action: ${item.action}` }
-  }
-  return { title: `System notification`, sub: `Action: ${item.action || 'update'}` }
+  return { title: `Maintenance / SLA policy update`, sub: `Action: ${item.action || 'update'}` }
+}
+
+function shouldShowNotification(item: NotificationRow) {
+  const action = String(item.action || '').toLowerCase()
+  const entity = String(item.entity || '').toLowerCase()
+  const isMaintenance = entity === 'sla' || action.includes('maintenance') || action.includes('sla')
+  if (isMaintenance) return true
+  if (entity !== 'ticket') return false
+  if (action.includes('view') || action.includes('list') || action.includes('access_denied') || action.includes('delete')) return false
+  return true
 }
 
 export default function NotificationsPanel() {
@@ -123,6 +124,7 @@ export default function NotificationsPanel() {
   }, [load])
 
   const visible = items.filter((n) => {
+    if (!shouldShowNotification(n)) return false
     const id = toNotificationId(n.id)
     if (!id) return false
     if (state.deletedIds.includes(id)) return false

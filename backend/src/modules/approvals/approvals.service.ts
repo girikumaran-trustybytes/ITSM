@@ -48,3 +48,7 @@ export async function setApprovalStatus(approvalId: number, status: string, appr
   )
   return rows[0] ?? null
 }
+
+export async function getApprovalById(approvalId: number) {
+  return queryOne<any>('SELECT * FROM "Approval" WHERE "id" = $1', [approvalId])
+}

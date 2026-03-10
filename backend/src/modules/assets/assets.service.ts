@@ -1,5 +1,20 @@
 import { query, queryOne } from '../../db'
 
+const DEFAULT_ASSET_CATEGORY = 'Uncategorised'
+
+function normalizeAssetCategory(value: any) {
+  const next = String(value || '').trim()
+  return next || DEFAULT_ASSET_CATEGORY
+}
+
+function normalizeAssetRow<T extends Record<string, any>>(row: T): T {
+  if (!row || typeof row !== 'object') return row
+  return {
+    ...row,
+    category: normalizeAssetCategory((row as any).category),
+  } as T
+}
+
 function buildAssetWhere(opts: {
   q?: string
   status?: string
@@ -11,7 +26,7 @@ function buildAssetWhere(opts: {
   const params: any[] = []
   if (opts.q) {
     params.push(`%${opts.q}%`)
-    conditions.push(`("assetId" ILIKE $${params.length} OR "name" ILIKE $${params.length} OR "serial" ILIKE $${params.length} OR "category" ILIKE $${params.length} OR "supplier" ILIKE $${params.length})`)
+    conditions.push(`("assetId" ILIKE $${params.length} OR "serial" ILIKE $${params.length} OR "category" ILIKE $${params.length} OR "supplier" ILIKE $${params.length})`)
   }
   if (opts.status) {
     params.push(opts.status)
@@ -92,7 +107,7 @@ export async function listAssets(opts: {
   const [items, totalRow] = await Promise.all([itemsPromise, totalPromise])
   const total = Number(totalRow?.count || 0)
 
-  return { items, total, page, pageSize }
+  return { items: items.map((row: any) => normalizeAssetRow(row)), total, page, pageSize }
 }
 
 export async function getAssetById(id: number) {
@@ -132,24 +147,33 @@ export async function getAssetById(id: number) {
     ),
   ])
 
-  asset.childAssets = childAssets
-  asset.tickets = tickets
-  asset.assetChanges = assetChanges
-  asset.assetProblems = assetProblems
-  asset.assetServices = assetServices
-  return asset
+  const normalizedAsset = normalizeAssetRow(asset)
+  normalizedAsset.childAssets = childAssets
+  normalizedAsset.tickets = tickets
+  normalizedAsset.assetChanges = assetChanges
+  normalizedAsset.assetProblems = assetProblems
+  normalizedAsset.assetServices = assetServices
+  return normalizedAsset
 }
 
 export async function createAsset(data: any) {
-  const { text, values } = buildInsert('Asset', data)
+  const normalized = {
+    ...data,
+    category: normalizeAssetCategory(data?.category),
+  }
+  const { text, values } = buildInsert('Asset', normalized)
   const rows = await query(text, values)
-  return rows[0]
+  return normalizeAssetRow(rows[0])
 }
 
 export async function updateAsset(id: number, data: any) {
-  const { text, params } = buildUpdate('Asset', id, data)
+  const normalized = {
+    ...data,
+    ...(data?.category !== undefined ? { category: normalizeAssetCategory(data.category) } : {}),
+  }
+  const { text, params } = buildUpdate('Asset', id, normalized)
   const rows = await query(text, params)
-  return rows[0]
+  return normalizeAssetRow(rows[0])
 }
 
 export async function deleteAsset(id: number) {

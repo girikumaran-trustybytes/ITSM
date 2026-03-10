@@ -1,4 +1,7 @@
 ﻿import React from 'react'
+import { Link } from 'react-router-dom'
+
+import { getVisibleItsmNav } from '../security/policy'
 
 type NavItem = {
   id: string
@@ -114,12 +117,25 @@ export const primarySidebarModules = navItems.map((item) => ({
   label: item.label,
 }))
 
-export default function PrimarySidebar({ activeNav, setActiveNav, role }: { activeNav: string; setActiveNav: (id: string) => void; role?: string }) {
+function navPathById(id: string) {
+  if (id === 'dashboard') return '/dashboard'
+  if (id === 'suppliers') return '/supplier'
+  if (id === 'reports') return '/reports'
+  return `/${id}`
+}
+
+export default function PrimarySidebar({
+  activeNav,
+  setActiveNav,
+  auth,
+}: {
+  activeNav: string
+  setActiveNav: (id: string) => void
+  auth?: { role?: unknown; roles?: unknown; permissions?: unknown } | null
+}) {
+  const visibleIds = getVisibleItsmNav(auth)
   const visibleNavItems = navItems.filter((item) => {
-    if (role === 'ADMIN') return ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'accounts', 'reports', 'admin'].includes(item.id)
-    if (role === 'AGENT') return ['dashboard', 'tickets', 'assets', 'suppliers', 'accounts', 'reports'].includes(item.id)
-    if (role === 'USER') return ['tickets', 'reports'].includes(item.id)
-    return ['tickets', 'reports'].includes(item.id)
+    return visibleIds.includes(item.id as any)
   })
   return (
     <aside className="primary-left-panel">
@@ -127,9 +143,10 @@ export default function PrimarySidebar({ activeNav, setActiveNav, role }: { acti
 
       <nav className="nav-items">
         {visibleNavItems.map((item) => (
-          <button
+          <Link
             key={item.id}
             className={`nav-item ${activeNav === item.id ? 'active' : ''}`}
+            to={navPathById(item.id)}
             onClick={() => setActiveNav(item.id)}
             title={item.label}
           >
@@ -137,10 +154,9 @@ export default function PrimarySidebar({ activeNav, setActiveNav, role }: { acti
               <span className="nav-icon">{item.icon}</span>
             </div>
             <span className="nav-label">{item.label}</span>
-          </button>
+          </Link>
         ))}
       </nav>
     </aside>
   )
 }
-

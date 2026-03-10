@@ -18,7 +18,7 @@ import PortalTickets from './components/portal/PortalTickets'
 import PortalAssets from './components/portal/PortalAssets'
 import PortalNewTicket from './components/portal/PortalNewTicket'
 import AccountSecurityView from './components/AccountSecurityView'
-import { logout } from './services/auth.service'
+import { getLastRoute, logout, persistLastRoute } from './services/auth.service'
 import NotificationsPanel from './components/panels/NotificationsPanel'
 import TodoPanel from './components/panels/TodoPanel'
 import FeedPanel, { FEED_FILTERS, type FeedFilter } from './components/panels/FeedPanel'
@@ -76,14 +76,43 @@ function toNotificationId(value: any): number | null {
   return id
 }
 
+function shouldShowNotification(item: any) {
+  const action = String(item?.action || '').toLowerCase()
+  const entity = String(item?.entity || '').toLowerCase()
+  const isMaintenance = entity === 'sla' || action.includes('maintenance') || action.includes('sla')
+  if (isMaintenance) return true
+  if (entity !== 'ticket') return false
+  if (action.includes('view') || action.includes('list') || action.includes('access_denied') || action.includes('delete')) return false
+  return true
+}
+
+type ThemeMode = 'system' | 'light' | 'dark'
+const THEME_MODE_KEY = 'itsm-theme-mode'
+
+function resolveThemeMode(mode: ThemeMode): 'light' | 'dark' {
+  if (mode !== 'system') return mode
+  if (typeof window === 'undefined') return 'light'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function applyThemeMode(mode: ThemeMode) {
+  if (typeof document === 'undefined') return
+  document.documentElement.setAttribute('data-theme', resolveThemeMode(mode))
+}
+
 function MainShell() {
-  type NotificationToast = { id: number; title: string; sub: string }
+  type NotificationToast = { id: number; title: string; sub: string; kind: 'ticket' | 'maintenance' }
   const [activeNav, setActiveNav] = useState('dashboard')
   const { user } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showPresenceMenu, setShowPresenceMenu] = useState(false)
+  const [showAppearanceMenu, setShowAppearanceMenu] = useState(false)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem(THEME_MODE_KEY) : null
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system'
+  })
   const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
   const presenceHydratedRef = React.useRef(false)
   const lastRemotePresenceRef = React.useRef<PresenceStatus | null>(null)
@@ -115,6 +144,12 @@ function MainShell() {
   }, [location.pathname])
 
   useEffect(() => {
+    if (!user) return
+    const route = `${location.pathname || ''}${location.search || ''}`
+    persistLastRoute(route)
+  }, [user, location.pathname, location.search])
+
+  useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       const target = event.target as Node
       if (showProfileMenu) {
@@ -123,6 +158,7 @@ function MainShell() {
         if (!insideTrigger && !insidePanel) {
           setShowProfileMenu(false)
           setShowPresenceMenu(false)
+          setShowAppearanceMenu(false)
         }
       }
       if (activePanel && panelRef.current && !panelRef.current.contains(target)) {
@@ -135,6 +171,18 @@ function MainShell() {
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showProfileMenu, activePanel])
+
+  useEffect(() => {
+    applyThemeMode(themeMode)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THEME_MODE_KEY, themeMode)
+    }
+    if (themeMode !== 'system' || typeof window === 'undefined') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleChange = () => applyThemeMode('system')
+    media.addEventListener?.('change', handleChange)
+    return () => media.removeEventListener?.('change', handleChange)
+  }, [themeMode])
 
   useEffect(() => {
     setStoredPresenceStatus(presenceStatus)
@@ -245,6 +293,7 @@ function MainShell() {
         const rows: any[] = await fetchNotifications({ limit: 120 })
         const state = loadNotificationState(user)
         const visible = (Array.isArray(rows) ? rows : []).filter((n: any) => {
+          if (!shouldShowNotification(n)) return false
           const id = toNotificationId(n?.id)
           if (!id) return false
           if (state.deletedIds.includes(id)) return false
@@ -274,11 +323,17 @@ function MainShell() {
           const queued = fresh.map((item: any, index: number) => {
             const id = toNotificationId(item?.id) || (Date.now() + index)
             const ticketId = String(item?.ticketId || item?.meta?.ticketId || '')
-            const title = String(item?.entity || '').toLowerCase() === 'ticket'
-              ? 'New request logged.'
-              : 'New notification.'
-            const sub = ticketId ? `ID:${ticketId}` : `Action: ${String(item?.action || 'update')}`
-            return { id, title, sub }
+            const action = String(item?.action || '').toLowerCase()
+            const entity = String(item?.entity || '').toLowerCase()
+            const isMaintenance = entity === 'sla' || action.includes('maintenance') || action.includes('sla')
+            const kind: NotificationToast['kind'] = isMaintenance ? 'maintenance' : 'ticket'
+            const title = isMaintenance
+              ? 'Maintenance update'
+              : action.includes('create')
+                ? 'New ticket logged'
+                : 'Ticket updated'
+            const sub = isMaintenance ? `Action: ${String(item?.action || 'update')}` : (ticketId ? `ID:${ticketId}` : `Action: ${String(item?.action || 'update')}`)
+            return { id, title, sub, kind }
           })
           setNotificationPopups((prev) => [...prev, ...queued].slice(-6))
         }
@@ -356,6 +411,13 @@ function MainShell() {
         { label: id || 'Details', path: location.pathname },
       ]
     }
+    if (location.pathname.startsWith('/agents/')) {
+      const id = decodeURIComponent(location.pathname.split('/')[2] || '')
+      return [
+        { label: 'Agents', path: '/admin' },
+        { label: id || 'Details', path: location.pathname },
+      ]
+    }
     if (location.pathname.startsWith('/users/')) {
       const id = decodeURIComponent(location.pathname.split('/')[2] || '')
       return [
@@ -387,6 +449,8 @@ function MainShell() {
   const isDashboardRoute = location.pathname.startsWith('/dashboard')
   const isReportsRoute = location.pathname.startsWith('/reports')
   const isUsersListRoute = location.pathname === '/users'
+  const isUsersDetailRoute = location.pathname.startsWith('/users/')
+  const isAgentsDetailRoute = location.pathname.startsWith('/agents/')
   const isAccountsListRoute = location.pathname === '/accounts'
   const isAssetsListRoute = location.pathname === '/assets'
   const isAssetDetailRoute = location.pathname.startsWith('/assets/')
@@ -417,7 +481,8 @@ function MainShell() {
   }, [tabToolbarSearch, isUsersListRoute, isAccountsListRoute, isAssetsListRoute, isSuppliersListRoute, isAdminListRoute])
 
   const toolbarTarget =
-    isUsersListRoute ? 'users' :
+    isAgentsDetailRoute ? 'admin' :
+    (isUsersListRoute || isUsersDetailRoute) ? 'users' :
     isAccountsListRoute ? 'accounts' :
     isAssetsListRoute ? 'assets' :
     isSuppliersListRoute ? 'suppliers' :
@@ -434,6 +499,10 @@ function MainShell() {
   const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
   const userInitials = getUserInitials(user, 'G')
   const userAvatarUrl = getUserAvatarUrl(user)
+  const rememberedRoute = String(getLastRoute() || '').trim()
+  const shellDefaultRoute = rememberedRoute && rememberedRoute.startsWith('/') && rememberedRoute !== '/login'
+    ? rememberedRoute
+    : getDefaultItsmRoute(user)
 
   return (
     <div className="app-root">
@@ -529,6 +598,7 @@ function MainShell() {
               onClick={() => {
                 setShowProfileMenu((v) => !v)
                 setShowPresenceMenu(false)
+                setShowAppearanceMenu(false)
               }}
               style={{ ['--presence-color' as any]: activePresence.color }}
             >
@@ -541,7 +611,7 @@ function MainShell() {
       {notificationPopups.length ? (
         <div className="app-notification-stack" aria-live="polite" aria-atomic="false">
           {notificationPopups.slice(0, 1).map((toast) => (
-            <div className="app-notification-popup" key={toast.id}>
+            <div className={`app-notification-popup ${toast.kind}`} key={toast.id}>
               <button
                 className="app-notification-popup-close"
                 onClick={() => setNotificationPopups((prev) => prev.slice(1))}
@@ -549,7 +619,10 @@ function MainShell() {
               >
                 x
               </button>
-              <div className="app-notification-popup-title">{toast.title}</div>
+              <div className="app-notification-popup-title">
+                <span className="app-notification-popup-note">Note:</span>
+                <span>{toast.title}</span>
+              </div>
               <div className="app-notification-popup-sub">{toast.sub}</div>
             </div>
           ))}
@@ -559,7 +632,7 @@ function MainShell() {
         {showProfileMenu && (
           <div className="profile-panel" ref={profilePanelRef}>
             <div className="profile-panel-header">
-              <button className="profile-panel-close" onClick={() => { setShowProfileMenu(false); setShowPresenceMenu(false) }} aria-label="Close">
+              <button className="profile-panel-close" onClick={() => { setShowProfileMenu(false); setShowPresenceMenu(false); setShowAppearanceMenu(false) }} aria-label="Close">
                 ×
               </button>
             </div>
@@ -613,23 +686,94 @@ function MainShell() {
               </div>
               <div className="profile-panel-links">
                 <button
+                  className="profile-panel-link-item"
                   onClick={() => {
                     setShowProfileMenu(false)
                     setShowPresenceMenu(false)
+                    setShowAppearanceMenu(false)
                     navigate('/security')
                   }}
                 >
-                  Account &amp; Password
+                  <span className="profile-panel-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M12 3a4 4 0 0 1 4 4v2h1a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h1V7a4 4 0 0 1 4-4Z" />
+                      <path d="M9 9V7a3 3 0 0 1 6 0v2" />
+                    </svg>
+                  </span>
+                  <span>Account &amp; Password</span>
                 </button>
+                <div className="profile-panel-link-item-wrap">
+                  <button
+                    className="profile-panel-link-item"
+                    onClick={() => {
+                      setShowAppearanceMenu((prev) => !prev)
+                      setShowPresenceMenu(false)
+                    }}
+                    aria-expanded={showAppearanceMenu}
+                  >
+                    <span className="profile-panel-link-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" />
+                      </svg>
+                    </span>
+                    <span>Appearance</span>
+                    <span className="profile-panel-link-chevron" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="m9 6 6 6-6 6" />
+                      </svg>
+                    </span>
+                  </button>
+                  {showAppearanceMenu && (
+                    <div className="profile-appearance-menu">
+                      {([
+                        { value: 'system', label: 'System Default' },
+                        { value: 'light', label: 'Light' },
+                        { value: 'dark', label: 'Dark' },
+                      ] as const).map((option) => (
+                        <button
+                          key={option.value}
+                          className={`profile-appearance-option${themeMode === option.value ? ' active' : ''}`}
+                          onClick={() => setThemeMode(option.value)}
+                        >
+                          <span className={`profile-appearance-preview ${option.value}`} aria-hidden="true">
+                            <span />
+                          </span>
+                          <span className="profile-appearance-label">{option.label}</span>
+                          <span className="profile-appearance-check" aria-hidden="true">
+                            {themeMode === option.value ? '\u2713' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <button
+                  className="profile-panel-link-item"
                   onClick={() => {
                     setShowProfileMenu(false)
+                    setShowAppearanceMenu(false)
                     navigate('/portal/home')
                   }}
                 >
-                  Switch to End-User Portal
+                  <span className="profile-panel-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <rect x="3" y="4" width="18" height="16" rx="2" />
+                      <path d="M7 8h10M7 12h10M7 16h6" />
+                    </svg>
+                  </span>
+                  <span>View support portal</span>
                 </button>
-                <button onClick={() => logout()}>Log out</button>
+                <button className="profile-panel-link-item profile-panel-link-logout" onClick={() => logout()}>
+                  <span className="profile-panel-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                      <path d="M10 17l5-5-5-5" />
+                      <path d="M15 12H3" />
+                    </svg>
+                  </span>
+                  <span>Log out</span>
+                </button>
               </div>
             </div>
           </div>
@@ -717,6 +861,30 @@ function MainShell() {
                   title="Back to Assets"
                   aria-label="Back to Assets"
                   onClick={() => navigate('/assets')}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              )}
+              {isUsersDetailRoute && (
+                <button
+                  className="table-icon-btn"
+                  title="Back to Users"
+                  aria-label="Back to Users"
+                  onClick={() => navigate('/users')}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              )}
+              {isAgentsDetailRoute && (
+                <button
+                  className="table-icon-btn"
+                  title="Back to Agents"
+                  aria-label="Back to Agents"
+                  onClick={() => navigate('/admin')}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="15 18 9 12 15 6" />
@@ -863,7 +1031,7 @@ function MainShell() {
         )}
         <Routes>
           <Route path="/dashboard" element={<div className="work-main"><Dashboard /></div>} />
-          <Route path="/" element={<Navigate to="/portal/login" replace />} />
+          <Route path="/" element={<Navigate to={shellDefaultRoute} replace />} />
           <Route
             path="/tickets"
             element={
@@ -928,6 +1096,7 @@ function MainShell() {
             }
           />
           <Route path="/users/:userId" element={<div className="work-main"><UserDetailView /></div>} />
+          <Route path="/agents/:userId" element={<div className="work-main"><UserDetailView mode="agents" /></div>} />
           <Route
             path="/accounts"
             element={

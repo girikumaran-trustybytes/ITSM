@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { query, queryOne, withClient } from '../../db'
 import { auditLog } from '../../common/logger/logger'
 import { sendSmtpMail } from '../../services/mail.integration'
+import { enforceProtectedAdminBaseline, enforceProtectedAdminRoleByUserId, isProtectedAdminEmail } from './protected-admin'
 
 type PermissionRow = {
   permission_id: number
@@ -26,6 +27,7 @@ type ModuleSeed = {
 
 const predefinedRoles = ['ADMIN', 'AGENT', 'USER', 'SUPPLIER', 'CUSTOM'] as const
 type PredefinedRole = typeof predefinedRoles[number]
+const INVITE_TOKEN_TTL_HOURS = 8
 
 const enterpriseModuleSeeds: ModuleSeed[] = [
   { key: 'dashboard', label: 'Dashboard', sortOrder: 1 },
@@ -43,6 +45,8 @@ const baseModulePermissions: Array<{ module: string; action: string; label: stri
   { module: 'dashboard', action: 'kpi_view', label: 'KPI View' },
   { module: 'tickets', action: 'view', label: 'View Tickets' },
   { module: 'tickets', action: 'create', label: 'Create Tickets' },
+  { module: 'tickets', action: 'access', label: 'Access Tickets' },
+  { module: 'tickets', action: 'export', label: 'Export Tickets' },
   { module: 'tickets', action: 'edit', label: 'Edit Tickets' },
   { module: 'tickets', action: 'delete', label: 'Delete Tickets' },
   { module: 'tickets', action: 'resolve', label: 'Resolve Tickets' },
@@ -50,14 +54,17 @@ const baseModulePermissions: Array<{ module: string; action: string; label: stri
   { module: 'assets', action: 'view', label: 'View Asset' },
   { module: 'assets', action: 'create', label: 'Create Asset' },
   { module: 'assets', action: 'edit', label: 'Edit Asset' },
+  { module: 'assets', action: 'export', label: 'Export Asset' },
   { module: 'assets', action: 'delete', label: 'Delete Asset' },
   { module: 'users', action: 'view', label: 'View User' },
   { module: 'users', action: 'create', label: 'Create User' },
   { module: 'users', action: 'edit', label: 'Edit User' },
+  { module: 'users', action: 'export', label: 'Export User' },
   { module: 'users', action: 'delete', label: 'Delete User' },
   { module: 'suppliers', action: 'view', label: 'View Supplier' },
   { module: 'suppliers', action: 'create', label: 'Create Supplier' },
   { module: 'suppliers', action: 'edit', label: 'Edit Supplier' },
+  { module: 'suppliers', action: 'export', label: 'Export Supplier' },
   { module: 'suppliers', action: 'delete', label: 'Delete Supplier' },
   { module: 'reports', action: 'view', label: 'View Report' },
   { module: 'reports', action: 'edit', label: 'Edit Report' },
@@ -156,21 +163,23 @@ const permissionTemplateSeeds: PermissionTemplateSeed[] = [
 ]
 
 const defaultQueues: Array<{ key: string; label: string }> = [
-  { key: 'helpdesk', label: 'Helpdesk' },
-  { key: 'l1', label: 'L1' },
-  { key: 'hr', label: 'HR' },
-  { key: 'l2', label: 'L2' },
-  { key: 'l3', label: 'L3' },
-  { key: 'supplier', label: 'Supplier' },
+  { key: 'support', label: 'Support Team' },
+  { key: 'hr', label: 'HR Team' },
+  { key: 'management', label: 'Management' },
 ]
 
 const defaultQueueActions: Array<{ key: string; label: string }> = [
+  { key: 'view', label: 'View' },
+  { key: 'create', label: 'Create' },
+  { key: 'access', label: 'Access' },
+  { key: 'edit', label: 'Edit' },
+  { key: 'export', label: 'Export' },
   { key: 'accept', label: 'Accept' },
   { key: 'acknowledge', label: 'Acknowledge' },
   { key: 'email_user', label: 'Email User' },
   { key: 'log_to_supplier', label: 'Log to Supplier' },
   { key: 'email_supplier', label: 'Email Supplier' },
-  { key: 'internal_note', label: 'Public Note' },
+  { key: 'internal_note', label: 'Internal Note' },
   { key: 'note_plus_email', label: 'Note + Email' },
   { key: 'resolve', label: 'Resolve' },
   { key: 'call_back_supplier', label: 'Call Back Supplier' },
@@ -184,6 +193,168 @@ function normalizeRoleName(role: string | undefined | null): string {
   return 'CUSTOM'
 }
 
+function normalizeDisplayStatus(inviteStatus: string | null | undefined): 'Active' | 'Invited' {
+  return String(inviteStatus || '').trim().toLowerCase() === 'accepted' ? 'Active' : 'Invited'
+}
+
+function normalizeTeamKey(input: any): string {
+  return String(input || '').trim().toLowerCase()
+}
+
+async function seedQueueActionsAndPermissions(client: any, queue: TicketQueueRow) {
+  for (const action of defaultQueueActions) {
+    await client.query(
+      'INSERT INTO ticket_queue_actions (queue_id, action_key, action_label, is_custom) VALUES ($1, $2, $3, false) ON CONFLICT (queue_id, action_key) DO NOTHING',
+      [queue.queue_id, action.key, action.label]
+    )
+  }
+
+  const actions = await client.query<{ action_key: string; action_label: string }>(
+    'SELECT action_key, action_label FROM ticket_queue_actions WHERE queue_id = $1',
+    [queue.queue_id]
+  )
+
+  for (const row of actions.rows) {
+    const permissionKey = buildTicketPermissionKey(queue.queue_key, row.action_key)
+    const permissionLabel = `Ticket - ${queue.queue_label} - ${row.action_label}`
+    await client.query(
+      `INSERT INTO permissions (permission_key, permission_name, module, module_name, action, queue, label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (permission_key) DO UPDATE
+       SET permission_name = COALESCE(permissions.permission_name, EXCLUDED.permission_name),
+           module_name = COALESCE(permissions.module_name, EXCLUDED.module_name),
+           label = COALESCE(permissions.label, EXCLUDED.label)`,
+      [
+        permissionKey,
+        permissionKey,
+        'ticket',
+        'ticket',
+        row.action_key,
+        queue.queue_key,
+        permissionLabel,
+      ]
+    )
+  }
+
+  const permissionRows = await client.query<PermissionRow>(
+    'SELECT permission_id, permission_key, module, action, queue, label FROM permissions WHERE module = $1 AND queue = $2',
+    ['ticket', queue.queue_key]
+  )
+  const roleRows = await client.query<{ role_id: number; role_name: string }>('SELECT role_id, role_name FROM roles')
+  const templateRows = await client.query<{ template_id: number; template_key: string }>(
+    'SELECT template_id, template_key FROM permission_templates'
+  )
+
+  for (const roleRow of roleRows.rows) {
+    for (const permission of permissionRows.rows) {
+      await client.query(
+        `INSERT INTO role_permissions (role_id, permission_id, allowed)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (role_id, permission_id)
+         DO UPDATE SET allowed = EXCLUDED.allowed`,
+        [roleRow.role_id, permission.permission_id, defaultRoleAllowed(roleRow.role_name, permission)]
+      )
+    }
+  }
+
+  for (const templateRow of templateRows.rows) {
+    for (const permission of permissionRows.rows) {
+      await client.query(
+        `INSERT INTO template_permissions (template_id, permission_id, allowed)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (template_id, permission_id)
+         DO UPDATE SET allowed = EXCLUDED.allowed`,
+        [templateRow.template_id, permission.permission_id, defaultTemplateAllowed(templateRow.template_key, permission)]
+      )
+    }
+  }
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter((value) => String(value || '').trim().length > 0)))
+}
+
+async function ensureTeamMembershipSchema() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS teams (
+      team_id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      team_key TEXT NOT NULL,
+      team_name TEXT NOT NULL,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, team_key)
+    )
+  `)
+  await query(`
+    CREATE TABLE IF NOT EXISTS team_members (
+      team_id INTEGER NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(team_id, user_id)
+    )
+  `)
+  await query(`CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON team_members(user_id)`)
+  await query(`
+    INSERT INTO teams (tenant_id, team_key, team_name)
+    SELECT 1, tq.queue_key, tq.queue_label
+    FROM ticket_queues tq
+    ON CONFLICT (tenant_id, team_key) DO UPDATE
+    SET team_name = EXCLUDED.team_name
+  `)
+}
+
+async function syncTeamMembershipWithClient(
+  client: any,
+  userId: number,
+  tenantId: number,
+  teamKeys: string[]
+) {
+  const normalizedTeamKeys = uniqueStrings(teamKeys.map((teamKey) => normalizeTeamKey(teamKey)))
+  if (normalizedTeamKeys.length === 0) {
+    await client.query(
+      `DELETE FROM team_members
+       WHERE user_id = $1
+         AND team_id IN (SELECT team_id FROM teams WHERE tenant_id = $2)`,
+      [userId, tenantId]
+    )
+    return
+  }
+
+  for (const teamKey of normalizedTeamKeys) {
+    await client.query(
+      `INSERT INTO teams (tenant_id, team_key, team_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (tenant_id, team_key) DO UPDATE
+       SET team_name = EXCLUDED.team_name`,
+      [tenantId, teamKey, teamKey.toUpperCase()]
+    )
+  }
+
+  const teamRows = await client.query(
+    `SELECT team_id
+     FROM teams
+     WHERE tenant_id = $1
+       AND team_key = ANY($2::text[])`,
+    [tenantId, normalizedTeamKeys]
+  )
+
+  await client.query(
+    `DELETE FROM team_members
+     WHERE user_id = $1
+       AND team_id IN (SELECT team_id FROM teams WHERE tenant_id = $2)`,
+    [userId, tenantId]
+  )
+
+  for (const row of (teamRows.rows || []) as Array<{ team_id: number }>) {
+    await client.query(
+      `INSERT INTO team_members (team_id, user_id)
+       VALUES ($1, $2)
+       ON CONFLICT (team_id, user_id) DO NOTHING`,
+      [row.team_id, userId]
+    )
+  }
+}
+
 function defaultRoleAllowed(role: string, permission: PermissionRow): boolean {
   const roleName = normalizeRoleName(role)
   if (roleName === 'ADMIN') return true
@@ -192,25 +363,17 @@ function defaultRoleAllowed(role: string, permission: PermissionRow): boolean {
     if (permission.module === 'tickets') return true
     if (permission.module === 'assets' && ['view', 'create', 'edit'].includes(permission.action)) return true
     if (permission.module === 'users' && permission.action === 'view') return true
-    if (permission.module === 'suppliers' && permission.action === 'view') return true
-    if (permission.module === 'reports' && permission.action === 'view') return true
+    if (permission.module === 'suppliers' && ['view', 'create', 'edit', 'delete'].includes(permission.action)) return true
     if (permission.module === 'dashboard' && permission.action === 'read') return true
     if (permission.module === 'ticket') return true
     if (permission.module === 'asset' && ['read', 'create', 'edit'].includes(permission.action)) return true
     if (permission.module === 'user' && permission.action === 'read') return true
-    if (permission.module === 'supplier' && permission.action === 'read') return true
-    if (permission.module === 'report' && permission.action === 'read') return true
+    if (permission.module === 'supplier' && ['read', 'create', 'edit', 'delete'].includes(permission.action)) return true
     return false
   }
   if (roleName === 'USER') {
-    if (permission.module === 'dashboard' && permission.action === 'view') return true
-    if (permission.module === 'tickets' && permission.action === 'view') return true
-    if (permission.module === 'assets' && permission.action === 'view') return true
-    if (permission.module === 'users' && permission.action === 'view') return true
-    if (permission.module === 'reports' && permission.action === 'view') return true
-    if (permission.module === 'dashboard' && permission.action === 'read') return true
-    if (permission.module === 'asset' && permission.action === 'read') return true
-    if (permission.module === 'ticket' && permission.action === 'email_user') return true
+    if (permission.module === 'tickets' && ['view', 'create', 'edit'].includes(permission.action)) return true
+    if (permission.module === 'ticket' && ['email_user', 'note_plus_email', 'internal_note'].includes(permission.action)) return true
     return false
   }
   if (roleName === 'SUPPLIER') {
@@ -434,6 +597,16 @@ export async function ensureRbacSeeded() {
           PRIMARY KEY(role_id, permission_id)
         );
 
+        CREATE TABLE IF NOT EXISTS user_roles (
+          user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+          role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+          created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(user_id, role_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
+        CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
+
         CREATE TABLE IF NOT EXISTS modules (
           module_id SERIAL PRIMARY KEY,
           module_key TEXT NOT NULL UNIQUE,
@@ -518,6 +691,7 @@ export async function ensureRbacSeeded() {
         )
       }
 
+
       const queues = await client.query<TicketQueueRow>('SELECT queue_id, queue_key, queue_label FROM ticket_queues')
       for (const q of queues.rows) {
         for (const action of defaultQueueActions) {
@@ -585,11 +759,32 @@ export async function ensureRbacSeeded() {
       for (const roleRow of roleRows.rows) {
         for (const permission of permissionRows.rows) {
           await client.query(
-            'INSERT INTO role_permissions (role_id, permission_id, allowed) VALUES ($1, $2, $3) ON CONFLICT (role_id, permission_id) DO NOTHING',
+            `INSERT INTO role_permissions (role_id, permission_id, allowed)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (role_id, permission_id)
+             DO UPDATE SET allowed = EXCLUDED.allowed`,
             [roleRow.role_id, permission.permission_id, defaultRoleAllowed(roleRow.role_name, permission)]
           )
         }
       }
+
+      await client.query(`
+        DO $$
+        BEGIN
+          BEGIN
+            INSERT INTO user_roles (user_id, role_id)
+            SELECT u."id", r.role_id
+            FROM "User" u
+            INNER JOIN roles r ON r.role_name = UPPER(COALESCE(u."role"::text, 'USER'))
+            ON CONFLICT (user_id, role_id) DO NOTHING;
+          EXCEPTION
+            WHEN foreign_key_violation THEN
+              -- Legacy installs may still have user_roles.user_id -> app_user(id).
+              -- Skip auto-sync here instead of failing RBAC seed.
+              NULL;
+          END;
+        END $$;
+      `)
 
       for (const templateRow of templateRows.rows) {
         for (const permission of permissionRows.rows) {
@@ -603,6 +798,8 @@ export async function ensureRbacSeeded() {
         }
       }
 
+
+      await enforceProtectedAdminBaseline()
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -612,6 +809,28 @@ export async function ensureRbacSeeded() {
 }
 
 async function getLatestInviteStatus(userId: number): Promise<string> {
+  const modernTable = await queryOne<{ exists: string | null }>(
+    `SELECT to_regclass('public.invitations')::text AS exists`
+  )
+  if (modernTable?.exists) {
+    const modern = await queryOne<{ status: string; last_sent_at: string | null }>(
+      `SELECT status, last_sent_at
+       FROM invitations
+       WHERE user_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId]
+    )
+    if (modern) {
+      const status = String(modern.status || '').toUpperCase()
+      if (status === 'PENDING' && !modern.last_sent_at) return 'invite_pending'
+      if (status === 'PENDING') return 'invited_not_accepted'
+      if (status === 'ACCEPTED') return 'accepted'
+      if (status === 'EXPIRED') return 'expired'
+      if (status === 'REVOKED') return 'revoked'
+    }
+  }
+
   const row = await queryOne<{ status: string }>(
     'SELECT status FROM user_invites WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
     [userId]
@@ -736,6 +955,7 @@ export async function getUserPermissionsSnapshot(userId: number) {
        ON uo.permission_id = p.permission_id
       AND uo.user_id = $2
      WHERE p.module = ANY($3::text[])
+        OR p.module = 'ticket'
      ORDER BY p.module, p.queue NULLS FIRST, p.action`,
     [roleId, user.id, moduleKeys]
   )
@@ -769,7 +989,7 @@ export async function getUserPermissionsSnapshot(userId: number) {
       name: user.name,
       email: user.email,
       role: normalizeRoleName(user.role),
-      status: user.status,
+      status: normalizeDisplayStatus(inviteStatus),
       inviteStatus,
     },
     roles: predefinedRoles,
@@ -796,8 +1016,13 @@ export async function upsertUserPermissions(
   actorUserId?: number
 ) {
   await ensureRbacSeeded()
-  const user = await queryOne<{ id: number; role: string }>('SELECT "id", "role" FROM "User" WHERE "id" = $1', [userId])
+  await ensureTeamMembershipSchema()
+  const user = await queryOne<{ id: number; role: string; tenantId: number | null; email: string }>('SELECT "id", "role", "tenantId", "email" FROM "User" WHERE "id" = $1', [userId])
   if (!user) throw { status: 404, message: 'User not found' }
+  if (isProtectedAdminEmail(user.email)) {
+    await enforceProtectedAdminRoleByUserId(userId)
+    return getUserPermissionsSnapshot(userId)
+  }
 
   const allPermissions = await query<PermissionRow>('SELECT permission_id, permission_key, module, action, queue, label FROM permissions')
   const permissionByKey = allPermissions.reduce<Record<string, PermissionRow>>((acc, row) => {
@@ -820,7 +1045,7 @@ export async function upsertUserPermissions(
       }, {})
       : {}
 
-  if (payload.autoSwitchCustom && requestedRole !== 'CUSTOM') {
+  if (payload.autoSwitchCustom && requestedRole !== 'CUSTOM' && requestedRole !== 'ADMIN') {
     const baseline = selectedTemplate ? selectedTemplate.permissions : {}
     const baselineToCompare = Object.keys(baseline).length > 0
       ? baseline
@@ -854,6 +1079,7 @@ export async function upsertUserPermissions(
     acc[row.permission_key] = Boolean(row.allowed)
     return acc
   }, {})
+  const tenantId = Number(user.tenantId || 1)
 
   await withClient(async (client) => {
     await client.query('BEGIN')
@@ -877,6 +1103,38 @@ export async function upsertUserPermissions(
           [userId, permission.permission_id, Boolean(selectedAllowed)]
         )
       }
+
+      const accessTeamKeys = uniqueStrings(
+        allPermissions
+          .filter((permission) => permission.module === 'ticket' && permission.action === 'access' && permission.queue)
+          .filter((permission) => {
+            const explicit = Object.prototype.hasOwnProperty.call(submitted, permission.permission_key)
+              ? submitted[permission.permission_key]
+              : undefined
+            const effectiveAllowed = explicit !== undefined
+              ? Boolean(explicit)
+              : Boolean(baselineTemplateByKey[permission.permission_key])
+            return effectiveAllowed
+          })
+          .map((permission) => normalizeTeamKey(permission.queue))
+      )
+
+      if (accessTeamKeys.length > 0) {
+        await client.query(
+          `INSERT INTO "ServiceAccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
+           VALUES ($1, TRUE, FALSE, $2, NOW(), NOW())
+           ON CONFLICT ("userId")
+           DO UPDATE SET
+             "enabled" = TRUE,
+             "autoUpgradeQueues" = FALSE,
+             "queueIds" = EXCLUDED."queueIds",
+             "updatedAt" = NOW()`,
+          [userId, accessTeamKeys]
+        )
+      } else {
+        await client.query(`DELETE FROM "ServiceAccounts" WHERE "userId" = $1`, [userId])
+      }
+      await syncTeamMembershipWithClient(client, userId, tenantId, accessTeamKeys)
       await client.query('COMMIT')
     } catch (error) {
       await client.query('ROLLBACK')
@@ -893,6 +1151,179 @@ export async function upsertUserPermissions(
   })
 
   return getUserPermissionsSnapshot(userId)
+}
+
+export async function listTicketQueues() {
+  await ensureRbacSeeded()
+  const rows = await query<TicketQueueRow>(
+    'SELECT queue_id, queue_key, queue_label FROM ticket_queues ORDER BY queue_id'
+  )
+  return rows
+}
+
+export async function createTicketQueue(payload: { label: string; queueKey?: string }, actorUserId?: number) {
+  await ensureRbacSeeded()
+  await ensureTeamMembershipSchema()
+  const label = String(payload.label || '').trim()
+  if (!label) throw { status: 400, message: 'Queue label is required' }
+  const queueKey = normalizeTeamKey(payload.queueKey || label)
+  if (!queueKey) throw { status: 400, message: 'Queue key is required' }
+
+  return withClient(async (client) => {
+    await client.query('BEGIN')
+    try {
+      const existing = await client.query<TicketQueueRow>(
+        'SELECT queue_id, queue_key, queue_label FROM ticket_queues WHERE queue_key = $1',
+        [queueKey]
+      )
+      if (existing.rows.length > 0) {
+        const row = existing.rows[0]
+        if (row.queue_label !== label) {
+          await client.query(
+            'UPDATE ticket_queues SET queue_label = $1 WHERE queue_id = $2',
+            [label, row.queue_id]
+          )
+        }
+        await client.query(
+          `INSERT INTO teams (tenant_id, team_key, team_name)
+           VALUES (1, $1, $2)
+           ON CONFLICT (tenant_id, team_key) DO UPDATE SET team_name = EXCLUDED.team_name`,
+          [queueKey, label]
+        )
+        await seedQueueActionsAndPermissions(client, { ...row, queue_label: label })
+        await client.query('COMMIT')
+        return { ...row, queue_label: label }
+      }
+
+      const inserted = await client.query<TicketQueueRow>(
+        'INSERT INTO ticket_queues (queue_key, queue_label) VALUES ($1, $2) RETURNING queue_id, queue_key, queue_label',
+        [queueKey, label]
+      )
+      const row = inserted.rows[0]
+      await ensureTeamMembershipSchema()
+      await client.query(
+        `INSERT INTO teams (tenant_id, team_key, team_name)
+         VALUES (1, $1, $2)
+         ON CONFLICT (tenant_id, team_key) DO UPDATE SET team_name = EXCLUDED.team_name`,
+        [queueKey, label]
+      )
+      await seedQueueActionsAndPermissions(client, row)
+      await client.query('COMMIT')
+
+      await auditLog({
+        action: 'create_ticket_queue',
+        entity: 'ticket_queue',
+        entityId: row.queue_id,
+        user: actorUserId,
+        meta: { queueKey: row.queue_key, queueLabel: row.queue_label },
+      })
+
+      return row
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    }
+  })
+}
+
+export async function updateTicketQueue(
+  queueId: number,
+  payload: { label: string },
+  actorUserId?: number
+) {
+  await ensureRbacSeeded()
+  await ensureTeamMembershipSchema()
+  const label = String(payload.label || '').trim()
+  if (!label) throw { status: 400, message: 'Queue label is required' }
+
+  return withClient(async (client) => {
+    await client.query('BEGIN')
+    try {
+      const existing = await client.query<TicketQueueRow>(
+        'SELECT queue_id, queue_key, queue_label FROM ticket_queues WHERE queue_id = $1',
+        [queueId]
+      )
+      if (existing.rows.length === 0) throw { status: 404, message: 'Queue not found' }
+      const row = existing.rows[0]
+      await client.query('UPDATE ticket_queues SET queue_label = $1 WHERE queue_id = $2', [label, queueId])
+      await client.query(
+        `INSERT INTO teams (tenant_id, team_key, team_name)
+         VALUES (1, $1, $2)
+         ON CONFLICT (tenant_id, team_key) DO UPDATE SET team_name = EXCLUDED.team_name`,
+        [row.queue_key, label]
+      )
+
+      const actions = await client.query<{ action_key: string; action_label: string }>(
+        'SELECT action_key, action_label FROM ticket_queue_actions WHERE queue_id = $1',
+        [queueId]
+      )
+      for (const action of actions.rows) {
+        const permissionKey = buildTicketPermissionKey(row.queue_key, action.action_key)
+        const permissionLabel = `Ticket - ${label} - ${action.action_label}`
+        await client.query(
+          'UPDATE permissions SET label = $1 WHERE permission_key = $2',
+          [permissionLabel, permissionKey]
+        )
+      }
+
+      await client.query('COMMIT')
+      await auditLog({
+        action: 'update_ticket_queue',
+        entity: 'ticket_queue',
+        entityId: queueId,
+        user: actorUserId,
+        meta: { queueKey: row.queue_key, queueLabel: label },
+      })
+      return { ...row, queue_label: label }
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    }
+  })
+}
+
+export async function deleteTicketQueue(queueId: number, actorUserId?: number) {
+  await ensureRbacSeeded()
+  await ensureTeamMembershipSchema()
+  return withClient(async (client) => {
+    await client.query('BEGIN')
+    try {
+      const existing = await client.query<TicketQueueRow>(
+        'SELECT queue_id, queue_key, queue_label FROM ticket_queues WHERE queue_id = $1',
+        [queueId]
+      )
+      if (existing.rows.length === 0) throw { status: 404, message: 'Queue not found' }
+      const row = existing.rows[0]
+
+      const permissionIds = await client.query<{ permission_id: number }>(
+        'SELECT permission_id FROM permissions WHERE module = $1 AND queue = $2',
+        ['ticket', row.queue_key]
+      )
+      const ids = permissionIds.rows.map((p) => p.permission_id)
+      if (ids.length > 0) {
+        await client.query('DELETE FROM role_permissions WHERE permission_id = ANY($1::int[])', [ids])
+        await client.query('DELETE FROM template_permissions WHERE permission_id = ANY($1::int[])', [ids])
+        await client.query('DELETE FROM permissions WHERE permission_id = ANY($1::int[])', [ids])
+      }
+
+      await client.query('DELETE FROM ticket_queues WHERE queue_id = $1', [queueId])
+      await client.query('DELETE FROM teams WHERE tenant_id = 1 AND team_key = $1', [row.queue_key])
+      await client.query('UPDATE "ServiceAccounts" SET "queueIds" = array_remove("queueIds", $1)', [row.queue_key])
+
+      await client.query('COMMIT')
+      await auditLog({
+        action: 'delete_ticket_queue',
+        entity: 'ticket_queue',
+        entityId: queueId,
+        user: actorUserId,
+        meta: { queueKey: row.queue_key, queueLabel: row.queue_label },
+      })
+      return row
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    }
+  })
 }
 
 export async function createTicketQueueCustomAction(payload: {
@@ -987,6 +1418,22 @@ function trimSlash(url: string) {
   return String(url || '').replace(/\/+$/, '')
 }
 
+function formatInviteExpiryIst(date: Date): string {
+  const day = new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+  const time = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Kolkata',
+  }).format(date)
+  return `${day} at ${time} IST`
+}
+
 function invitationContext() {
   const appName = String(
     process.env.APPLICATION_NAME ||
@@ -1042,7 +1489,8 @@ async function sendInviteEmail(
   const person = (name || 'User').trim()
   const actorName = String(actor?.name || ctx.senderName).trim()
   const actorEmail = String(actor?.email || ctx.supportEmail).trim()
-  const expiresText = expiresAt.toISOString()
+  const expiresText = formatInviteExpiryIst(expiresAt)
+  const supportEmail = String(ctx.supportEmail || 'girikumaran@trustybytes.in').trim()
   const contactLine = [ctx.supportEmail, ctx.supportPhone].filter(Boolean).join(' | ')
   const signatureContact = contactLine || actorEmail || 'Support Desk'
 
@@ -1055,25 +1503,19 @@ async function sendInviteEmail(
     ? [
       `Dear ${person},`,
       '',
-      `This is a gentle reminder regarding your access to the ${ctx.appName} web application.`,
+      `As per your request, we are sending you a new account reactivation link for your ${ctx.appName} account, as your previous credentials were reported as compromised.`,
       '',
-      `If you have not yet logged in, please use the link below to access the system:`,
-      `${ctx.loginUrl}`,
+      `To secure your account and set a new password, please click the reactivation link below:`,
       '',
-      `Activation / reset link:`,
+      `Reactivate Account`,
       `${inviteLink}`,
-      `Link expiry: ${expiresText}`,
       '',
-      `Username: ${email}`,
-      `Password setup: Use the activation/reset link above to set a new password.`,
+      `For security reasons, this link will expire on ${expiresText}. We strongly recommend completing the reactivation process as soon as possible.`,
       '',
-      `If you need a new activation link or have forgotten your login details, please let us know and we will be happy to assist.`,
+      `If you did not request this reactivation link, please ignore this email and immediately report it to ${supportEmail}.`,
       '',
       `Best regards,`,
-      actorName,
-      ctx.senderTitle,
-      ctx.companyName,
-      signatureContact,
+      `TB Support Team`,
     ].join('\n')
     : [
       `Dear ${person},`,
@@ -1105,20 +1547,17 @@ async function sendInviteEmail(
     ? `
       <div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.55;color:#111827">
         <p>Dear ${htmlEscape(person)},</p>
-        <p>This is a gentle reminder regarding your access to the <strong>${htmlEscape(ctx.appName)}</strong> web application.</p>
-        <p>If you have not yet logged in, please use the link below to access the system:<br/>
-        <a href="${htmlEscape(ctx.loginUrl)}">${htmlEscape(ctx.loginUrl)}</a></p>
-        <p><strong>Activation / reset link:</strong><br/>
-        <a href="${htmlEscape(inviteLink)}">${htmlEscape(inviteLink)}</a><br/>
-        <small>Link expiry: ${htmlEscape(expiresText)}</small></p>
-        <p><strong>Username:</strong> ${htmlEscape(email)}<br/>
-        <strong>Password setup:</strong> Use the activation/reset link above to set a new password.</p>
-        <p>If you need a new activation link or have forgotten your login details, please let us know and we will be happy to assist.</p>
+        <p>As per your request, we are sending you a new account reactivation link for your <strong>${htmlEscape(ctx.appName)}</strong> account, as your previous credentials were reported as compromised.</p>
+        <p>To secure your account and set a new password, please click the reactivation link below:</p>
+        <p>
+          <a href="${htmlEscape(inviteLink)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:11px 24px;border-radius:999px;font-weight:600">
+            Reactivate Account
+          </a>
+        </p>
+        <p>For security reasons, this link will expire on ${htmlEscape(expiresText)}. We strongly recommend completing the reactivation process as soon as possible.</p>
+        <p>If you did not request this reactivation link, please ignore this email and immediately report it to <a href="mailto:${htmlEscape(supportEmail)}">${htmlEscape(supportEmail)}</a>.</p>
         <p>Best regards,<br/>
-        ${htmlEscape(actorName)}<br/>
-        ${htmlEscape(ctx.senderTitle)}<br/>
-        ${htmlEscape(ctx.companyName)}<br/>
-        ${htmlEscape(signatureContact)}</p>
+        TB Support Team</p>
       </div>
     `
     : `
@@ -1177,7 +1616,7 @@ export async function sendUserInvite(
 
   const token = crypto.randomBytes(32).toString('hex')
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_HOURS * 60 * 60 * 1000)
 
   await query(
     `INSERT INTO user_invites (user_id, token_hash, expires_at, status, sent_at)
@@ -1187,7 +1626,6 @@ export async function sendUserInvite(
   await query('UPDATE "User" SET "status" = $1, "updatedAt" = NOW() WHERE "id" = $2', ['INVITED', userId])
 
   const ctx = invitationContext()
-  const inviteLink = `${ctx.appBaseUrl}/activate?token=${token}&user=${userId}`
   const actor = actorUserId
     ? await queryOne<{ name: string | null; email: string | null }>(
       'SELECT "name", "email" FROM "User" WHERE "id" = $1',
@@ -1198,6 +1636,9 @@ export async function sendUserInvite(
   const primaryEmail = String(user.email || '').trim()
   const recipientEmail = workEmail || primaryEmail
   if (!recipientEmail) throw { status: 400, message: 'User does not have a valid mail ID to send invite' }
+  const activationBase = String(process.env.INVITE_ACTIVATION_BASE_URL || 'http://localhost:3000/#').trim()
+  const root = activationBase.includes('#') ? activationBase : `${activationBase}/#`
+  const inviteLink = `${root.replace(/\/+$/, '')}/auth/Account/ConfirmEmail?userId=${encodeURIComponent(String(userId))}&token=${encodeURIComponent(token)}&email=${encodeURIComponent(recipientEmail)}`
 
   await sendInviteEmail(recipientEmail, user.name, inviteLink, expiresAt, mode, actor)
 
@@ -1237,3 +1678,4 @@ export async function sendServiceAccountInvite(
     toEmail: options?.toEmail,
   })
 }
+

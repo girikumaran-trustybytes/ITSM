@@ -28,6 +28,95 @@ export type MailConfig = {
 
 type MailInboundRoutingConfig = {
   defaultQueue: string
+  inboundRoutes: Array<{ email: string; queue: string }>
+  outboundRoutes: Array<{ queue: string; from: string }>
+}
+
+function htmlEscape(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function toHtmlFromText(text: string): string {
+  const normalized = String(text || '').trim()
+  if (!normalized) return '<p style="margin:0 0 16px 0;">(No content)</p>'
+  const blocks = normalized
+    .split(/\r?\n\r?\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (blocks.length === 0) return '<p style="margin:0 0 16px 0;">(No content)</p>'
+  return blocks
+    .map((part) => `<p style="margin:0 0 16px 0;">${htmlEscape(part).replace(/\r?\n/g, '<br/>')}</p>`)
+    .join('')
+}
+
+function applyGlobalMailTemplate(contentHtml: string): string {
+  const bodyHtml = String(contentHtml || '').trim() || '<p style="margin:0 0 16px 0;">(No content)</p>'
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notification</title>
+  </head>
+  <body style="margin:0;padding:16px 18px;color:#111827;font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;text-align:left;line-height:1.7;font-size:15px;background:#ffffff;">
+    ${bodyHtml}
+  </body>
+</html>`
+}
+
+type MailAttachment = {
+  filename: string
+  path?: string
+  content?: Buffer | string
+  contentType?: string
+  cid?: string
+  disposition?: 'inline' | 'attachment'
+  encoding?: string
+}
+
+function inlineDataImagesAsCid(html: string): { html: string; attachments: MailAttachment[] } {
+  const source = String(html || '')
+  if (!source) return { html: source, attachments: [] }
+  const attachments: MailAttachment[] = []
+  const cache = new Map<string, string>()
+  let counter = 0
+
+  const transformed = source.replace(
+    /(src\s*=\s*["'])(data:image\/([a-z0-9.+-]+);base64,([^"']+))(["'])/gi,
+    (_match, prefix: string, dataUrl: string, subtype: string, b64Body: string, suffix: string) => {
+      const key = String(dataUrl || '')
+      if (cache.has(key)) {
+        return `${prefix}cid:${cache.get(key)}${suffix}`
+      }
+      const normalizedBase64 = String(b64Body || '').replace(/\s+/g, '')
+      let content: Buffer
+      try {
+        content = Buffer.from(normalizedBase64, 'base64')
+      } catch {
+        return `${prefix}${dataUrl}${suffix}`
+      }
+      if (!content.length) return `${prefix}${dataUrl}${suffix}`
+      const safeSubtype = String(subtype || 'png').toLowerCase().replace(/[^a-z0-9.+-]/g, '') || 'png'
+      const cid = `inline-image-${Date.now()}-${counter}@itsm`
+      counter += 1
+      cache.set(key, cid)
+      attachments.push({
+        filename: `inline-${counter}.${safeSubtype.replace('+xml', '')}`,
+        content,
+        contentType: `image/${safeSubtype}`,
+        cid,
+        disposition: 'inline',
+      })
+      return `${prefix}cid:${cid}${suffix}`
+    }
+  )
+
+  return { html: transformed, attachments }
 }
 
 const MAIL_PROVIDER_PRESETS: Record<MailConfig['provider'], { smtp: { host: string; port: number; secure: boolean }; imap: { host: string; port: number; secure: boolean } }> = {
@@ -57,9 +146,19 @@ const MAIL_PROVIDER_PRESETS: Record<MailConfig['provider'], { smtp: { host: stri
   },
 }
 
-const DEFAULT_INBOUND_QUEUE = String(process.env.MAIL_TICKET_DEFAULT_QUEUE || 'Helpdesk').trim() || 'Helpdesk'
+const DEFAULT_INBOUND_QUEUE = String(process.env.MAIL_TICKET_DEFAULT_QUEUE || 'Support Team').trim() || 'Support Team'
 let runtimeInboundRoutingConfig: MailInboundRoutingConfig = {
   defaultQueue: DEFAULT_INBOUND_QUEUE,
+  inboundRoutes: [
+    { email: 'support@trustybytes.in', queue: 'Support Team' },
+    { email: 'hr@trustybytes.in', queue: 'HR Team' },
+    { email: 'management@trustybytes.in', queue: 'Management Team' },
+  ],
+  outboundRoutes: [
+    { queue: 'Support Team', from: 'support@trustybytes.in' },
+    { queue: 'HR Team', from: 'hr@trustybytes.in' },
+    { queue: 'Management Team', from: 'management@trustybytes.in' },
+  ],
 }
 
 function normalizeMailProvider(value: unknown): MailConfig['provider'] {
@@ -133,20 +232,63 @@ export function getPublicMailConfig() {
     },
     inbound: {
       defaultQueue: runtimeInboundRoutingConfig.defaultQueue,
+      inboundRoutes: runtimeInboundRoutingConfig.inboundRoutes,
+      outboundRoutes: runtimeInboundRoutingConfig.outboundRoutes,
     },
   }
 }
 
 export function getInboundRoutingConfig(): MailInboundRoutingConfig {
-  return { ...runtimeInboundRoutingConfig }
+  return {
+    defaultQueue: runtimeInboundRoutingConfig.defaultQueue,
+    inboundRoutes: [...runtimeInboundRoutingConfig.inboundRoutes],
+    outboundRoutes: [...runtimeInboundRoutingConfig.outboundRoutes],
+  }
 }
 
 export function setInboundRoutingConfig(next: Partial<MailInboundRoutingConfig>) {
   const normalizedQueue = String(next?.defaultQueue || '').trim()
+  const inboundRoutes = Array.isArray(next?.inboundRoutes)
+    ? next!.inboundRoutes
+      .map((row: any) => ({
+        email: String(row?.email || '').trim().toLowerCase(),
+        queue: String(row?.queue || '').trim(),
+      }))
+      .filter((row: any) => row.email && row.queue)
+    : runtimeInboundRoutingConfig.inboundRoutes
+  const outboundRoutes = Array.isArray(next?.outboundRoutes)
+    ? next!.outboundRoutes
+      .map((row: any) => ({
+        queue: String(row?.queue || '').trim(),
+        from: String(row?.from || '').trim().toLowerCase(),
+      }))
+      .filter((row: any) => row.queue && row.from)
+    : runtimeInboundRoutingConfig.outboundRoutes
   runtimeInboundRoutingConfig = {
     defaultQueue: normalizedQueue || runtimeInboundRoutingConfig.defaultQueue || DEFAULT_INBOUND_QUEUE,
+    inboundRoutes,
+    outboundRoutes,
   }
   return getInboundRoutingConfig()
+}
+
+export function resolveInboundQueueByRecipient(toRaw: string | undefined, fallbackQueue?: string) {
+  const explicitDefault = String(fallbackQueue || '').trim()
+  if (explicitDefault) return explicitDefault
+  const target = String(toRaw || '').toLowerCase()
+  const matched = runtimeInboundRoutingConfig.inboundRoutes.find((route) => {
+    const email = String(route.email || '').trim().toLowerCase()
+    return email && target.includes(email)
+  })
+  if (matched?.queue) return matched.queue
+  return String(runtimeInboundRoutingConfig.defaultQueue || DEFAULT_INBOUND_QUEUE).trim() || DEFAULT_INBOUND_QUEUE
+}
+
+export function resolveOutboundFromForQueue(queueName: string | undefined) {
+  const queue = String(queueName || '').trim().toLowerCase()
+  if (!queue) return ''
+  const matched = runtimeInboundRoutingConfig.outboundRoutes.find((route) => String(route.queue || '').trim().toLowerCase() === queue)
+  return String(matched?.from || '').trim()
 }
 
 function mergeConfig(override?: Partial<MailConfig>): MailConfig {
@@ -217,7 +359,7 @@ export async function sendSmtpMail(
     text?: string
     html?: string
     from?: string
-    attachments?: Array<{ filename: string; path?: string; contentType?: string }>
+    attachments?: MailAttachment[]
   },
   override?: Partial<MailConfig>
 ) {
@@ -235,6 +377,14 @@ export async function sendSmtpMail(
   const subject = String(payload.subject || '').trim()
   if (!subject) throw { status: 400, message: 'Subject is required' }
   if (!payload.text && !payload.html) throw { status: 400, message: 'Either text or html body is required' }
+  const normalizedText = String(payload.text || '').trim()
+  const normalizedHtml = String(payload.html || '').trim()
+  const finalHtml = applyGlobalMailTemplate(normalizedHtml || toHtmlFromText(normalizedText))
+  const inlineMedia = inlineDataImagesAsCid(finalHtml)
+  const outgoingAttachments: MailAttachment[] = [
+    ...(Array.isArray(payload.attachments) ? payload.attachments : []),
+    ...inlineMedia.attachments,
+  ]
 
   const transport = nodemailer.createTransport({
     host: cfg.host,
@@ -249,9 +399,9 @@ export async function sendSmtpMail(
     cc: cc.length ? cc : undefined,
     bcc: bcc.length ? bcc : undefined,
     subject,
-    text: payload.text,
-    html: payload.html,
-    attachments: payload.attachments,
+    text: normalizedText || undefined,
+    html: inlineMedia.html,
+    attachments: outgoingAttachments.length ? outgoingAttachments : undefined,
   })
 
   return {

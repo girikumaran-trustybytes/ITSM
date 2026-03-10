@@ -11,7 +11,10 @@ import { getRowsPerPage } from '../utils/pagination'
 import { loadLeftPanelConfig, type QueueRule, type TicketQueueConfig } from '../utils/leftPanelConfig'
 import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, toPresenceClass, type PresenceStatus } from '../utils/presence'
 import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../utils/avatar'
+
+const PLATFORM_FROM_MAIL = String((import.meta as any).env?.VITE_PLATFORM_BASE_MAIL || 'girikumaran@trustybytes.in').trim()
 const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
 const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
 
@@ -52,6 +55,14 @@ type MailBannerRecord = {
   title: string
   message: string
   tone: 'info' | 'success' | 'warning' | 'danger'
+  active: boolean
+}
+
+type EmailTemplateRecord = {
+  id: string
+  name: string
+  buttonKey: string
+  body: string
   active: boolean
 }
 
@@ -134,10 +145,17 @@ export default function TicketsView() {
   const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
   const [composerBodyHtml, setComposerBodyHtml] = useState('')
   const [composerBodyText, setComposerBodyText] = useState('')
+  const [composerMediaAccept, setComposerMediaAccept] = useState('image/*,video/*,audio/*')
   const [showSendReview, setShowSendReview] = useState(false)
+  const [internalNoteMediaAccept, setInternalNoteMediaAccept] = useState('image/*,video/*,audio/*')
   const composerFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const composerMediaInputRef = React.useRef<HTMLInputElement | null>(null)
   const internalNoteFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const internalNoteMediaInputRef = React.useRef<HTMLInputElement | null>(null)
   const composerEditorRef = React.useRef<HTMLDivElement | null>(null)
+  const internalNoteEditorRef = React.useRef<HTMLDivElement | null>(null)
+  const composerMediaUrlsRef = React.useRef<string[]>([])
+  const internalNoteMediaUrlsRef = React.useRef<string[]>([])
   const slaPolicyMenuRef = React.useRef<HTMLDivElement | null>(null)
   const slaPriorityMenuRef = React.useRef<HTMLDivElement | null>(null)
   const progressFilterMenuRef = React.useRef<HTMLDivElement | null>(null)
@@ -308,17 +326,13 @@ export default function TicketsView() {
   }
 
   const getSlaElapsedColor = (elapsedPercent: number) => {
-    const p = Math.max(0, Math.min(100, Math.round(elapsedPercent / 10) * 10))
-    if (p <= 0) return '#006400'
-    if (p <= 10) return '#008000'
-    if (p <= 20) return '#32CD32'
-    if (p <= 30) return '#9ACD32'
-    if (p <= 40) return '#FFD700'
-    if (p <= 50) return '#FFA500'
-    if (p <= 60) return '#FF8C00'
-    if (p <= 70) return '#FF6A00'
-    if (p <= 80) return '#FF4500'
-    if (p <= 90) return '#FF0000'
+    const p = Math.max(0, Number(elapsedPercent || 0))
+    if (p <= 0) return '#008000'
+    if (p < 30) return '#008000'
+    if (p < 50) return '#9ACD32'
+    if (p < 70) return '#FFA500'
+    if (p < 90) return '#FF6A00'
+    if (p < 100) return '#FF0000'
     return '#8B0000'
   }
 
@@ -676,11 +690,17 @@ export default function TicketsView() {
   }, [])
 
   React.useEffect(() => {
-    userService.listUsers({ limit: 500 }).then((users) => {
-      setAgents(Array.isArray(users) ? users : [])
-    }).catch(() => {
-      setAgents([])
-    })
+    const loadAgents = () => {
+      userService.listUsers({ limit: 500 }).then((users) => {
+        setAgents(Array.isArray(users) ? users : [])
+      }).catch(() => {
+        setAgents([])
+      })
+    }
+    loadAgents()
+    const onRbacUpdated = () => loadAgents()
+    window.addEventListener('rbac-permissions-updated', onRbacUpdated)
+    return () => window.removeEventListener('rbac-permissions-updated', onRbacUpdated)
   }, [])
 
   React.useEffect(() => {
@@ -804,14 +824,21 @@ export default function TicketsView() {
   const defaultWorkflowOptions = ['Fault Workflow', 'Incident Management Workflow', 'Service Request Workflow', 'Change Workflow']
 
   const createTicketTypeOptions = ['Incident', 'Service request', 'HR request', 'Task', 'New starter']
-  const createTeamOptions = [
-    { key: 'helpdesk', label: 'Support Desk' },
-    { key: 'l1', label: 'Helpdesk (Line1)' },
-    { key: 'l2', label: 'L2' },
-    { key: 'l3', label: 'L3' },
-    { key: 'hr', label: 'HR' },
-    { key: 'supplier', label: 'Supplier' },
-  ]
+  const createTeamOptions = React.useMemo(
+    () =>
+      ticketQueues
+        .filter((queue) => {
+          if (!Array.isArray(queue.visibilityRoles) || queue.visibilityRoles.length === 0) return true
+          return queue.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+        })
+        .filter((queue) => {
+          const label = String(queue.label || '').trim().toLowerCase()
+          return label !== 'helpdesk' && label !== 'service request'
+        })
+        .map((queue) => ({ key: String(queue.id || '').trim(), label: String(queue.label || '').trim() }))
+        .filter((team) => team.key && team.label),
+    [ticketQueues, user?.role]
+  )
   const classificationOptions = ['', 'Hardware', 'Software', 'Access', 'Network', 'General']
   const selectedCreateType = String(newIncidentForm.ticketType || '').trim().toLowerCase()
   const isIncidentType = selectedCreateType === 'incident'
@@ -819,6 +846,14 @@ export default function TicketsView() {
   const isHrRequestType = selectedCreateType === 'hr request'
   const isTaskType = selectedCreateType === 'task'
   const isNewStarterType = selectedCreateType === 'new starter'
+  const supportTeamOption = React.useMemo(
+    () => createTeamOptions.find((team) => team.label.toLowerCase().includes('support')) || createTeamOptions[0] || null,
+    [createTeamOptions]
+  )
+  const hrTeamOption = React.useMemo(
+    () => createTeamOptions.find((team) => team.label.toLowerCase().includes('hr')) || null,
+    [createTeamOptions]
+  )
   const selectedCreateTeamLabel = createTeamOptions.find((team) => team.key === newIncidentForm.teamId)?.label || ''
   const taskStaffOptions = React.useMemo(() => {
     return agents
@@ -830,23 +865,28 @@ export default function TicketsView() {
   }, [agents])
 
   React.useEffect(() => {
-    if (isServiceRequestType && newIncidentForm.teamId !== 'helpdesk') {
-      setNewIncidentForm((prev) => ({ ...prev, teamId: 'helpdesk' }))
+    if ((isIncidentType || isTaskType || isServiceRequestType) && !String(newIncidentForm.teamId || '').trim() && supportTeamOption?.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
       return
     }
-    if (isHrRequestType && newIncidentForm.teamId !== 'hr') {
-      setNewIncidentForm((prev) => ({ ...prev, teamId: 'hr' }))
+    if (isServiceRequestType && supportTeamOption?.key && newIncidentForm.teamId !== supportTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
+      return
+    }
+    if (isHrRequestType && hrTeamOption?.key && newIncidentForm.teamId !== hrTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: hrTeamOption.key }))
       return
     }
     if (isNewStarterType) {
       const starterTemplate =
         'New Starter Name,\nJob Title,\nStart Date,\nLine Manager,\nSoftware Access Required,\nGoogle workspace account,\nGoogle Drive Access Required,\nAdd To Google Drive User Group(s),\nHardware Required'
       const updates: any = {}
-      if (newIncidentForm.teamId !== 'hr') updates.teamId = 'hr'
+      const preferredTeam = hrTeamOption?.key || supportTeamOption?.key || ''
+      if (preferredTeam && newIncidentForm.teamId !== preferredTeam) updates.teamId = preferredTeam
       if (!String(newIncidentForm.description || '').trim()) updates.description = starterTemplate
       if (Object.keys(updates).length > 0) setNewIncidentForm((prev) => ({ ...prev, ...updates }))
     }
-  }, [isServiceRequestType, isHrRequestType, isNewStarterType, newIncidentForm.teamId, newIncidentForm.description])
+  }, [isIncidentType, isTaskType, isServiceRequestType, isHrRequestType, isNewStarterType, newIncidentForm.teamId, newIncidentForm.description, supportTeamOption, hrTeamOption])
   const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Resolved', 'Closed']
   const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
   const createdFromOptions = ['User portal', 'ITSM Platform']
@@ -1030,7 +1070,12 @@ export default function TicketsView() {
     if (isTaskType && staffLabelValue) metaLines.push(`Staff: ${staffLabelValue}`)
     if (isTaskType && String(newIncidentForm.startDate || '').trim()) metaLines.push(`Start Date: ${String(newIncidentForm.startDate).trim()}`)
     if (isTaskType && String(newIncidentForm.endDate || '').trim()) metaLines.push(`End Date: ${String(newIncidentForm.endDate).trim()}`)
-    const finalDescription = metaLines.length > 0 ? `${descriptionValue}\n\n${metaLines.join('\n')}` : descriptionValue
+    let finalDescription = descriptionValue
+    if (metaLines.length > 0) {
+      for (const line of metaLines) {
+        finalDescription = `${finalDescription}\n${line}`
+      }
+    }
 
     // call backend createTicket
     (async () => {
@@ -1308,157 +1353,136 @@ export default function TicketsView() {
     const buttons: { label: string; onClick: () => void; className?: string }[] = [{ label: 'Back', onClick: closeDetail }]
     const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
     if (acknowledgedDone && !responseMarked) buttons.push({ label: 'Mark as responsed', onClick: handleMarkAsResponsed })
-    buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
-    buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
     const go = (to: string, note?: string) => () => applyStatus(to, note || `Status updated to ${to}`)
+    const addCommonButtons = () => {
+      if (statusKey === 'new' && !actionState.accepted) buttons.push({ label: 'Accept', onClick: handleAccept })
+      if (acceptedDone && !actionState.ackSent) buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
+      if (acceptedDone) buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
+      if (acknowledgedDone && !actionState.supplierLogged) {
+        buttons.push({ label: 'Log to Supplier', onClick: () => openComposer('logSupplier') })
+      } else if (acknowledgedDone) {
+        buttons.push({ label: 'Email Supplier', onClick: () => openComposer('emailSupplier') })
+        buttons.push({ label: 'Call Back Supplier', onClick: () => openComposer('callbackSupplier') })
+      }
+      buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+      if (acceptedDone) buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
+      if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
+    }
+
+    addCommonButtons()
+
+    if (statusKey === 'closed') {
+      buttons.push({ label: 'Re-open', onClick: go('In Progress', 'Re-opened') })
+      return buttons
+    }
+    if (statusKey === 'rejected') {
+      buttons.push({ label: 'Re-open', onClick: go('In Progress', 'Re-opened') })
+      buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
 
     if (typeKey === 'servicerequest') {
       if (statusKey === 'new') {
-        buttons.push({ label: 'Accept', onClick: handleAccept })
         buttons.push({ label: 'Request Approval', onClick: go('Awaiting Approval') })
         buttons.push({ label: 'Start', onClick: go('In Progress') })
-        buttons.push({ label: 'Quick Close', onClick: go('Closed') })
       } else if (statusKey === 'awaiting approval') {
         buttons.push({ label: 'Approve', onClick: go('In Progress') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
       } else if (statusKey === 'in progress') {
-        buttons.push({ label: 'Fulfill', onClick: go('Fulfilled') })
-      } else if (statusKey === 'fulfilled') {
-        buttons.push({ label: 'Close', onClick: go('Closed') })
-      } else if (statusKey === 'closed') {
-        buttons.push({ label: 'Re-open', onClick: go('In Progress', 'Re-opened') })
+        buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
+      } else if (statusKey === 'resolved') {
+        buttons.push({ label: 'Close', onClick: () => openComposer('close') })
       }
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      return buttons
     }
+
     if (typeKey === 'changerequestassetreplacement' || typeKey === 'changerequest') {
       if (statusKey === 'new') buttons.push({ label: 'Verify Asset', onClick: go('Under Verification') })
-      else if (statusKey === 'under verification') buttons.push({ label: 'Send for Approval', onClick: go('Awaiting Approval') })
+      else if (statusKey === 'under verification') buttons.push({ label: 'Request Approval', onClick: go('Awaiting Approval') })
       else if (statusKey === 'awaiting approval') {
         buttons.push({ label: 'Approve', onClick: go('Approved') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
-      } else if (statusKey === 'approved') {
-        buttons.push({ label: 'Start Procurement', onClick: go('Procurement') })
-        buttons.push({ label: 'Start Implementation', onClick: go('In Progress') })
-      } else if (statusKey === 'procurement') buttons.push({ label: 'Start Implementation', onClick: go('In Progress') })
-      else if (statusKey === 'in progress') buttons.push({ label: 'Complete Change', onClick: go('Completed') })
-      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      } else if (statusKey === 'approved') buttons.push({ label: 'Start', onClick: go('In Progress') })
+      else if (statusKey === 'in progress') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
+
     if (typeKey === 'accessrequest') {
-      if (statusKey === 'new') buttons.push({ label: 'Send to Manager', onClick: go('Manager Approval') })
+      if (statusKey === 'new') buttons.push({ label: 'Request Approval', onClick: go('Manager Approval') })
       else if (statusKey === 'manager approval') {
         buttons.push({ label: 'Approve', onClick: go('IT Approval') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
-      } else if (statusKey === 'it approval') buttons.push({ label: 'IT Approve', onClick: go('Provisioning') })
-      else if (statusKey === 'provisioning') buttons.push({ label: 'Provision Access', onClick: go('Completed') })
-      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      } else if (statusKey === 'it approval') buttons.push({ label: 'Start', onClick: go('Provisioning') })
+      else if (statusKey === 'provisioning') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
+
     if (typeKey === 'newstarterrequest') {
-      if (statusKey === 'new') buttons.push({ label: 'Confirm by HR', onClick: go('HR Confirmation') })
+      if (statusKey === 'new') buttons.push({ label: 'Request HR Confirmation', onClick: go('HR Confirmation') })
       else if (statusKey === 'hr confirmation') buttons.push({ label: 'Start IT Setup', onClick: go('IT Setup') })
-      else if (statusKey === 'it setup') buttons.push({ label: 'Allocate Asset', onClick: go('Asset Allocation') })
-      else if (statusKey === 'asset allocation') buttons.push({ label: 'Mark Ready', onClick: go('Ready for Joining') })
-      else if (statusKey === 'ready for joining') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      else if (statusKey === 'it setup') buttons.push({ label: 'Mark Ready', onClick: go('Ready for Joining') })
+      else if (statusKey === 'ready for joining') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
+
     if (typeKey === 'leaverrequest') {
-      if (statusKey === 'new') buttons.push({ label: 'HR Confirm', onClick: go('HR Confirmation') })
+      if (statusKey === 'new') buttons.push({ label: 'Request HR Confirmation', onClick: go('HR Confirmation') })
       else if (statusKey === 'hr confirmation') buttons.push({ label: 'Revoke Access', onClick: go('Access Revoked') })
-      else if (statusKey === 'access revoked') buttons.push({ label: 'Collect Asset', onClick: go('Asset Collected') })
-      else if (statusKey === 'asset collected') buttons.push({ label: 'Complete Offboarding', onClick: go('Completed') })
-      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      else if (statusKey === 'access revoked') buttons.push({ label: 'Complete Offboarding', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
+
     if (typeKey === 'task') {
-      if (statusKey === 'new') buttons.push({ label: 'Accept', onClick: go('Assigned') })
-      else if (statusKey === 'assigned') buttons.push({ label: 'Start', onClick: go('In Progress') })
-      else if (statusKey === 'in progress') buttons.push({ label: 'Complete', onClick: go('Completed') })
-      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      if (statusKey === 'assigned') buttons.push({ label: 'Start', onClick: go('In Progress') })
+      else if (statusKey === 'in progress') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
+
     if (typeKey === 'softwarerequest') {
       if (statusKey === 'new') buttons.push({ label: 'Request Approval', onClick: go('Manager Approval') })
       else if (statusKey === 'manager approval') {
-        buttons.push({ label: 'Budget Approve', onClick: go('Budget Approval') })
+        buttons.push({ label: 'Approve', onClick: go('Budget Approval') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
-      } else if (statusKey === 'budget approval') buttons.push({ label: 'Start Procurement', onClick: go('Procurement') })
+      } else if (statusKey === 'budget approval') buttons.push({ label: 'Start', onClick: go('Procurement') })
       else if (statusKey === 'procurement') buttons.push({ label: 'Install Software', onClick: go('Installation') })
       else if (statusKey === 'installation') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
-      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
+
     if (typeKey === 'hrrequest') {
-      if (statusKey === 'new') buttons.push({ label: 'Send to HR', onClick: go('HR Review') })
+      if (statusKey === 'new') buttons.push({ label: 'Start', onClick: go('HR Review') })
       else if (statusKey === 'hr review') {
-        buttons.push({ label: 'Start Review', onClick: go('In Progress') })
+        buttons.push({ label: 'Approve', onClick: go('In Progress') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
-      } else if (statusKey === 'in progress') buttons.push({ label: 'Resolve', onClick: go('Resolved') })
-      else if (statusKey === 'resolved') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      } else if (statusKey === 'in progress') buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
+      else if (statusKey === 'resolved') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
+
     if (typeKey === 'peripheralrequest') {
       if (statusKey === 'new') buttons.push({ label: 'Check Stock', onClick: go('Stock Check') })
-      else if (statusKey === 'stock check') {
-        buttons.push({ label: 'Request Approval', onClick: go('Approval') })
-        buttons.push({ label: 'Issue Asset', onClick: go('Issued') })
-      } else if (statusKey === 'approval') {
-        buttons.push({ label: 'Issue Asset', onClick: go('Issued') })
+      else if (statusKey === 'stock check') buttons.push({ label: 'Request Approval', onClick: go('Approval') })
+      else if (statusKey === 'approval') {
+        buttons.push({ label: 'Approve', onClick: go('Issued') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
-      } else if (statusKey === 'issued') buttons.push({ label: 'Close', onClick: go('Closed') })
-      return buttons.filter((btn) => {
-        const key = String(btn.label || '').trim().toLowerCase()
-        if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-        return true
-      })
+      } else if (statusKey === 'issued') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
     }
-    return buttons.filter((btn) => {
-      const key = String(btn.label || '').trim().toLowerCase()
-      if (!acceptedDone && ['mark as responsed', 'acknowledge', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-      if (!acknowledgedDone && ['mark as responsed', 'log to supplier', 'approval', 'requesting approval', 'resolve', 'resolve ticket'].includes(key)) return false
-      return true
-    })
+
+    if (statusKey === 'in progress') buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
+    if (statusKey === 'resolved') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+    if (statusKey === 'awaiting approval') {
+      buttons.push({ label: 'Approve', onClick: go('In Progress') })
+      buttons.push({ label: 'Reject', onClick: go('Rejected') })
+    }
+    return buttons
   }
 
   const closeDetail = () => {
@@ -1641,12 +1665,88 @@ Click below to proceed:
     }
   }
 
+  const resolveComposerTemplateAction = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+  ) => {
+    if (mode === 'acknowledge') return 'Acknowledge'
+    if (mode === 'emailUser') return 'Email User'
+    if (mode === 'logSupplier') return 'Log to Supplier'
+    if (mode === 'emailSupplier') return 'Email Supplier'
+    if (mode === 'callbackSupplier') return 'Call Back Supplier'
+    if (mode === 'approval') return 'Requesting Approval'
+    if (mode === 'resolve') return 'Resolve'
+    if (mode === 'close') return 'Close'
+    return 'Note + Email'
+  }
+
+  const applyTemplateTokens = (rawBody: string) => {
+    const requesterName = String(endUser?.name || selectedTicket?.endUser || 'User').trim() || 'User'
+    const assetId = String((selectedTicket as any)?.asset?.assetId || (selectedTicket as any)?.asset?.id || '').trim() || '-'
+    const assetSite = String((selectedTicket as any)?.asset?.site || (ticketAsset as any)?.site || '-').trim() || '-'
+    const ticketId = String(selectedTicket?.id || '').trim() || '-'
+    const status = String(selectedTicket?.status || '-').trim() || '-'
+    const type = String(selectedTicket?.type || '-').trim() || '-'
+    const category = String(selectedTicket?.category || '-').trim() || '-'
+    const section = String(selectedTicket?.team || '-').trim() || '-'
+    const byKey: Record<string, string> = {
+      user_name: requesterName,
+      asset_id: assetId,
+      ticket_id: ticketId,
+      ticketid: ticketId,
+      faultid: ticketId,
+      status,
+      assettag: assetId,
+      assetsite: assetSite,
+      category2: category,
+      category3: category,
+      section,
+      tickettype: type,
+    }
+    return String(rawBody || '')
+      .replace(/\[\$\s*ticket\s*id\s*\$\]/gi, ticketId)
+      .replace(/\[\$\s*tickcet\s*id\s*\$\]/gi, ticketId)
+      .replace(/\$\s*ticket\s*id\s*\$/gi, ticketId)
+      .replace(/\$\s*tickcet\s*id\s*\$/gi, ticketId)
+      .replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, key: string) => byKey[String(key || '').toLowerCase()] ?? `{{${key}}}`)
+      .replace(/\$([A-Za-z_][A-Za-z0-9_ ]*[A-Za-z0-9_])\$/g, (full, key: string) => {
+        const normalized = String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+        return byKey[normalized] ?? full
+      })
+      .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (full, key: string) => byKey[String(key || '').toLowerCase()] ?? full)
+  }
+
+  const getComposerTemplateBody = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+  ) => {
+    const templates = loadStoredList<EmailTemplateRecord[]>(EMAIL_TEMPLATE_STORAGE_KEY, [])
+    if (!Array.isArray(templates) || templates.length === 0) return ''
+    const actionKey = resolveComposerTemplateAction(mode).toLowerCase()
+    const match = templates.find((t) => {
+      const key = String(t?.buttonKey || '').trim().toLowerCase()
+      return Boolean(t?.active) && key === actionKey
+    })
+    if (!match) return ''
+    return applyTemplateTokens(String(match.body || ''))
+  }
+
+  const toComposerEditorHtml = (body: string) => {
+    const raw = String(body || '')
+    if (!raw.trim()) return ''
+    const hasHtmlTags = /<[a-z][\s\S]*>/i.test(raw)
+    if (hasHtmlTags) return raw
+    return `<div>${escapeHtml(raw).replace(/\n/g, '<br/>')}</div>`
+  }
+
   const buildMailPreviewHtml = () => {
     const bannerList = loadStoredList<MailBannerRecord[]>(MAIL_BANNER_STORAGE_KEY, [])
     const signatureList = loadStoredList<EmailSignatureRecord[]>(EMAIL_SIGNATURE_STORAGE_KEY, [])
     const activeBanner = bannerList.find((b) => b && b.active)
     const userId = user?.id ? String(user.id) : ''
-    const signature = signatureList.find((s) => s && s.active && String(s.userId || '') === userId)
+    const userRole = String(user?.role || '').trim().toUpperCase()
+    const activeSignatures = Array.isArray(signatureList) ? signatureList.filter((s) => s && s.active) : []
+    const signature = activeSignatures.find((s) => String(s.userId || '').trim() === userId)
+      || activeSignatures.find((s) => String(s.userId || '').trim().toUpperCase() === userRole)
+      || activeSignatures.find((s) => String(s.userLabel || '').trim().toUpperCase() === userRole)
     const bannerTone = activeBanner?.tone || 'info'
     const bannerColor =
       bannerTone === 'success' ? '#16a34a' :
@@ -1659,20 +1759,15 @@ Click below to proceed:
           <div style="color:#111827;font-size:13px">${activeBanner.message}</div>
         </div>`
       : ''
-    const recipientName = String(endUser?.name || '').trim()
-    const greeting = recipientName ? `Hi ${recipientName},` : 'Hello,'
     const bodyHtml = composerBodyHtml || '<p>(Empty message)</p>'
-    let signatureHtml = ''
-    if (signature?.signatureHtml) {
-      const raw = String(signature.signatureHtml)
-      const hasTags = /<[^>]+>/.test(raw)
-      const safe = hasTags ? raw : raw.replace(/\n/g, '<br/>')
-      signatureHtml = `<div style="margin-top:18px">${safe}</div>`
-    }
+    const defaultSignature = 'Kind regards,\nTrustyBytes Support Team'
+    const rawSignature = String(signature?.signatureHtml || '').trim() || defaultSignature
+    const hasTags = /<[^>]+>/.test(rawSignature)
+    const safeSignature = hasTags ? rawSignature : rawSignature.replace(/\n/g, '<br/>')
+    const signatureHtml = `<div style="margin-top:18px">${safeSignature}</div>`
 
     return `
       ${bannerHtml}
-      <p>${greeting}</p>
       <div>${bodyHtml}</div>
       ${signatureHtml}
     `
@@ -1691,6 +1786,107 @@ Click below to proceed:
     editor.focus()
     document.execCommand('insertHTML', false, html)
     handleComposerInput(editor.innerHTML)
+  }
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result || '')
+        if (!result) reject(new Error(`Failed to read file "${file.name}"`))
+        else resolve(result)
+      }
+      reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`))
+      reader.readAsDataURL(file)
+    })
+
+  const clearComposerMediaPreviewUrls = () => {
+    composerMediaUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    composerMediaUrlsRef.current = []
+  }
+
+  const insertComposerMedia = async (files: FileList | null) => {
+    const editor = composerEditorRef.current
+    if (!editor || !files || files.length === 0) return
+    editor.focus()
+    const htmlItems = await Promise.all(Array.from(files).map(async (file) => {
+      const safeName = escapeHtml(file.name || 'media')
+      const type = String(file.type || '').toLowerCase()
+      const dataUrl = await readFileAsDataUrl(file).catch(() => '')
+      if (type.startsWith('image/')) {
+        return dataUrl
+          ? `<div><img src="${dataUrl}" alt="${safeName}" style="max-width:100%;height:auto;border-radius:8px;" /></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('video/')) {
+        return dataUrl
+          ? `<div><video controls style="max-width:100%;height:auto;border-radius:8px;"><source src="${dataUrl}" type="${type}" /></video></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('audio/')) {
+        return dataUrl
+          ? `<div><audio controls style="width:100%;"><source src="${dataUrl}" type="${type}" /></audio></div>`
+          : `<div>${safeName}</div>`
+      }
+      return `<div>${safeName}</div>`
+    }))
+    const html = htmlItems.join('<br/>')
+    document.execCommand('insertHTML', false, html)
+    handleComposerInput(editor.innerHTML)
+  }
+
+  const openComposerMediaPicker = (accept: string) => {
+    setComposerMediaAccept(accept)
+    composerMediaInputRef.current?.click()
+  }
+
+  const getClipboardFiles = (event: React.ClipboardEvent<HTMLElement>) => {
+    const files: File[] = []
+    const fromItems = Array.from(event.clipboardData?.items || [])
+    for (const item of fromItems) {
+      if (item.kind !== 'file') continue
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
+    for (const file of Array.from(event.clipboardData?.files || [])) {
+      files.push(file)
+    }
+    const seen = new Set<string>()
+    return files.filter((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}:${file.type}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  const handleComposerPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = getClipboardFiles(event)
+    if (!files.length) return
+    const hasStringItems = Array.from(event.clipboardData?.items || []).some((item) => item.kind === 'string')
+    if (!hasStringItems) event.preventDefault()
+    const transfer = new DataTransfer()
+    files.forEach((file) => transfer.items.add(file))
+    insertComposerMedia(transfer.files)
+    const nonImageTransfer = new DataTransfer()
+    Array.from(transfer.files).forEach((file) => {
+      if (!String(file.type || '').toLowerCase().startsWith('image/')) nonImageTransfer.items.add(file)
+    })
+    pushAttachments(nonImageTransfer.files, 'composer')
+  }
+
+  const handleComposerDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files || [])
+    if (!droppedFiles.length) return
+    event.preventDefault()
+    const transfer = new DataTransfer()
+    droppedFiles.forEach((file) => transfer.items.add(file))
+    insertComposerMedia(transfer.files)
+    const nonImageTransfer = new DataTransfer()
+    Array.from(transfer.files).forEach((file) => {
+      if (!String(file.type || '').toLowerCase().startsWith('image/')) nonImageTransfer.items.add(file)
+    })
+    pushAttachments(nonImageTransfer.files, 'composer')
   }
 
   const getClosestListEl = () => {
@@ -1742,6 +1938,107 @@ Click below to proceed:
     setComposerForm((prev) => ({ ...prev, body: text }))
   }
 
+  const handleInternalNoteInput = (html: string) => {
+    const text = htmlToPlainText(html)
+    setInternalNoteForm((prev) => ({ ...prev, body: text }))
+  }
+
+  const clearInternalNoteMediaPreviewUrls = () => {
+    internalNoteMediaUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    internalNoteMediaUrlsRef.current = []
+  }
+
+  const insertInternalNoteMedia = async (files: FileList | null) => {
+    const editor = internalNoteEditorRef.current
+    if (!editor || !files || files.length === 0) return
+    editor.focus()
+    const htmlItems = await Promise.all(Array.from(files).map(async (file) => {
+      const safeName = escapeHtml(file.name || 'media')
+      const type = String(file.type || '').toLowerCase()
+      const dataUrl = await readFileAsDataUrl(file).catch(() => '')
+      if (type.startsWith('image/')) {
+        return dataUrl
+          ? `<div><img src="${dataUrl}" alt="${safeName}" style="max-width:100%;height:auto;border-radius:8px;" /></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('video/')) {
+        return dataUrl
+          ? `<div><video controls style="max-width:100%;height:auto;border-radius:8px;"><source src="${dataUrl}" type="${type}" /></video></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('audio/')) {
+        return dataUrl
+          ? `<div><audio controls style="width:100%;"><source src="${dataUrl}" type="${type}" /></audio></div>`
+          : `<div>${safeName}</div>`
+      }
+      return `<div>${safeName}</div>`
+    }))
+    const html = htmlItems.join('<br/>')
+    document.execCommand('insertHTML', false, html)
+    handleInternalNoteInput(editor.innerHTML)
+  }
+
+  const openInternalNoteMediaPicker = () => {
+    setInternalNoteMediaAccept('image/*')
+    internalNoteMediaInputRef.current?.click()
+  }
+
+  const openInternalNoteDocumentPicker = () => {
+    setInternalNoteMediaAccept('*/*')
+    internalNoteMediaInputRef.current?.click()
+  }
+
+  const handleInternalNotePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = getClipboardFiles(event)
+    if (!files.length) return
+    const hasStringItems = Array.from(event.clipboardData?.items || []).some((item) => item.kind === 'string')
+    if (!hasStringItems) event.preventDefault()
+    const transfer = new DataTransfer()
+    files.forEach((file) => transfer.items.add(file))
+    insertInternalNoteMedia(transfer.files)
+    pushAttachments(transfer.files, 'note')
+  }
+
+  const handleInternalNoteDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files || [])
+    if (!droppedFiles.length) return
+    event.preventDefault()
+    const transfer = new DataTransfer()
+    droppedFiles.forEach((file) => transfer.items.add(file))
+    insertInternalNoteMedia(transfer.files)
+    pushAttachments(transfer.files, 'note')
+  }
+
+  const toolbarIcon = (type: string) => {
+    const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8 }
+    if (type === 'fullscreen') return <svg {...common}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+    if (type === 'font') return <svg {...common}><path d="M6 20 12 4l6 16M8.5 14h7" /></svg>
+    if (type === 'align') return <svg {...common}><path d="M4 6h16M4 10h12M4 14h16M4 18h12" /></svg>
+    if (type === 'ordered') return <svg {...common}><path d="M5 7h1M5 12h1M5 17h1M9 7h11M9 12h11M9 17h11" /></svg>
+    if (type === 'unordered') return <svg {...common}><circle cx="5" cy="7" r="1.2" fill="currentColor" stroke="none" /><circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="5" cy="17" r="1.2" fill="currentColor" stroke="none" /><path d="M9 7h11M9 12h11M9 17h11" /></svg>
+    if (type === 'quote') return <svg {...common}><path d="M9 8H6v4h3v4H5V8a4 4 0 0 1 4-4M19 8h-3v4h3v4h-4V8a4 4 0 0 1 4-4" /></svg>
+    if (type === 'link') return <svg {...common}><path d="M10 13a5 5 0 0 1 0-7l1.5-1.5a5 5 0 1 1 7 7L17 13" /><path d="M14 11a5 5 0 0 1 0 7L12.5 19.5a5 5 0 1 1-7-7L7 11" /></svg>
+    if (type === 'image') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="1.5" /><circle cx="10" cy="10" r="1.5" /><path d="m6 17 4-4 3 3 3-4 2 2" /></svg>
+    if (type === 'video') return <svg {...common}><rect x="3" y="6" width="14" height="12" rx="2" /><path d="m10 10 4 2-4 2z" /><path d="m17 10 4-2v8l-4-2z" /></svg>
+    if (type === 'audio') return <svg {...common}><path d="M5 10v4h4l5 4V6l-5 4z" /><path d="M18 9a4 4 0 0 1 0 6" /><path d="M20 7a7 7 0 0 1 0 10" /></svg>
+    if (type === 'doc') return <svg {...common}><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5" /><path d="M10 13h6M10 17h6" /></svg>
+    if (type === 'table') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="1.5" /><path d="M4 10h16M4 14h16M10 5v14M14 5v14" /></svg>
+    if (type === 'emoji') return <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none" /><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none" /><path d="M8 15c1 1.5 2.5 2 4 2s3-.5 4-2" /></svg>
+    if (type === 'canned') return <svg {...common}><path d="M4 5h16v11H7l-3 3z" /><path d="M8 9h8M8 12h5" /></svg>
+    if (type === 'line') return <svg {...common}><path d="M4 12h16" /></svg>
+    if (type === 'clear') return <svg {...common}><path d="M4 20h10" /><path d="m7 4 10 10" /><path d="m14 4-7 7" /><path d="m17 14 3 3" /></svg>
+    return <svg {...common}><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" /></svg>
+  }
+
+  const buildReplySubject = (ticket: any) => {
+    const ticketLabel = String(ticket?.id || '').trim()
+    const raw = String(ticket?.subject || 'Ticket Update').trim()
+    const withoutRe = raw.replace(/^re:\s*/i, '').trim()
+    const withoutTicketTags = withoutRe.replace(/\[TB#\d+\]/gi, ' ').replace(/\s+/g, ' ').trim()
+    const base = withoutTicketTags || 'Ticket Update'
+    return `Re: ${base} [${ticketLabel}]`
+  }
+
   const openComposer = (
     mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
   ) => {
@@ -1750,19 +2047,12 @@ Click below to proceed:
     const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'resolve' || mode === 'close' || mode === 'noteEmail'
       ? getEndUserAutoRecipient()
       : ''
-    const subjectPrefix = `[${selectedTicket.id}] ${selectedTicket.subject}`
-    const subjectDefault =
-      mode === 'logSupplier' ? `Supplier log - ${subjectPrefix}` :
-      mode === 'approval' ? `Approval Pending - Ticket #${selectedTicket.id}` :
-      mode === 'resolve' ? `Resolution update - ${subjectPrefix}` :
-      mode === 'close' ? `Ticket closed - ${subjectPrefix}` :
-      mode === 'acknowledge' ? `Acknowledged - ${subjectPrefix}` :
-      `Update - ${subjectPrefix}`
+    const subjectDefault = buildReplySubject(selectedTicket)
 
-    const defaultBody = mode === 'approval' ? getApprovalTemplate() : ''
-    const defaultBodyHtml = defaultBody
-      ? `<div>${escapeHtml(defaultBody).replace(/\n/g, '<br/>')}</div>`
-      : ''
+    const templateBody = getComposerTemplateBody(mode)
+    const defaultBody = templateBody || (mode === 'approval' ? getApprovalTemplate() : '')
+    const defaultBodyHtml = toComposerEditorHtml(defaultBody)
+    const defaultBodyText = defaultBodyHtml ? htmlToPlainText(defaultBodyHtml) : ''
 
     setComposerForm((prev) => ({
       ...prev,
@@ -1770,16 +2060,17 @@ Click below to proceed:
       cc: '',
       bcc: '',
       subject: subjectDefault,
-      body: defaultBody,
+      body: defaultBodyText,
       actionStatus: 'With User',
       currentAction: '',
       nextAction: '',
       asset: '',
     }))
     setComposerBodyHtml(defaultBodyHtml)
-    setComposerBodyText(defaultBody)
+    setComposerBodyText(defaultBodyText)
     if (composerEditorRef.current) composerEditorRef.current.innerHTML = defaultBodyHtml
     setComposerAttachments([])
+    clearComposerMediaPreviewUrls()
     setShowCcField(false)
     setShowBccField(false)
     setComposerMenuOpen(false)
@@ -1858,10 +2149,23 @@ Click below to proceed:
     'Log to Supplier': 'package',
     Approval: 'clipboard-check',
     'Requesting Approval': 'clipboard-check',
+    'Request Approval': 'clipboard-check',
     'Note + Email': 'mail-plus',
     'Call Back Supplier': 'phone-call',
     Resolve: 'circle-check-big',
     'Re-open': 'rotate-ccw',
+    Start: 'play',
+    Approve: 'thumbs-up',
+    Reject: 'x-circle',
+    'Verify Asset': 'shield-check',
+    'Start IT Setup': 'settings',
+    'Mark Ready': 'badge-check',
+    'Request HR Confirmation': 'user-check',
+    'Revoke Access': 'user-x',
+    'Complete Offboarding': 'user-minus',
+    'Install Software': 'download',
+    'Mark Completed': 'check-check',
+    'Check Stock': 'package-search',
     Reclose: 'lock',
     'Email Supplier': 'send',
     'Recall to Approval': 'refresh-ccw',
@@ -1892,8 +2196,9 @@ Click below to proceed:
       (queue) => queue.label.trim().toLowerCase() === category.toLowerCase()
     )
     if (matchedQueue) return { team: matchedQueue.label, forcedUnassigned: false }
-    // Unknown/new categories are routed to Support Desk as unassigned.
-    return { team: 'Support Desk', forcedUnassigned: true }
+    // Unknown/new categories are not forced into a hardcoded team.
+    const fallbackLabel = String(visibleTicketQueues[0]?.label || '').trim()
+    return { team: fallbackLabel || 'Unassigned', forcedUnassigned: true }
   }
   const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
   const countWithSupplier = openIncidents.filter((i) => {
@@ -1914,11 +2219,10 @@ Click below to proceed:
       if (!key || groups[key]) return
       groups[key] = { total: 0, unassigned: 0, agents: {} }
     })
-    if (!groups['Support Desk']) groups['Support Desk'] = { total: 0, unassigned: 0, agents: {} }
-
     openIncidents.forEach((incident) => {
       const mapped = mapTeam(incident)
       const team = mapped.team
+      if (!team) return
       if (!groups[team]) groups[team] = { total: 0, unassigned: 0, agents: {} }
       groups[team].total += 1
       const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
@@ -1929,6 +2233,52 @@ Click below to proceed:
       const label = incident.assignedAgentName || String(incident.assignedAgentId)
       if (!groups[team].agents[agentKey]) groups[team].agents[agentKey] = { label, count: 0 }
       groups[team].agents[agentKey].count += 1
+    })
+
+    // Include queue-scoped staff even when they have 0 tickets in the queue.
+    agents.forEach((agent: any) => {
+      const role = String(agent?.role || '').trim().toUpperCase()
+      const status = String(agent?.status || '').trim().toUpperCase()
+      const isDisabled = ['DEACTIVATED', 'DISABLED', 'INACTIVE'].includes(status)
+      const isAgentLike = role === 'AGENT' || role === 'ADMIN' || Boolean(agent?.isServiceAccount)
+      if (!isAgentLike) return
+      if (isDisabled) return
+
+      const queueIds: string[] = Array.isArray(agent?.queueIds)
+        ? agent.queueIds.map((queueId: any) => String(queueId || '').trim().toLowerCase()).filter(Boolean)
+        : []
+
+      const agentKey = String(agent?.id || agent?.email || '').trim()
+      const agentLabel = getAgentDisplayName(agent)
+      if (!agentKey || !agentLabel) return
+
+      const normalize = (value: string) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+      const matchedTeamNames = new Set<string>()
+      queueIds.forEach((queueId: string) => {
+        const queueIdNorm = normalize(queueId)
+        const matchedQueue = visibleTicketQueues.find((queue) => {
+          const queueLabel = String(queue.label || '').trim()
+          const queueKey = String((queue as any).id || '').trim()
+          const labelNorm = normalize(queueLabel)
+          const keyNorm = normalize(queueKey)
+          if (labelNorm === queueIdNorm || keyNorm === queueIdNorm) return true
+          return false
+        })
+        const teamName = matchedQueue ? String(matchedQueue.label || '').trim() : ''
+
+        if (teamName) matchedTeamNames.add(teamName)
+      })
+
+      // Fallback: if no queue mappings are set, show active staff in the default visible team.
+      if (matchedTeamNames.size === 0) {
+        const fallbackTeam = String(visibleTicketQueues[0]?.label || '').trim()
+        if (fallbackTeam) matchedTeamNames.add(fallbackTeam)
+      }
+
+      matchedTeamNames.forEach((teamName) => {
+        if (!groups[teamName]) groups[teamName] = { total: 0, unassigned: 0, agents: {} }
+        if (!groups[teamName].agents[agentKey]) groups[teamName].agents[agentKey] = { label: agentLabel, count: 0 }
+      })
     })
 
     return groups
@@ -1984,14 +2334,8 @@ Click below to proceed:
     [incidents, selectedTicket?.status]
   )
   const teamOptions = React.useMemo(
-    () =>
-      uniqueOptions([
-        ...visibleTicketQueues.map((queue) => queue.label),
-        selectedTicket?.team,
-        selectedTicket?.category,
-        selectedTicket ? mapTeam(selectedTicket).team : '',
-      ]),
-    [visibleTicketQueues, selectedTicket]
+    () => uniqueOptions(visibleTicketQueues.map((queue) => queue.label)),
+    [visibleTicketQueues]
   )
   const agentOptions = React.useMemo(
     () =>
@@ -2041,7 +2385,7 @@ Click below to proceed:
     setEditingEndUserField(null)
     setCreatedFromValue(String(selectedTicket.createdFrom || inferCreatedFrom(selectedTicket)))
     setTicketWorkflowValue(String(selectedTicket.workflow || 'Incident Management Workflow'))
-    setTicketTeamValue(String(selectedTicket.team || mapTeam(selectedTicket).team || selectedTicket.category || fallbackTeam || ''))
+    setTicketTeamValue(String(mapTeam(selectedTicket).team || fallbackTeam || ''))
     setAdditionalStaffValue(String((selectedTicket.additionalAgents || [])[0] || ''))
     setIssueValue(String(selectedTicket.category || ''))
     setIssueDetailValue(String(selectedTicket.issueDetail || ''))
@@ -2502,6 +2846,17 @@ Click below to proceed:
       'mail-plus': '\u2709',
       'phone-call': '\u260E',
       'rotate-ccw': '\u21BA',
+      play: '\u25B6',
+      'thumbs-up': '\u2713',
+      'x-circle': '\u2715',
+      'shield-check': '\u26E8',
+      settings: '\u2699',
+      'user-check': '\u2713',
+      'user-x': '\u2715',
+      'user-minus': '\u2212',
+      download: '\u2193',
+      'check-check': '\u2714',
+      'package-search': '\u2315',
       lock: 'L',
       send: '\u27A4',
       'refresh-ccw': '\u21BA',
@@ -2622,7 +2977,7 @@ Click below to proceed:
 
   const openSendReview = () => {
     const bodyText = composerBodyText.trim() || htmlToPlainText(composerBodyHtml)
-    if (!bodyText) {
+    if (!bodyText && composerAttachments.length === 0) {
       alert('Please enter message')
       return
     }
@@ -2632,13 +2987,16 @@ Click below to proceed:
 
   const handleSendActionComposer = async () => {
     if (!selectedTicket) return
-    const body = composerBodyText.trim()
-    if (!body) {
+    const body = composerBodyText.trim() || htmlToPlainText(composerBodyHtml).trim()
+    if (!body && composerAttachments.length === 0) {
       alert('Please enter message')
       return
     }
+    const resolvedBody = body || 'Media attachment update'
 
     try {
+      const finalMailHtml = buildMailPreviewHtml()
+      const finalMailText = htmlToPlainText(finalMailHtml)
       const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, composerAttachments)
       const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
       const attachmentLabel = uploadedItems.length
@@ -2647,7 +3005,7 @@ Click below to proceed:
 
       if (composerMode === 'resolve') {
         await ticketService.resolveTicketWithDetails(selectedTicket.id, {
-          resolution: body,
+          resolution: resolvedBody,
           resolutionCategory: composerForm.issueDetail || undefined,
           sendEmail: Boolean(composerForm.to.trim()),
         })
@@ -2658,17 +3016,19 @@ Click below to proceed:
           })
         }
         updateTicketStatusLocal(selectedTicket.id, 'Resolved')
-        addTicketComment(selectedTicket.id, `Resolved: ${body}`)
+        addTicketComment(selectedTicket.id, `Resolved: ${resolvedBody}`)
       } else if (composerMode === 'close') {
         if (composerForm.to.trim()) {
           await ticketService.respond(selectedTicket.id, {
-            message: body,
+            message: resolvedBody,
             sendEmail: true,
             to: composerForm.to.trim(),
             cc: composerForm.cc.trim() || undefined,
             bcc: composerForm.bcc.trim() || undefined,
-            subject: composerForm.subject.trim() || `Ticket closed - ${selectedTicket.id}`,
+            subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
             attachmentIds,
+            html: finalMailHtml,
+            text: finalMailText,
           })
         } else if (attachmentIds.length) {
           await ticketService.privateNote(selectedTicket.id, {
@@ -2678,32 +3038,36 @@ Click below to proceed:
         }
         await ticketService.transitionTicket(selectedTicket.id, 'Closed')
         updateTicketStatusLocal(selectedTicket.id, 'Closed')
-        addTicketComment(selectedTicket.id, `Closed: ${body}`)
+        addTicketComment(selectedTicket.id, `Closed: ${resolvedBody}`)
       } else if (composerMode === 'noteEmail') {
-        await ticketService.privateNote(selectedTicket.id, { note: body, attachmentIds })
+        await ticketService.privateNote(selectedTicket.id, { note: resolvedBody, attachmentIds })
         if (composerForm.to.trim()) {
           await ticketService.respond(selectedTicket.id, {
-            message: body,
+            message: resolvedBody,
             sendEmail: true,
             to: composerForm.to.trim(),
             cc: composerForm.cc.trim() || undefined,
             bcc: composerForm.bcc.trim() || undefined,
-            subject: composerForm.subject.trim() || `Update - ${selectedTicket.id}`,
+            subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
             attachmentIds,
+            html: finalMailHtml,
+            text: finalMailText,
           })
         }
-        addTicketComment(selectedTicket.id, `Note + Email: ${body}`)
+        addTicketComment(selectedTicket.id, `Note + Email: ${resolvedBody}`)
       } else {
         await ticketService.respond(selectedTicket.id, {
-          message: body,
+          message: resolvedBody,
           sendEmail: Boolean(composerForm.to.trim()),
           to: composerForm.to.trim() || undefined,
           cc: composerForm.cc.trim() || undefined,
           bcc: composerForm.bcc.trim() || undefined,
           subject: composerForm.subject.trim() || undefined,
           attachmentIds,
+          html: composerForm.to.trim() ? finalMailHtml : undefined,
+          text: composerForm.to.trim() ? finalMailText : undefined,
         })
-        addTicketComment(selectedTicket.id, `${getComposerHeading()}: ${body}`)
+        addTicketComment(selectedTicket.id, `${getComposerHeading()}: ${resolvedBody}`)
 
         if (composerMode === 'acknowledge') {
           await ticketSvc.transitionTicket(selectedTicket.id, 'In Progress').catch(() => undefined)
@@ -2720,6 +3084,7 @@ Click below to proceed:
         }
       }
       setComposerAttachments([])
+      clearComposerMediaPreviewUrls()
       setComposerBodyHtml('')
       setComposerBodyText('')
       setShowActionComposer(false)
@@ -2732,13 +3097,13 @@ Click below to proceed:
     if (!selectedTicket) return
     const note = internalNoteForm.body.trim()
     const noteTypeLabel = internalNoteVisibility === 'internal' ? 'internal note' : 'private note'
-    if (!note) {
+    if (!note && internalNoteAttachments.length === 0) {
       alert(`Please enter ${noteTypeLabel}`)
       return
     }
     const normalizedText = internalNoteVisibility === 'internal'
-      ? (/^internal:/i.test(note) ? note : `Internal: ${note}`)
-      : (/^private:/i.test(note) ? note : `Private: ${note}`)
+      ? (/^internal:/i.test(note) ? note : `Internal: ${note || 'Media attachment update'}`)
+      : (/^private:/i.test(note) ? note : `Private: ${note || 'Media attachment update'}`)
     addTicketComment(selectedTicket.id, normalizedText, {
       internal: true,
       kind: internalNoteVisibility,
@@ -2753,6 +3118,7 @@ Click below to proceed:
         updateTicketStatusLocal(selectedTicket.id, internalNoteForm.status)
       }
       setInternalNoteAttachments([])
+      clearInternalNoteMediaPreviewUrls()
     } catch (e: any) {
       alert(e?.response?.data?.error || e?.message || 'Failed to save internal note')
     }
@@ -3686,6 +4052,7 @@ Click below to proceed:
                       className="compose-icon-btn"
                       onClick={() => {
                         setComposerAttachments([])
+                        clearComposerMediaPreviewUrls()
                         setShowSendReview(false)
                         setShowActionComposer(false)
                       }}
@@ -3731,8 +4098,8 @@ Click below to proceed:
 
                 <div className="compose-editor-shell">
                   <div className="compose-editor-toolbar">
-                    <button type="button" onClick={() => setComposerFullscreen((v) => !v)} aria-label="Fullscreen">[]</button>
-                    <button type="button" onClick={() => setShowFontMenu((v) => !v)} aria-label="Font styles">A:</button>
+                    <button type="button" onClick={() => setComposerFullscreen((v) => !v)} aria-label="Fullscreen">{toolbarIcon('fullscreen')}</button>
+                    <button type="button" onClick={() => setShowFontMenu((v) => !v)} aria-label="Font styles">{toolbarIcon('font')}</button>
                     {showFontMenu && (
                       <div className="compose-toolbar-menu">
                         <div className="compose-toolbar-group">
@@ -3753,7 +4120,7 @@ Click below to proceed:
                         </div>
                       </div>
                     )}
-                    <button type="button" onClick={() => setShowAlignMenu((v) => !v)} aria-label="Align">=</button>
+                    <button type="button" onClick={() => setShowAlignMenu((v) => !v)} aria-label="Align">{toolbarIcon('align')}</button>
                     {showAlignMenu && (
                       <div className="compose-toolbar-menu">
                         <button type="button" onClick={() => applyComposerCommand('justifyLeft')}>Left</button>
@@ -3762,7 +4129,7 @@ Click below to proceed:
                         <button type="button" onClick={() => applyComposerCommand('justifyFull')}>Justify</button>
                       </div>
                     )}
-                    <button type="button" onClick={() => { applyComposerCommand('insertOrderedList'); setShowOrderedMenu((v) => !v) }} aria-label="Ordered list">1.</button>
+                    <button type="button" onClick={() => { applyComposerCommand('insertOrderedList'); setShowOrderedMenu((v) => !v) }} aria-label="Ordered list">{toolbarIcon('ordered')}</button>
                     {showOrderedMenu && (
                       <div className="compose-toolbar-menu">
                         <button type="button" onClick={() => applyListStyle('decimal')}>Default</button>
@@ -3772,7 +4139,7 @@ Click below to proceed:
                         <button type="button" onClick={() => applyListStyle('upper-roman')}>Upper Roman</button>
                       </div>
                     )}
-                    <button type="button" onClick={() => { applyComposerCommand('insertUnorderedList'); setShowUnorderedMenu((v) => !v) }} aria-label="Unordered list">•</button>
+                    <button type="button" onClick={() => { applyComposerCommand('insertUnorderedList'); setShowUnorderedMenu((v) => !v) }} aria-label="Unordered list">{toolbarIcon('unordered')}</button>
                     {showUnorderedMenu && (
                       <div className="compose-toolbar-menu">
                         <button type="button" onClick={() => applyListStyle('disc')}>Disc</button>
@@ -3780,16 +4147,19 @@ Click below to proceed:
                         <button type="button" onClick={() => applyListStyle('square')}>Square</button>
                       </div>
                     )}
-                    <button type="button" onClick={() => { applyComposerCommand('formatBlock', 'blockquote'); setShowQuoteMenu((v) => !v) }} aria-label="Quote">""</button>
+                    <button type="button" onClick={() => { applyComposerCommand('formatBlock', 'blockquote'); setShowQuoteMenu((v) => !v) }} aria-label="Quote">{toolbarIcon('quote')}</button>
                     {showQuoteMenu && (
                       <div className="compose-toolbar-menu">
                         <button type="button" onClick={() => applyComposerCommand('indent')}>Increase</button>
                         <button type="button" onClick={() => applyComposerCommand('outdent')}>Decrease</button>
                       </div>
                     )}
-                    <button type="button" onClick={() => setShowLinkModal(true)} aria-label="Insert link">link</button>
-                    <button type="button" onClick={() => setShowImageModal(true)} aria-label="Insert image">img</button>
-                    <button type="button" onClick={() => setShowTablePicker((v) => !v)} aria-label="Insert table">table</button>
+                    <button type="button" onClick={() => setShowLinkModal(true)} aria-label="Insert link">{toolbarIcon('link')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('image/*')} aria-label="Insert image">{toolbarIcon('image')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('video/*')} aria-label="Insert video">{toolbarIcon('video')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('audio/*')} aria-label="Insert audio">{toolbarIcon('audio')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('*/*')} aria-label="Insert document">{toolbarIcon('doc')}</button>
+                    <button type="button" onClick={() => setShowTablePicker((v) => !v)} aria-label="Insert table">{toolbarIcon('table')}</button>
                     {showTablePicker && (
                       <div className="compose-toolbar-menu">
                         <label>
@@ -3816,7 +4186,7 @@ Click below to proceed:
                         </button>
                       </div>
                     )}
-                    <button type="button" onClick={() => setShowEmojiPicker((v) => !v)} aria-label="Emoticons">:)</button>
+                    <button type="button" onClick={() => setShowEmojiPicker((v) => !v)} aria-label="Emoticons">{toolbarIcon('emoji')}</button>
                     {showEmojiPicker && (
                       <div className="compose-toolbar-menu emoji">
                         {['😀','😁','😂','😅','😊','😍','😎','😇','😢','😡','👍','🙏','🎉','✅','⚠️','❗','💡','📌'].map((e) => (
@@ -3824,7 +4194,7 @@ Click below to proceed:
                         ))}
                       </div>
                     )}
-                    <button type="button" onClick={() => setShowCannedMenu((v) => !v)} aria-label="Insert canned">+:</button>
+                    <button type="button" onClick={() => setShowCannedMenu((v) => !v)} aria-label="Insert canned">{toolbarIcon('canned')}</button>
                     {showCannedMenu && (
                       <div className="compose-toolbar-menu">
                         {loadCannedTexts().length === 0 && <span style={{ fontSize: 12, color: '#6b7280' }}>No canned text</span>}
@@ -3836,8 +4206,8 @@ Click below to proceed:
                         <button type="button" onClick={() => { setShowCannedMenu(false); setShowCannedModal(true) }}>Create Canned Text</button>
                       </div>
                     )}
-                    <button type="button" onClick={() => applyComposerCommand('insertHorizontalRule')} aria-label="Horizontal line">-</button>
-                    <button type="button" onClick={() => applyComposerCommand('removeFormat')} aria-label="Clear formatting">Tx</button>
+                    <button type="button" onClick={() => applyComposerCommand('insertHorizontalRule')} aria-label="Horizontal line">{toolbarIcon('line')}</button>
+                    <button type="button" onClick={() => applyComposerCommand('removeFormat')} aria-label="Clear formatting">{toolbarIcon('clear')}</button>
                   </div>
                   <div
                     ref={composerEditorRef}
@@ -3845,6 +4215,9 @@ Click below to proceed:
                     contentEditable
                     suppressContentEditableWarning
                     data-placeholder="Type your update/note here"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleComposerDrop}
+                    onPaste={handleComposerPaste}
                     onInput={(e) => handleComposerInput(e.currentTarget.innerHTML)}
                   />
                 </div>
@@ -3869,6 +4242,22 @@ Click below to proceed:
                   style={{ display: 'none' }}
                   onChange={(e) => {
                     pushAttachments(e.target.files, 'composer')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                <input
+                  ref={composerMediaInputRef}
+                  type="file"
+                  accept={composerMediaAccept}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    insertComposerMedia(e.target.files)
+                    const nonImageTransfer = new DataTransfer()
+                    Array.from(e.target.files || []).forEach((file) => {
+                      if (!String(file.type || '').toLowerCase().startsWith('image/')) nonImageTransfer.items.add(file)
+                    })
+                    pushAttachments(nonImageTransfer.files, 'composer')
                     e.currentTarget.value = ''
                   }}
                 />
@@ -3925,7 +4314,17 @@ Click below to proceed:
                   <button className="btn-submit" onClick={openSendReview} disabled={isUploadingAttachments}>
                     {isUploadingAttachments ? 'Uploading...' : 'Send'}
                   </button>
-                  <button className="btn-cancel" onClick={() => { setComposerAttachments([]); setShowSendReview(false); setShowActionComposer(false) }}>Discard</button>
+                  <button
+                    className="btn-cancel"
+                    onClick={() => {
+                      setComposerAttachments([])
+                      clearComposerMediaPreviewUrls()
+                      setShowSendReview(false)
+                      setShowActionComposer(false)
+                    }}
+                  >
+                    Discard
+                  </button>
                   <button type="button" className="compose-footer-icon" aria-label="Schedule">[]</button>
                 </div>
               </div>
@@ -3949,24 +4348,41 @@ Click below to proceed:
                     >
                       +
                     </button>
-                    <button className="compose-icon-btn" onClick={() => { setInternalNoteAttachments([]); setShowInternalNoteEditor(false) }}>x</button>
+                    <button
+                      className="compose-icon-btn"
+                      onClick={() => {
+                        setInternalNoteAttachments([])
+                        clearInternalNoteMediaPreviewUrls()
+                        setShowInternalNoteEditor(false)
+                      }}
+                    >
+                      x
+                    </button>
                   </div>
                 </div>
                 <div className="compose-editor-shell">
                   <div className="compose-editor-toolbar">
-                    <button type="button">A:</button>
-                    <button type="button">-</button>
-                    <button type="button">1.</button>
-                    <button type="button">"</button>
-                    <button type="button">link</button>
-                    <button type="button">img</button>
-                    <button type="button">table</button>
+                    <button type="button" aria-label="Font styles">{toolbarIcon('font')}</button>
+                    <button type="button" aria-label="Horizontal line">{toolbarIcon('line')}</button>
+                    <button type="button" aria-label="Ordered list">{toolbarIcon('ordered')}</button>
+                    <button type="button" aria-label="Quote">{toolbarIcon('quote')}</button>
+                    <button type="button" aria-label="Insert link">{toolbarIcon('link')}</button>
+                    <button type="button" onClick={() => openInternalNoteMediaPicker()} aria-label="Insert image">{toolbarIcon('image')}</button>
+                    <button type="button" onClick={() => { setInternalNoteMediaAccept('video/*'); internalNoteMediaInputRef.current?.click() }} aria-label="Insert video">{toolbarIcon('video')}</button>
+                    <button type="button" onClick={() => { setInternalNoteMediaAccept('audio/*'); internalNoteMediaInputRef.current?.click() }} aria-label="Insert audio">{toolbarIcon('audio')}</button>
+                    <button type="button" onClick={openInternalNoteDocumentPicker} aria-label="Insert document">{toolbarIcon('doc')}</button>
+                    <button type="button" aria-label="Insert table">{toolbarIcon('table')}</button>
                   </div>
-                  <textarea
-                    className="compose-editor-body"
-                    placeholder="Enter your note here"
-                    value={internalNoteForm.body}
-                    onChange={(e) => setInternalNoteForm((prev) => ({ ...prev, body: e.target.value }))}
+                  <div
+                    ref={internalNoteEditorRef}
+                    className="compose-editor-body rich"
+                    contentEditable
+                    suppressContentEditableWarning
+                    data-placeholder="Enter your note here"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleInternalNoteDrop}
+                    onPaste={handleInternalNotePaste}
+                    onInput={(e) => handleInternalNoteInput(e.currentTarget.innerHTML)}
                   />
                 </div>
                 <input
@@ -3975,6 +4391,18 @@ Click below to proceed:
                   multiple
                   style={{ display: 'none' }}
                   onChange={(e) => {
+                    pushAttachments(e.target.files, 'note')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                <input
+                  ref={internalNoteMediaInputRef}
+                  type="file"
+                  accept={internalNoteMediaAccept}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    insertInternalNoteMedia(e.target.files)
                     pushAttachments(e.target.files, 'note')
                     e.currentTarget.value = ''
                   }}
@@ -3993,7 +4421,16 @@ Click below to proceed:
                   <button className="btn-submit" onClick={handleSaveInternalNote} disabled={isUploadingAttachments}>
                     {isUploadingAttachments ? 'Uploading...' : 'Save'}
                   </button>
-                  <button className="btn-cancel" onClick={() => { setInternalNoteAttachments([]); setShowInternalNoteEditor(false) }}>Discard</button>
+                  <button
+                    className="btn-cancel"
+                    onClick={() => {
+                      setInternalNoteAttachments([])
+                      clearInternalNoteMediaPreviewUrls()
+                      setShowInternalNoteEditor(false)
+                    }}
+                  >
+                    Discard
+                  </button>
                 </div>
               </div>
             )}
@@ -4125,11 +4562,34 @@ Click below to proceed:
                 </div>
                 <div className="sidebar-field">
                   <label>Status</label>
-                  {renderTicketFieldValue(
-                    'status',
-                    selectedTicket.status || '',
-                    (value) => applyStatus(value, `Status updated to ${value}`),
-                    statusOptions
+                  {editingTicketField === 'status' ? (
+                    <select
+                      className="sidebar-select"
+                      autoFocus
+                      value={selectedTicket.status || ''}
+                      onBlur={closeTicketFieldEditor}
+                      onChange={(e) => {
+                        applyStatus(e.target.value, `Status updated to ${e.target.value}`)
+                        closeTicketFieldEditor()
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') closeTicketFieldEditor()
+                      }}
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={`status-${option || 'empty'}`} value={option}>
+                          {option || 'Not set'}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <button
+                      type="button"
+                      className={`sidebar-inline-value status-badge ${statusClass(selectedTicket.status || '')}`}
+                      onClick={() => openTicketFieldEditor('status')}
+                    >
+                      {selectedTicket.status || 'Not set'}
+                    </button>
                   )}
                 </div>
                 <div className="sidebar-field">
@@ -4630,7 +5090,7 @@ Click below to proceed:
               </div>
               <div className="compose-review-row">
                 <span>From:</span>
-                <span>{user?.email || 'support@itsm.local'}</span>
+                <span>{PLATFORM_FROM_MAIL || 'support@itsm.local'}</span>
               </div>
               <div className="compose-review-row">
                 <span>To:</span>
@@ -4647,10 +5107,6 @@ Click below to proceed:
               <div className="compose-review-row">
                 <span>Subject:</span>
                 <span>{composerForm.subject || 'Not set'}</span>
-              </div>
-              <div className="compose-review-row">
-                <span>Status:</span>
-                <span>{composerForm.actionStatus || 'Not set'}</span>
               </div>
               {composerAttachments.length > 0 && (
                 <div className="compose-review-row">

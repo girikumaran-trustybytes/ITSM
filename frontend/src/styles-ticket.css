@@ -12,6 +12,17 @@
 .tag { background:#dff3ee; color:#077a59; padding:2px 8px; border-radius:6px; font-size:12px; margin-left:8px }
 .feed-text { color:#333 }
 
+:root[data-theme='dark'] .timeline-step { background:#122233; color:#b9c8de }
+:root[data-theme='dark'] .timeline-step.active { background:linear-gradient(90deg,#1fb89a,#2fd6c1); color:#0b1220 }
+:root[data-theme='dark'] .btn { background:#0f172a; border-color:#2c3d56; color:#e2ebfb }
+:root[data-theme='dark'] .feed-item { background:#0f172a; box-shadow:0 10px 20px rgba(2,6,23,0.5) }
+:root[data-theme='dark'] .tag { background:#1a2f2a; color:#7ce3c6 }
+:root[data-theme='dark'] .feed-text { color:#d5deed }
+:root[data-theme='dark'] .modal-panel { background:#0f172a; box-shadow:0 12px 26px rgba(2,6,23,0.55) }
+:root[data-theme='dark'] .modal-body input,
+:root[data-theme='dark'] .modal-body textarea { background:#0f172a; border-color:#2c3d56; color:#e2ebfb }
+:root[data-theme='dark'] .btn-cancel { background:#0f172a; border-color:#2c3d56; color:#e2ebfb }
+
 /* Modal styles */
 .modal-overlay.demo-modal { position:fixed; inset:0; background:rgba(0,0,0,0.25); display:flex; align-items:center; justify-content:center; z-index:9999 }
 .modal-panel { background:#fff; border-radius:8px; width:720px; max-width:92%; padding:18px; box-shadow:0 8px 30px rgba(0,0,0,0.15) }

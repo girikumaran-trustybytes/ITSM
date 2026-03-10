@@ -75,7 +75,19 @@ export async function updateInboundRouting(req: Request, res: Response) {
   try {
     const defaultQueue = String(req.body?.defaultQueue || '').trim()
     if (!defaultQueue) return res.status(400).json({ error: 'defaultQueue is required' })
-    const next = setInboundRoutingConfig({ defaultQueue })
+    const inboundRoutes = Array.isArray(req.body?.inboundRoutes)
+      ? req.body.inboundRoutes.map((row: any) => ({
+        email: String(row?.email || '').trim().toLowerCase(),
+        queue: String(row?.queue || '').trim(),
+      }))
+      : undefined
+    const outboundRoutes = Array.isArray(req.body?.outboundRoutes)
+      ? req.body.outboundRoutes.map((row: any) => ({
+        queue: String(row?.queue || '').trim(),
+        from: String(row?.from || '').trim().toLowerCase(),
+      }))
+      : undefined
+    const next = setInboundRoutingConfig({ defaultQueue, inboundRoutes, outboundRoutes })
     return res.json(next)
   } catch (err: any) {
     return res.status(err.status || 500).json({ error: err.message || 'Failed to update inbound routing' })

@@ -329,12 +329,91 @@ CREATE TABLE IF NOT EXISTS role_permissions (
   PRIMARY KEY(role_id, permission_id)
 );
 
+CREATE TABLE IF NOT EXISTS user_roles (
+  user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(user_id, role_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role_id ON user_roles(role_id);
+
 CREATE TABLE IF NOT EXISTS user_permissions_override (
   user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
   permission_id INTEGER NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
   allowed BOOLEAN NOT NULL,
   PRIMARY KEY(user_id, permission_id)
 );
+
+CREATE TABLE IF NOT EXISTS tenants (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'ACTIVE',
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO tenants (id, name, status)
+VALUES (1, 'Default Tenant', 'ACTIVE')
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "tenantId" INTEGER;
+UPDATE "User" SET "tenantId" = 1 WHERE "tenantId" IS NULL;
+CREATE INDEX IF NOT EXISTS idx_user_tenant_id ON "User"("tenantId");
+
+CREATE TABLE IF NOT EXISTS teams (
+  team_id SERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL,
+  team_key TEXT NOT NULL,
+  team_name TEXT NOT NULL,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(tenant_id, team_key)
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id INTEGER NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(team_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS invitations (
+  invitation_id BIGSERIAL PRIMARY KEY,
+  tenant_id INTEGER NOT NULL,
+  user_id INTEGER REFERENCES "User"("id") ON DELETE SET NULL,
+  email TEXT NOT NULL,
+  invited_by INTEGER REFERENCES "User"("id") ON DELETE SET NULL,
+  token_hash TEXT,
+  expires_at TIMESTAMP(3),
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  resend_count INTEGER NOT NULL DEFAULT 0,
+  last_sent_at TIMESTAMP(3),
+  created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  accepted_at TIMESTAMP(3),
+  revoked_at TIMESTAMP(3)
+);
+
+CREATE TABLE IF NOT EXISTS invitation_roles (
+  invitation_id BIGINT NOT NULL REFERENCES invitations(invitation_id) ON DELETE CASCADE,
+  role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
+  PRIMARY KEY(invitation_id, role_id)
+);
+
+CREATE TABLE IF NOT EXISTS invitation_teams (
+  invitation_id BIGINT NOT NULL REFERENCES invitations(invitation_id) ON DELETE CASCADE,
+  team_key TEXT NOT NULL,
+  PRIMARY KEY(invitation_id, team_key)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invitations_token_hash_unique ON invitations(token_hash) WHERE token_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_invitations_tenant_email_created ON invitations(tenant_id, email, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_invitations_user_created ON invitations(user_id, created_at DESC);
+
+INSERT INTO teams (tenant_id, team_key, team_name)
+SELECT 1, tq.queue_key, tq.queue_label
+FROM ticket_queues tq
+ON CONFLICT (tenant_id, team_key) DO UPDATE
+SET team_name = EXCLUDED.team_name;
 
 CREATE TABLE IF NOT EXISTS user_invites (
   invite_id SERIAL PRIMARY KEY,
@@ -448,3 +527,9 @@ SELECT r.role_id, p.permission_id,
 FROM roles r
 CROSS JOIN permissions p
 ON CONFLICT (role_id, permission_id) DO NOTHING;
+
+INSERT INTO user_roles (user_id, role_id)
+SELECT u."id", r.role_id
+FROM "User" u
+INNER JOIN roles r ON r.role_name = UPPER(COALESCE(u."role"::text, 'USER'))
+ON CONFLICT (user_id, role_id) DO NOTHING;

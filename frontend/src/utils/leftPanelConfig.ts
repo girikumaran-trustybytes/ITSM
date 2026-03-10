@@ -7,6 +7,8 @@ export type QueueRule = {
 
 export type TicketQueueConfig = {
   id: string
+  queueId?: number
+  queueKey?: string
   label: string
   serviceAccount: string
   visibilityRoles: string[]
@@ -29,6 +31,11 @@ export type LeftPanelConfig = {
 }
 
 const STORAGE_KEY = 'itsm_left_panel_config_v1'
+const DEFAULT_TICKET_QUEUES: TicketQueueConfig[] = [
+  { id: 'tq-support', queueKey: 'support', label: 'Support Team', serviceAccount: '', visibilityRoles: ['ADMIN', 'AGENT'] },
+  { id: 'tq-hr', queueKey: 'hr', label: 'HR Team', serviceAccount: '', visibilityRoles: ['ADMIN', 'AGENT'] },
+  { id: 'tq-management', queueKey: 'management', label: 'Management', serviceAccount: '', visibilityRoles: ['ADMIN', 'AGENT'] },
+]
 
 const defaultConfig: LeftPanelConfig = {
   ticketsMyLists: [
@@ -50,8 +57,15 @@ const defaultConfig: LeftPanelConfig = {
     { id: 'a-retired', label: 'Retired', field: 'status', value: 'retired' },
   ],
   suppliers: [],
-  ticketQueues: [],
-  assetCategories: [],
+  ticketQueues: DEFAULT_TICKET_QUEUES,
+  assetCategories: [
+    {
+      id: 'ac-uncategorised',
+      label: 'Uncategorised',
+      subcategories: [],
+      visibilityRoles: ['ADMIN', 'AGENT'],
+    },
+  ],
 }
 
 function normalizeTicketMyLists(rules: QueueRule[]): QueueRule[] {
@@ -90,29 +104,46 @@ function safeParse(raw: string | null): LeftPanelConfig {
   if (!raw) return defaultConfig
   try {
     const parsed = JSON.parse(raw)
+    const parsedAssetCategories = Array.isArray(parsed?.assetCategories) ? parsed.assetCategories.map((c: any) => ({
+      id: String(c?.id || `ac-${Date.now()}`),
+      label: String(c?.label || '').trim(),
+      subcategories: Array.isArray(c?.subcategories)
+        ? c.subcategories.map((s: any) => String(s || '').trim()).filter(Boolean)
+        : [],
+      visibilityRoles: Array.isArray(c?.visibilityRoles) && c.visibilityRoles.length
+        ? c.visibilityRoles.map((r: any) => String(r || '').toUpperCase()).filter(Boolean)
+        : ['ADMIN', 'AGENT'],
+    })).filter((c: any) => c.label) : defaultConfig.assetCategories
+    const hasUncategorised = parsedAssetCategories.some((c: any) => String(c?.label || '').trim().toLowerCase() === 'uncategorised')
+
     return {
       ticketsMyLists: normalizeTicketMyLists(Array.isArray(parsed?.ticketsMyLists) ? parsed.ticketsMyLists : defaultConfig.ticketsMyLists),
       users: Array.isArray(parsed?.users) ? parsed.users : defaultConfig.users,
       assets: normalizeAssetRules(Array.isArray(parsed?.assets) ? parsed.assets : defaultConfig.assets),
       suppliers: Array.isArray(parsed?.suppliers) ? parsed.suppliers : defaultConfig.suppliers,
-      ticketQueues: Array.isArray(parsed?.ticketQueues) ? parsed.ticketQueues.map((q: any) => ({
-        id: String(q?.id || `q-${Date.now()}`),
-        label: String(q?.label || '').trim(),
-        serviceAccount: String(q?.serviceAccount || '').trim(),
-        visibilityRoles: Array.isArray(q?.visibilityRoles) && q.visibilityRoles.length
-          ? q.visibilityRoles.map((r: any) => String(r || '').toUpperCase()).filter(Boolean)
-          : ['ADMIN', 'AGENT'],
-      })).filter((q: any) => q.label) : defaultConfig.ticketQueues,
-      assetCategories: Array.isArray(parsed?.assetCategories) ? parsed.assetCategories.map((c: any) => ({
-        id: String(c?.id || `ac-${Date.now()}`),
-        label: String(c?.label || '').trim(),
-        subcategories: Array.isArray(c?.subcategories)
-          ? c.subcategories.map((s: any) => String(s || '').trim()).filter(Boolean)
-          : [],
-        visibilityRoles: Array.isArray(c?.visibilityRoles) && c.visibilityRoles.length
-          ? c.visibilityRoles.map((r: any) => String(r || '').toUpperCase()).filter(Boolean)
-          : ['ADMIN', 'AGENT'],
-      })).filter((c: any) => c.label) : defaultConfig.assetCategories,
+      ticketQueues: Array.isArray(parsed?.ticketQueues)
+        ? parsed.ticketQueues.map((q: any) => ({
+            id: String(q?.id || `q-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+            queueId: typeof q?.queueId === 'number' ? q.queueId : (q?.queueId ? Number(q.queueId) : undefined),
+            queueKey: q?.queueKey ? String(q.queueKey || '').trim() : undefined,
+            label: String(q?.label || '').trim(),
+            serviceAccount: String(q?.serviceAccount || '').trim(),
+            visibilityRoles: Array.isArray(q?.visibilityRoles) && q.visibilityRoles.length
+              ? q.visibilityRoles.map((r: any) => String(r || '').toUpperCase()).filter(Boolean)
+              : ['ADMIN', 'AGENT'],
+          })).filter((q: any) => q.label)
+        : defaultConfig.ticketQueues,
+      assetCategories: hasUncategorised
+        ? parsedAssetCategories
+        : [
+            ...parsedAssetCategories,
+            {
+              id: 'ac-uncategorised',
+              label: 'Uncategorised',
+              subcategories: [],
+              visibilityRoles: ['ADMIN', 'AGENT'],
+            },
+          ],
     }
   } catch {
     return defaultConfig
