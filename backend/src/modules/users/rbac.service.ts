@@ -1,5 +1,6 @@
 import crypto from 'crypto'
 import { query, queryOne, withClient } from '../../db'
+import type { PoolClient } from 'pg'
 import { auditLog } from '../../common/logger/logger'
 import { sendSmtpMail } from '../../services/mail.integration'
 import { enforceProtectedAdminBaseline, enforceProtectedAdminRoleByUserId, isProtectedAdminEmail } from './protected-admin'
@@ -201,7 +202,7 @@ function normalizeTeamKey(input: any): string {
   return String(input || '').trim().toLowerCase()
 }
 
-async function seedQueueActionsAndPermissions(client: any, queue: TicketQueueRow) {
+async function seedQueueActionsAndPermissions(client: PoolClient, queue: TicketQueueRow) {
   for (const action of defaultQueueActions) {
     await client.query(
       'INSERT INTO ticket_queue_actions (queue_id, action_key, action_label, is_custom) VALUES ($1, $2, $3, false) ON CONFLICT (queue_id, action_key) DO NOTHING',
@@ -304,7 +305,7 @@ async function ensureTeamMembershipSchema() {
 }
 
 async function syncTeamMembershipWithClient(
-  client: any,
+  client: PoolClient,
   userId: number,
   tenantId: number,
   teamKeys: string[]

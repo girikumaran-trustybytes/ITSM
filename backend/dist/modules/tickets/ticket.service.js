@@ -388,7 +388,7 @@ async function resolveChangedById(user) {
 }
 function normalizeTeamId(value) {
     const normalized = String(value || '').trim().toLowerCase();
-    return normalized || 'helpdesk';
+    return normalized || 'support';
 }
 function canUserModifyTicketStatus(status) {
     const normalized = String(status || '').trim().toLowerCase();

@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.putMyPresence = exports.getMyPresence = exports.revokeInvitation = exports.resendInvitation = exports.createInvitation = exports.markInvitePending = exports.reinviteServiceAccount = exports.sendServiceAccountInvite = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
+exports.putMyPresence = exports.getMyPresence = exports.revokeInvitation = exports.resendInvitation = exports.createInvitation = exports.markInvitePending = exports.reinviteServiceAccount = exports.sendServiceAccountInvite = exports.sendInvite = exports.addTicketCustomAction = exports.updatePermissions = exports.deleteTicketQueue = exports.updateTicketQueue = exports.createTicketQueue = exports.listTicketQueues = exports.getPermissions = exports.remove = exports.update = exports.create = exports.getOne = exports.list = void 0;
 const svc = __importStar(require("./users.service"));
 const logger_1 = require("../../common/logger/logger");
 const rbacSvc = __importStar(require("./rbac.service"));
@@ -139,6 +139,54 @@ async function getPermissions(req, res) {
     }
 }
 exports.getPermissions = getPermissions;
+async function listTicketQueues(req, res) {
+    try {
+        const queues = await rbacSvc.listTicketQueues();
+        res.json(queues);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to list ticket queues' });
+    }
+}
+exports.listTicketQueues = listTicketQueues;
+async function createTicketQueue(req, res) {
+    try {
+        const payload = req.body || {};
+        const created = await rbacSvc.createTicketQueue({ label: payload.label, queueKey: payload.queueKey }, Number(req.user?.id || 0));
+        res.status(201).json(created);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to create ticket queue' });
+    }
+}
+exports.createTicketQueue = createTicketQueue;
+async function updateTicketQueue(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        const payload = req.body || {};
+        const updated = await rbacSvc.updateTicketQueue(id, { label: payload.label }, Number(req.user?.id || 0));
+        res.json(updated);
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to update ticket queue' });
+    }
+}
+exports.updateTicketQueue = updateTicketQueue;
+async function deleteTicketQueue(req, res) {
+    try {
+        const id = Number(req.params.id);
+        if (!id)
+            return res.status(400).json({ error: 'Invalid id' });
+        const removed = await rbacSvc.deleteTicketQueue(id, Number(req.user?.id || 0));
+        res.json({ success: true, deleted: removed });
+    }
+    catch (err) {
+        res.status(err.status || 500).json({ error: err.message || 'Failed to delete ticket queue' });
+    }
+}
+exports.deleteTicketQueue = deleteTicketQueue;
 async function updatePermissions(req, res) {
     try {
         const id = Number(req.params.id);

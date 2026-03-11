@@ -65,7 +65,7 @@ const createTicket = async (req, res) => {
             payload.requesterId = req.user?.id;
             if (!payload.createdFrom)
                 payload.createdFrom = 'User portal';
-            payload.teamId = 'helpdesk';
+            payload.teamId = 'support';
         }
         if (!payload.createdFrom)
             payload.createdFrom = 'ITSM Platform';

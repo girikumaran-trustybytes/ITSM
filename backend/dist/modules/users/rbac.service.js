@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendServiceAccountInvite = exports.sendUserInvite = exports.markInvitePending = exports.createTicketQueueCustomAction = exports.upsertUserPermissions = exports.getUserPermissionsSnapshot = exports.ensureRbacSeeded = void 0;
+exports.sendServiceAccountInvite = exports.sendUserInvite = exports.markInvitePending = exports.createTicketQueueCustomAction = exports.deleteTicketQueue = exports.updateTicketQueue = exports.createTicketQueue = exports.listTicketQueues = exports.upsertUserPermissions = exports.getUserPermissionsSnapshot = exports.ensureRbacSeeded = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const db_1 = require("../../db");
 const logger_1 = require("../../common/logger/logger");
@@ -136,12 +136,9 @@ const permissionTemplateSeeds = [
     { key: 'supplier_queue', label: 'Supplier Queue', baseRole: 'SUPPLIER' },
 ];
 const defaultQueues = [
-    { key: 'helpdesk', label: 'Helpdesk' },
-    { key: 'l1', label: 'L1' },
-    { key: 'hr', label: 'HR' },
-    { key: 'l2', label: 'L2' },
-    { key: 'l3', label: 'L3' },
-    { key: 'supplier', label: 'Supplier' },
+    { key: 'support', label: 'Support Team' },
+    { key: 'hr', label: 'HR Team' },
+    { key: 'management', label: 'Management' },
 ];
 const defaultQueueActions = [
     { key: 'view', label: 'View' },
@@ -172,6 +169,49 @@ function normalizeDisplayStatus(inviteStatus) {
 }
 function normalizeTeamKey(input) {
     return String(input || '').trim().toLowerCase();
+}
+async function seedQueueActionsAndPermissions(client, queue) {
+    for (const action of defaultQueueActions) {
+        await client.query('INSERT INTO ticket_queue_actions (queue_id, action_key, action_label, is_custom) VALUES ($1, $2, $3, false) ON CONFLICT (queue_id, action_key) DO NOTHING', [queue.queue_id, action.key, action.label]);
+    }
+    const actions = await client.query('SELECT action_key, action_label FROM ticket_queue_actions WHERE queue_id = $1', [queue.queue_id]);
+    for (const row of actions.rows) {
+        const permissionKey = buildTicketPermissionKey(queue.queue_key, row.action_key);
+        const permissionLabel = `Ticket - ${queue.queue_label} - ${row.action_label}`;
+        await client.query(`INSERT INTO permissions (permission_key, permission_name, module, module_name, action, queue, label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (permission_key) DO UPDATE
+       SET permission_name = COALESCE(permissions.permission_name, EXCLUDED.permission_name),
+           module_name = COALESCE(permissions.module_name, EXCLUDED.module_name),
+           label = COALESCE(permissions.label, EXCLUDED.label)`, [
+            permissionKey,
+            permissionKey,
+            'ticket',
+            'ticket',
+            row.action_key,
+            queue.queue_key,
+            permissionLabel,
+        ]);
+    }
+    const permissionRows = await client.query('SELECT permission_id, permission_key, module, action, queue, label FROM permissions WHERE module = $1 AND queue = $2', ['ticket', queue.queue_key]);
+    const roleRows = await client.query('SELECT role_id, role_name FROM roles');
+    const templateRows = await client.query('SELECT template_id, template_key FROM permission_templates');
+    for (const roleRow of roleRows.rows) {
+        for (const permission of permissionRows.rows) {
+            await client.query(`INSERT INTO role_permissions (role_id, permission_id, allowed)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (role_id, permission_id)
+         DO UPDATE SET allowed = EXCLUDED.allowed`, [roleRow.role_id, permission.permission_id, defaultRoleAllowed(roleRow.role_name, permission)]);
+        }
+    }
+    for (const templateRow of templateRows.rows) {
+        for (const permission of permissionRows.rows) {
+            await client.query(`INSERT INTO template_permissions (template_id, permission_id, allowed)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (template_id, permission_id)
+         DO UPDATE SET allowed = EXCLUDED.allowed`, [templateRow.template_id, permission.permission_id, defaultTemplateAllowed(templateRow.template_key, permission)]);
+        }
+    }
 }
 function uniqueStrings(values) {
     return Array.from(new Set(values.filter((value) => String(value || '').trim().length > 0)));
@@ -934,6 +974,138 @@ async function upsertUserPermissions(userId, payload, actorUserId) {
     return getUserPermissionsSnapshot(userId);
 }
 exports.upsertUserPermissions = upsertUserPermissions;
+async function listTicketQueues() {
+    await ensureRbacSeeded();
+    const rows = await (0, db_1.query)('SELECT queue_id, queue_key, queue_label FROM ticket_queues ORDER BY queue_id');
+    return rows;
+}
+exports.listTicketQueues = listTicketQueues;
+async function createTicketQueue(payload, actorUserId) {
+    await ensureRbacSeeded();
+    await ensureTeamMembershipSchema();
+    const label = String(payload.label || '').trim();
+    if (!label)
+        throw { status: 400, message: 'Queue label is required' };
+    const queueKey = normalizeTeamKey(payload.queueKey || label);
+    if (!queueKey)
+        throw { status: 400, message: 'Queue key is required' };
+    return (0, db_1.withClient)(async (client) => {
+        await client.query('BEGIN');
+        try {
+            const existing = await client.query('SELECT queue_id, queue_key, queue_label FROM ticket_queues WHERE queue_key = $1', [queueKey]);
+            if (existing.rows.length > 0) {
+                const row = existing.rows[0];
+                if (row.queue_label !== label) {
+                    await client.query('UPDATE ticket_queues SET queue_label = $1 WHERE queue_id = $2', [label, row.queue_id]);
+                }
+                await client.query(`INSERT INTO teams (tenant_id, team_key, team_name)
+           VALUES (1, $1, $2)
+           ON CONFLICT (tenant_id, team_key) DO UPDATE SET team_name = EXCLUDED.team_name`, [queueKey, label]);
+                await seedQueueActionsAndPermissions(client, { ...row, queue_label: label });
+                await client.query('COMMIT');
+                return { ...row, queue_label: label };
+            }
+            const inserted = await client.query('INSERT INTO ticket_queues (queue_key, queue_label) VALUES ($1, $2) RETURNING queue_id, queue_key, queue_label', [queueKey, label]);
+            const row = inserted.rows[0];
+            await ensureTeamMembershipSchema();
+            await client.query(`INSERT INTO teams (tenant_id, team_key, team_name)
+         VALUES (1, $1, $2)
+         ON CONFLICT (tenant_id, team_key) DO UPDATE SET team_name = EXCLUDED.team_name`, [queueKey, label]);
+            await seedQueueActionsAndPermissions(client, row);
+            await client.query('COMMIT');
+            await (0, logger_1.auditLog)({
+                action: 'create_ticket_queue',
+                entity: 'ticket_queue',
+                entityId: row.queue_id,
+                user: actorUserId,
+                meta: { queueKey: row.queue_key, queueLabel: row.queue_label },
+            });
+            return row;
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+    });
+}
+exports.createTicketQueue = createTicketQueue;
+async function updateTicketQueue(queueId, payload, actorUserId) {
+    await ensureRbacSeeded();
+    await ensureTeamMembershipSchema();
+    const label = String(payload.label || '').trim();
+    if (!label)
+        throw { status: 400, message: 'Queue label is required' };
+    return (0, db_1.withClient)(async (client) => {
+        await client.query('BEGIN');
+        try {
+            const existing = await client.query('SELECT queue_id, queue_key, queue_label FROM ticket_queues WHERE queue_id = $1', [queueId]);
+            if (existing.rows.length === 0)
+                throw { status: 404, message: 'Queue not found' };
+            const row = existing.rows[0];
+            await client.query('UPDATE ticket_queues SET queue_label = $1 WHERE queue_id = $2', [label, queueId]);
+            await client.query(`INSERT INTO teams (tenant_id, team_key, team_name)
+         VALUES (1, $1, $2)
+         ON CONFLICT (tenant_id, team_key) DO UPDATE SET team_name = EXCLUDED.team_name`, [row.queue_key, label]);
+            const actions = await client.query('SELECT action_key, action_label FROM ticket_queue_actions WHERE queue_id = $1', [queueId]);
+            for (const action of actions.rows) {
+                const permissionKey = buildTicketPermissionKey(row.queue_key, action.action_key);
+                const permissionLabel = `Ticket - ${label} - ${action.action_label}`;
+                await client.query('UPDATE permissions SET label = $1 WHERE permission_key = $2', [permissionLabel, permissionKey]);
+            }
+            await client.query('COMMIT');
+            await (0, logger_1.auditLog)({
+                action: 'update_ticket_queue',
+                entity: 'ticket_queue',
+                entityId: queueId,
+                user: actorUserId,
+                meta: { queueKey: row.queue_key, queueLabel: label },
+            });
+            return { ...row, queue_label: label };
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+    });
+}
+exports.updateTicketQueue = updateTicketQueue;
+async function deleteTicketQueue(queueId, actorUserId) {
+    await ensureRbacSeeded();
+    await ensureTeamMembershipSchema();
+    return (0, db_1.withClient)(async (client) => {
+        await client.query('BEGIN');
+        try {
+            const existing = await client.query('SELECT queue_id, queue_key, queue_label FROM ticket_queues WHERE queue_id = $1', [queueId]);
+            if (existing.rows.length === 0)
+                throw { status: 404, message: 'Queue not found' };
+            const row = existing.rows[0];
+            const permissionIds = await client.query('SELECT permission_id FROM permissions WHERE module = $1 AND queue = $2', ['ticket', row.queue_key]);
+            const ids = permissionIds.rows.map((p) => p.permission_id);
+            if (ids.length > 0) {
+                await client.query('DELETE FROM role_permissions WHERE permission_id = ANY($1::int[])', [ids]);
+                await client.query('DELETE FROM template_permissions WHERE permission_id = ANY($1::int[])', [ids]);
+                await client.query('DELETE FROM permissions WHERE permission_id = ANY($1::int[])', [ids]);
+            }
+            await client.query('DELETE FROM ticket_queues WHERE queue_id = $1', [queueId]);
+            await client.query('DELETE FROM teams WHERE tenant_id = 1 AND team_key = $1', [row.queue_key]);
+            await client.query('UPDATE "ServiceAccounts" SET "queueIds" = array_remove("queueIds", $1)', [row.queue_key]);
+            await client.query('COMMIT');
+            await (0, logger_1.auditLog)({
+                action: 'delete_ticket_queue',
+                entity: 'ticket_queue',
+                entityId: queueId,
+                user: actorUserId,
+                meta: { queueKey: row.queue_key, queueLabel: row.queue_label },
+            });
+            return row;
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+    });
+}
+exports.deleteTicketQueue = deleteTicketQueue;
 async function createTicketQueueCustomAction(payload, actorUserId) {
     await ensureRbacSeeded();
     const queueKey = String(payload.queue || '').trim().toLowerCase();
