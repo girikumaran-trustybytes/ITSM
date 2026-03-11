@@ -81,6 +81,8 @@ export type Incident = {
   dateReported: string
   lastAction: string
   lastActionTime: string
+  assetTag?: string
+  staff?: string
   assignedAgentId?: string
   assignedAgentName?: string
   workflow?: string
@@ -546,9 +548,42 @@ export default function TicketsView() {
 
   const loadTickets = async () => {
     try {
+      const resolveLastAction = (ticket: any) => {
+        const toTime = (value: any) => {
+          if (!value) return ''
+          const d = new Date(value)
+          if (Number.isNaN(d.getTime())) return ''
+          return d.toLocaleString()
+        }
+        const history = Array.isArray(ticket?.history) ? ticket.history : []
+        const lastHistory = history.slice().sort((a: any, b: any) => {
+          const atA = new Date(a?.createdAt || a?.time || 0).getTime()
+          const atB = new Date(b?.createdAt || b?.time || 0).getTime()
+          return atB - atA
+        })[0]
+        const lastActionLabel = String(
+          ticket?.lastAction ||
+          ticket?.lastActionLabel ||
+          lastHistory?.action ||
+          lastHistory?.note ||
+          ''
+        ).trim()
+        const lastActionTime = toTime(
+          ticket?.lastActionTime ||
+          ticket?.lastActionAt ||
+          lastHistory?.createdAt ||
+          lastHistory?.time ||
+          ticket?.updatedAt ||
+          ticket?.lastUpdatedAt
+        )
+        const label = lastActionLabel || (lastActionTime ? 'Updated' : '')
+        return { label, time: lastActionTime }
+      }
       const data: any = await ticketService.listTickets({ page: 1, pageSize: 200 })
       const items = Array.isArray(data) ? data : (data?.items || [])
-      const mapped = items.map((t: any) => ({
+      const mapped = items.map((t: any) => {
+        const lastActionInfo = resolveLastAction(t)
+        return ({
         id: t.ticketId || String(t.id),
         slaTimeLeft: t.slaTimeLeft || t?.sla?.resolution?.remainingLabel || '--:--',
         sla: t.sla || null,
@@ -561,8 +596,10 @@ export default function TicketsView() {
         type: t.type,
         endUser: t.requester?.name || t.requester?.email || '',
         dateReported: t.createdAt ? new Date(t.createdAt).toLocaleString() : '',
-        lastAction: '',
-        lastActionTime: '',
+        lastAction: lastActionInfo.label,
+        lastActionTime: lastActionInfo.time,
+        assetTag: t.asset?.assetTag || t.asset?.tag || t.asset?.serial || t.assetTag || '',
+        staff: t.assignedTo?.name || t.assignee?.name || t.staff?.name || t.staff || '',
         assignedAgentId: t.assignedTo?.id || t.assignee?.id,
         assignedAgentName: t.assignedTo?.name || t.assignee?.name,
         workflow: t.workflow || undefined,
@@ -573,7 +610,8 @@ export default function TicketsView() {
         updatedAt: t.updatedAt || undefined,
         closedAt: t.closedAt || undefined,
         closedByName: t.closedBy?.name || t.closedByName || undefined,
-      }))
+        })
+      })
       setIncidents(mapped)
     } catch (err) {
       console.warn('Failed to fetch tickets:', err)
@@ -619,6 +657,38 @@ export default function TicketsView() {
       setShowDetailView(true)
     }
     ticketService.getTicket(id).then((d: any) => {
+      const resolveLastAction = (ticket: any) => {
+        const toTime = (value: any) => {
+          if (!value) return ''
+          const date = new Date(value)
+          if (Number.isNaN(date.getTime())) return ''
+          return date.toLocaleString()
+        }
+        const history = Array.isArray(ticket?.history) ? ticket.history : []
+        const lastHistory = history.slice().sort((a: any, b: any) => {
+          const atA = new Date(a?.createdAt || a?.time || 0).getTime()
+          const atB = new Date(b?.createdAt || b?.time || 0).getTime()
+          return atB - atA
+        })[0]
+        const lastActionLabel = String(
+          ticket?.lastAction ||
+          ticket?.lastActionLabel ||
+          lastHistory?.action ||
+          lastHistory?.note ||
+          ''
+        ).trim()
+        const lastActionTime = toTime(
+          ticket?.lastActionTime ||
+          ticket?.lastActionAt ||
+          lastHistory?.createdAt ||
+          lastHistory?.time ||
+          ticket?.updatedAt ||
+          ticket?.lastUpdatedAt
+        )
+        const label = lastActionLabel || (lastActionTime ? 'Updated' : '')
+        return { label, time: lastActionTime }
+      }
+      const lastActionInfo = resolveLastAction(d)
       const mapped: Incident = {
         id: d.ticketId || String(d.id || id),
         slaTimeLeft: d.slaTimeLeft || d?.sla?.resolution?.remainingLabel || '--:--',
@@ -632,8 +702,10 @@ export default function TicketsView() {
         type: d.type || 'Incident',
         endUser: d.requester?.name || d.requester?.email || '',
         dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : '',
-        lastAction: '',
-        lastActionTime: '',
+        lastAction: lastActionInfo.label,
+        lastActionTime: lastActionInfo.time,
+        assetTag: d.asset?.assetTag || d.asset?.tag || d.asset?.serial || d.assetTag || '',
+        staff: d.assignedTo?.name || d.assignee?.name || d.staff?.name || d.staff || '',
         assignedAgentId: d.assignedTo?.id || d.assignee?.id,
         assignedAgentName: d.assignedTo?.name || d.assignee?.name,
         workflow: d.workflow || undefined,
@@ -914,14 +986,16 @@ export default function TicketsView() {
     viewing: '',
     id: '',
     slaTimeLeft: '',
-    subject: '',
+    team: '',
     category: '',
+    assetTag: '',
     priority: '',
     status: '',
     type: '',
     endUser: '',
     lastAction: '',
     dateReported: '',
+    staff: '',
     issueDetail: '',
     resolution: '',
     dateClosed: ''
@@ -931,14 +1005,16 @@ export default function TicketsView() {
     checkbox: 40,
     status: 80,
     id: 80,
-    summary: 200,
-    category: 120,
+    team: 120,
     sla: 140,
+    assetTag: 120,
     priority: 80,
     type: 100,
     endUser: 140,
     lastAction: 120,
     date: 120,
+    staff: 120,
+    category: 120,
     issueDetail: 140,
     resolution: 140,
     dateClosed: 130
@@ -949,14 +1025,16 @@ export default function TicketsView() {
     checkbox: 40,
     status: 100,
     id: 100,
-    subject: 400,
-    category: 200,
+    team: 140,
     sla: 160,
+    assetTag: 140,
     priority: 100,
     type: 100,
     endUser: 160,
     lastAction: 150,
     date: 140,
+    staff: 140,
+    category: 160,
     issueDetail: 160,
     resolution: 150,
     dateClosed: 150
@@ -967,20 +1045,21 @@ export default function TicketsView() {
   const initialTableWidth = Math.ceil(Object.values(baseColWidths).reduce((s, v) => s + (v as number), 0) + gapTotal + paddingHorizontal)
   const [tableWidth, setTableWidth] = useState<number>(initialTableWidth)
   const tableRef = React.useRef<HTMLDivElement | null>(null)
-  // per-column widths used for gridTemplateColumns. Keep `summary` key because
-  // the template references `columnWidths.summary` (subject text cell).
+  // per-column widths used for gridTemplateColumns.
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
     checkbox: baseColWidths.checkbox,
     status: baseColWidths.status,
     id: baseColWidths.id,
-    summary: (baseColWidths as any).subject ?? 400,
-    category: baseColWidths.category,
+    team: baseColWidths.team,
     sla: baseColWidths.sla,
+    assetTag: baseColWidths.assetTag,
     priority: baseColWidths.priority,
     type: baseColWidths.type,
     endUser: baseColWidths.endUser,
     lastAction: baseColWidths.lastAction,
     date: baseColWidths.date,
+    staff: baseColWidths.staff,
+    category: baseColWidths.category,
     issueDetail: baseColWidths.issueDetail,
     resolution: baseColWidths.resolution,
     dateClosed: baseColWidths.dateClosed
@@ -2189,6 +2268,19 @@ Click below to proceed:
     const label = String(q.label || '').trim().toLowerCase()
     // Remove legacy/dev pseudo-queues from rendering.
     return label !== 'helpdesk' && label !== 'service request'
+  }).sort((a, b) => {
+    const labelA = String(a.label || '').trim().toLowerCase()
+    const labelB = String(b.label || '').trim().toLowerCase()
+    const priority = (label: string) => {
+      if (label.includes('support')) return 0
+      if (label.includes('hr')) return 1
+      if (label.includes('management')) return 2
+      return 3
+    }
+    const prA = priority(labelA)
+    const prB = priority(labelB)
+    if (prA !== prB) return prA - prB
+    return labelA.localeCompare(labelB)
   })
   const mapTeam = (incident: Incident): { team: string; forcedUnassigned: boolean } => {
     const category = String(incident.category || '').trim()
@@ -3236,15 +3328,19 @@ Click below to proceed:
     // Filter by global search
     if (globalSearch.trim()) {
       const searchLower = globalSearch.toLowerCase()
-      const globalMatch = (
+          const globalMatch = (
           incident.id.toLowerCase().includes(searchLower) ||
           incident.subject.toLowerCase().includes(searchLower) ||
           incident.category.toLowerCase().includes(searchLower) ||
           String(incident.slaTimeLeft || '').toLowerCase().includes(searchLower) ||
+          String(incident.assetTag || '').toLowerCase().includes(searchLower) ||
           incident.priority.toLowerCase().includes(searchLower) ||
           incident.status.toLowerCase().includes(searchLower) ||
           incident.type.toLowerCase().includes(searchLower) ||
+          String(incident.lastAction || '').toLowerCase().includes(searchLower) ||
+          String(incident.lastActionTime || '').toLowerCase().includes(searchLower) ||
           incident.dateReported.toLowerCase().includes(searchLower) ||
+          String(incident.staff || '').toLowerCase().includes(searchLower) ||
           String(incident.issueDetail || '').toLowerCase().includes(searchLower) ||
           String(incident.resolution || '').toLowerCase().includes(searchLower) ||
           String(incident.closedAt ? new Date(incident.closedAt).toLocaleString() : '').toLowerCase().includes(searchLower)
@@ -3254,15 +3350,20 @@ Click below to proceed:
 
     // Filter by column-specific searches
     if (searchValues.id && !incident.id.toLowerCase().includes(searchValues.id.toLowerCase())) return false
-    if (searchValues.subject && !incident.subject.toLowerCase().includes(searchValues.subject.toLowerCase())) return false
-      if (searchValues.category && !incident.category.toLowerCase().includes(searchValues.category.toLowerCase())) return false
-      if (searchValues.slaTimeLeft && !String(incident.slaTimeLeft || '').toLowerCase().includes(searchValues.slaTimeLeft.toLowerCase())) return false
-      if (searchValues.priority && !incident.priority.toLowerCase().includes(searchValues.priority.toLowerCase())) return false
-      if (searchValues.status && !incident.status.toLowerCase().includes(searchValues.status.toLowerCase())) return false
-      if (searchValues.type && !incident.type.toLowerCase().includes(searchValues.type.toLowerCase())) return false
-      if (searchValues.endUser && !incident.endUser.toLowerCase().includes(searchValues.endUser.toLowerCase())) return false
+    if (searchValues.team) {
+      const teamLabel = mapTeam(incident).team
+      if (!String(teamLabel || '').toLowerCase().includes(searchValues.team.toLowerCase())) return false
+    }
+    if (searchValues.assetTag && !String(incident.assetTag || '').toLowerCase().includes(searchValues.assetTag.toLowerCase())) return false
+    if (searchValues.category && !incident.category.toLowerCase().includes(searchValues.category.toLowerCase())) return false
+    if (searchValues.slaTimeLeft && !String(incident.slaTimeLeft || '').toLowerCase().includes(searchValues.slaTimeLeft.toLowerCase())) return false
+    if (searchValues.priority && !incident.priority.toLowerCase().includes(searchValues.priority.toLowerCase())) return false
+    if (searchValues.status && !incident.status.toLowerCase().includes(searchValues.status.toLowerCase())) return false
+    if (searchValues.type && !incident.type.toLowerCase().includes(searchValues.type.toLowerCase())) return false
+    if (searchValues.endUser && !incident.endUser.toLowerCase().includes(searchValues.endUser.toLowerCase())) return false
     if (searchValues.lastAction && !incident.lastAction.toLowerCase().includes(searchValues.lastAction.toLowerCase())) return false
     if (searchValues.dateReported && !incident.dateReported.toLowerCase().includes(searchValues.dateReported.toLowerCase())) return false
+    if (searchValues.staff && !String(incident.staff || '').toLowerCase().includes(searchValues.staff.toLowerCase())) return false
     if (searchValues.issueDetail && !String(incident.issueDetail || '').toLowerCase().includes(searchValues.issueDetail.toLowerCase())) return false
     if (searchValues.resolution && !String(incident.resolution || '').toLowerCase().includes(searchValues.resolution.toLowerCase())) return false
     if (searchValues.dateClosed) {
@@ -3344,7 +3445,7 @@ Click below to proceed:
   }
 
   const handleMouseDown = (e: React.MouseEvent, column: string) => {
-    const toKey = (c: string) => (c === 'subject' ? 'summary' : c)
+    const toKey = (c: string) => c
     const colKey = toKey(column)
     if (colKey === 'checkbox') return
     e.preventDefault()
@@ -3355,7 +3456,7 @@ Click below to proceed:
   }
 
   const handleAutoFit = (column: string) => {
-    const toKey = (c: string) => (c === 'subject' ? 'summary' : c)
+    const toKey = (c: string) => c
     const key = toKey(column) as keyof typeof columnWidths
     if (key === 'checkbox' || !tableRef.current) return
 
@@ -3363,13 +3464,15 @@ Click below to proceed:
       checkbox: 'checkbox',
       status: 'status',
       id: 'id',
-      summary: 'subject',
-      category: 'category',
-      priority: 'priority',
+      team: 'team',
       type: 'type',
+      endUser: 'endUser',
+      category: 'category',
+      assetTag: 'assetTag',
+      priority: 'priority',
       lastAction: 'lastAction',
       date: 'date',
-      endUser: 'endUser',
+      staff: 'staff',
       issueDetail: 'issueDetail',
       resolution: 'resolution',
       dateClosed: 'dateClosed'
@@ -3496,7 +3599,7 @@ Click below to proceed:
     return { width, height, points }
   }, [ticketVisuals])
 
-  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.id}px ${columnWidths.summary}px ${columnWidths.category}px ${columnWidths.sla}px ${columnWidths.priority}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.issueDetail}px ${columnWidths.resolution}px ${columnWidths.dateClosed}px 1fr`
+  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.team}px ${columnWidths.id}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.sla}px ${columnWidths.assetTag}px ${columnWidths.priority}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.staff}px ${columnWidths.category}px ${columnWidths.issueDetail}px ${columnWidths.resolution}px ${columnWidths.dateClosed}px 1fr`
   const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
   const activeSlaPriorityRank = Number(selectedTicket?.sla?.priorityRank || rankFromPriorityLabel(selectedTicket?.sla?.priority || selectedTicket?.priority))
   const activeSlaPolicyName = String(selectedTicket?.sla?.policyName || 'Select Policy')
@@ -4959,15 +5062,17 @@ Click below to proceed:
               <span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'checkbox')} />
             </div>
             <div className="col-status col-header">Status<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')} /></div>
+            <div className="col-team col-header">Team<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'team')} onDoubleClick={() => handleAutoFit('team')} /></div>
             <div className="col-id col-header">Ticket ID<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')} /></div>
-            <div className="col-summary col-header">Subject<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')} /></div>
-            <div className="col-category col-header">Issue<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')} /></div>
-            <div className="col-sla col-header">SLA Time Left<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'sla')} onDoubleClick={() => handleAutoFit('sla')} /></div>
-            <div className="col-priority col-header">Priority<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')} /></div>
             <div className="col-type col-header">Ticket Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
             <div className="col-endUser col-header">Client<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
-            <div className="col-lastAction col-header">Last Action Date<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')} /></div>
+            <div className="col-sla col-header">SLA Time Left<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'sla')} onDoubleClick={() => handleAutoFit('sla')} /></div>
+            <div className="col-assetTag col-header">Asset Tag<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'assetTag')} onDoubleClick={() => handleAutoFit('assetTag')} /></div>
+            <div className="col-priority col-header">Priority<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')} /></div>
+            <div className="col-lastAction col-header">Last Action<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')} /></div>
             <div className="col-date col-header">Date Created<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onDoubleClick={() => handleAutoFit('date')} /></div>
+            <div className="col-staff col-header">Staff<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'staff')} onDoubleClick={() => handleAutoFit('staff')} /></div>
+            <div className="col-category col-header">Issue<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')} /></div>
             <div className="col-issueDetail col-header">Issue - Detail<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'issueDetail')} onDoubleClick={() => handleAutoFit('issueDetail')} /></div>
             <div className="col-resolution col-header">Resolution<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'resolution')} onDoubleClick={() => handleAutoFit('resolution')} /></div>
             <div className="col-dateClosed col-header">Date Closed<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'dateClosed')} onDoubleClick={() => handleAutoFit('dateClosed')} /></div>
@@ -4983,15 +5088,17 @@ Click below to proceed:
                 </button>
               </div>
               <div className="col-status"><input className="table-filter-input" value={searchValues.status} onChange={(e) => handleSearchChange('status', e.target.value)} /></div>
+              <div className="col-team"><input className="table-filter-input" value={searchValues.team} onChange={(e) => handleSearchChange('team', e.target.value)} /></div>
               <div className="col-id"><input className="table-filter-input" value={searchValues.id} onChange={(e) => handleSearchChange('id', e.target.value)} /></div>
-              <div className="col-summary"><input className="table-filter-input" value={searchValues.subject} onChange={(e) => handleSearchChange('subject', e.target.value)} /></div>
-              <div className="col-category"><input className="table-filter-input" value={searchValues.category} onChange={(e) => handleSearchChange('category', e.target.value)} /></div>
-              <div className="col-sla"><input className="table-filter-input" value={searchValues.slaTimeLeft} onChange={(e) => handleSearchChange('slaTimeLeft', e.target.value)} /></div>
-              <div className="col-priority"><input className="table-filter-input" value={searchValues.priority} onChange={(e) => handleSearchChange('priority', e.target.value)} /></div>
               <div className="col-type"><input className="table-filter-input" value={searchValues.type} onChange={(e) => handleSearchChange('type', e.target.value)} /></div>
               <div className="col-endUser"><input className="table-filter-input" value={searchValues.endUser} onChange={(e) => handleSearchChange('endUser', e.target.value)} /></div>
+              <div className="col-sla"><input className="table-filter-input" value={searchValues.slaTimeLeft} onChange={(e) => handleSearchChange('slaTimeLeft', e.target.value)} /></div>
+              <div className="col-assetTag"><input className="table-filter-input" value={searchValues.assetTag} onChange={(e) => handleSearchChange('assetTag', e.target.value)} /></div>
+              <div className="col-priority"><input className="table-filter-input" value={searchValues.priority} onChange={(e) => handleSearchChange('priority', e.target.value)} /></div>
               <div className="col-lastAction"><input className="table-filter-input" value={searchValues.lastAction} onChange={(e) => handleSearchChange('lastAction', e.target.value)} /></div>
               <div className="col-date"><input className="table-filter-input" value={searchValues.dateReported} onChange={(e) => handleSearchChange('dateReported', e.target.value)} /></div>
+              <div className="col-staff"><input className="table-filter-input" value={searchValues.staff} onChange={(e) => handleSearchChange('staff', e.target.value)} /></div>
+              <div className="col-category"><input className="table-filter-input" value={searchValues.category} onChange={(e) => handleSearchChange('category', e.target.value)} /></div>
               <div className="col-issueDetail"><input className="table-filter-input" value={searchValues.issueDetail} onChange={(e) => handleSearchChange('issueDetail', e.target.value)} /></div>
               <div className="col-resolution"><input className="table-filter-input" value={searchValues.resolution} onChange={(e) => handleSearchChange('resolution', e.target.value)} /></div>
               <div className="col-dateClosed"><input className="table-filter-input" value={searchValues.dateClosed} onChange={(e) => handleSearchChange('dateClosed', e.target.value)} /></div>
@@ -5011,11 +5118,10 @@ Click below to proceed:
               <div className="col-status">
                 <span className={`status-badge ${statusClass(incident.status)}`}>{incident.status}</span>
               </div>
+              <div className="col-team">{mapTeam(incident).team || '-'}</div>
               <div className="col-id">{incident.id}</div>
-              <div className="col-summary">
-                <a href="#" onClick={(e) => { e.preventDefault(); handleTicketClick(incident) }}>{incident.subject || '-'}</a>
-              </div>
-              <div className="col-category">{incident.category || '-'}</div>
+              <div className="col-type">{incident.type || '-'}</div>
+              <div className="col-endUser">{incident.endUser || '-'}</div>
               <div className="col-sla">
                 {(() => {
                   const isClosed = String(incident.status || '').trim().toLowerCase() === 'closed'
@@ -5035,11 +5141,45 @@ Click below to proceed:
                   )
                 })()}
               </div>
+              <div className="col-assetTag">{incident.assetTag || '-'}</div>
               <div className="col-priority">{incident.priority || '-'}</div>
-              <div className="col-type">{incident.type || '-'}</div>
-              <div className="col-endUser">{incident.endUser || '-'}</div>
-              <div className="col-lastAction">{incident.lastAction || '-'}</div>
+              <div className="col-lastAction">
+                {(() => {
+                  const label = String(incident.lastAction || '').trim()
+                  const time = String(incident.lastActionTime || '').trim()
+                  if (label && time) return `${label} · ${time}`
+                  if (time) return time
+                  if (label) return label
+                  return '-'
+                })()}
+              </div>
               <div className="col-date">{incident.dateReported || '-'}</div>
+              <div className="col-staff">
+                {(() => {
+                  const staffLabel = String(incident.staff || incident.assignedAgentName || '').trim()
+                  const agentKey = String(incident.assignedAgentId || '').trim()
+                  const record = findAgentRecord(agentKey, staffLabel)
+                  const presenceClass = record ? getAgentPresenceClass(record) : 'offline'
+                  if (!staffLabel && !record) {
+                    return (
+                      <div className="staff-cell">
+                        <div className="queue-avatar queue-avatar-dark">U</div>
+                        <span>Unassigned</span>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="staff-cell">
+                      <div className="queue-avatar queue-avatar-with-presence">
+                        {renderQueueAgentAvatar(record || { id: agentKey, name: staffLabel }, staffLabel || 'User')}
+                        <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                      </div>
+                      <span>{staffLabel || 'Unassigned'}</span>
+                    </div>
+                  )
+                })()}
+              </div>
+              <div className="col-category">{incident.category || '-'}</div>
               <div className="col-issueDetail">{incident.issueDetail || '-'}</div>
               <div className="col-resolution">{incident.resolution || '-'}</div>
               <div className="col-dateClosed">{incident.closedAt ? new Date(incident.closedAt).toLocaleString() : '-'}</div>

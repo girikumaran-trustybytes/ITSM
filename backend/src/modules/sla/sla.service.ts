@@ -9,6 +9,13 @@ async function ensureSlaConfigSchema() {
       await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "format" TEXT')
       await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "timeZone" TEXT')
       await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "businessSchedule" JSONB')
+      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "description" TEXT')
+      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "applyMatch" TEXT')
+      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "conditions" JSONB')
+      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "responseEscalations" JSONB')
+      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "resolutionEscalations" JSONB')
+      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "operationalHours" TEXT')
+      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "escalationEmail" BOOLEAN')
     })()
   }
   await schemaReady
@@ -37,10 +44,17 @@ export async function createSlaConfig(payload: any) {
   const priority = String(payload.priority || '').trim()
   const priorityRank = payload.priorityRank === undefined ? null : Number(payload.priorityRank)
   const format = payload.format === undefined ? null : String(payload.format || '').trim()
+  const description = payload.description === undefined ? null : String(payload.description || '').trim()
+  const applyMatch = payload.applyMatch === undefined ? null : String(payload.applyMatch || '').trim()
   const responseTimeMin = Number(payload.responseTimeMin)
   const resolutionTimeMin = Number(payload.resolutionTimeMin)
   const timeZone = payload.timeZone === undefined ? null : String(payload.timeZone || '').trim()
   const businessSchedule = payload.businessSchedule && typeof payload.businessSchedule === 'object' ? payload.businessSchedule : null
+  const conditions = Array.isArray(payload.conditions) ? payload.conditions : null
+  const responseEscalations = Array.isArray(payload.responseEscalations) ? payload.responseEscalations : null
+  const resolutionEscalations = Array.isArray(payload.resolutionEscalations) ? payload.resolutionEscalations : null
+  const operationalHours = payload.operationalHours === undefined ? null : String(payload.operationalHours || '').trim()
+  const escalationEmail = payload.escalationEmail === undefined ? null : Boolean(payload.escalationEmail)
   if (!name) throw { status: 400, message: 'Name is required' }
   if (!priority) throw { status: 400, message: 'Priority is required' }
   if (priorityRank !== null && (!Number.isFinite(priorityRank) || priorityRank < 1 || priorityRank > 4)) {
@@ -50,12 +64,19 @@ export async function createSlaConfig(payload: any) {
   if (!Number.isFinite(resolutionTimeMin) || resolutionTimeMin < 0) throw { status: 400, message: 'Invalid resolution time' }
 
   const rows = await query(
-    'INSERT INTO "SlaConfig" ("name", "priority", "priorityRank", "format", "responseTimeMin", "resolutionTimeMin", "businessHours", "timeZone", "businessSchedule", "active", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW()) RETURNING *',
+    'INSERT INTO "SlaConfig" ("name", "priority", "priorityRank", "format", "description", "applyMatch", "conditions", "responseEscalations", "resolutionEscalations", "operationalHours", "escalationEmail", "responseTimeMin", "resolutionTimeMin", "businessHours", "timeZone", "businessSchedule", "active", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW()) RETURNING *',
     [
       name,
       priority,
       priorityRank,
       format,
+      description,
+      applyMatch,
+      conditions,
+      responseEscalations,
+      resolutionEscalations,
+      operationalHours,
+      escalationEmail,
       responseTimeMin,
       resolutionTimeMin,
       Boolean(payload.businessHours),
@@ -74,6 +95,13 @@ export async function updateSlaConfig(id: number, payload: any) {
   if (payload.priority !== undefined) data.priority = String(payload.priority).trim()
   if (payload.priorityRank !== undefined) data.priorityRank = Number(payload.priorityRank)
   if (payload.format !== undefined) data.format = String(payload.format).trim()
+  if (payload.description !== undefined) data.description = String(payload.description).trim()
+  if (payload.applyMatch !== undefined) data.applyMatch = String(payload.applyMatch).trim()
+  if (payload.conditions !== undefined) data.conditions = Array.isArray(payload.conditions) ? payload.conditions : null
+  if (payload.responseEscalations !== undefined) data.responseEscalations = Array.isArray(payload.responseEscalations) ? payload.responseEscalations : null
+  if (payload.resolutionEscalations !== undefined) data.resolutionEscalations = Array.isArray(payload.resolutionEscalations) ? payload.resolutionEscalations : null
+  if (payload.operationalHours !== undefined) data.operationalHours = String(payload.operationalHours).trim()
+  if (payload.escalationEmail !== undefined) data.escalationEmail = Boolean(payload.escalationEmail)
   if (payload.responseTimeMin !== undefined) data.responseTimeMin = Number(payload.responseTimeMin)
   if (payload.resolutionTimeMin !== undefined) data.resolutionTimeMin = Number(payload.resolutionTimeMin)
   if (payload.businessHours !== undefined) data.businessHours = Boolean(payload.businessHours)

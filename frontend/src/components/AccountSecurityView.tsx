@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { changePassword, getMyMfaSettings, resetAuthenticatorApp, setupAuthenticatorApp, updateMyMfaSettings, verifyAuthenticatorAppSetup } from '../services/auth.service'
 import { updateUser } from '../modules/users/services/user.service'
-import { getUserAvatarUrl, getUserInitials, setUserAvatarOverride } from '../utils/avatar'
+import { getUserAvatarUrl, getUserInitials } from '../utils/avatar'
 
 type SecurityTab = 'account-information' | 'password' | 'two-factor-authentication'
 
@@ -11,7 +11,6 @@ export default function AccountSecurityView() {
   const navigate = useNavigate()
   const { user, refreshUser } = useAuth()
   const canEditUserName = String(user?.role || '').toUpperCase() === 'ADMIN'
-  const avatarFileRef = React.useRef<HTMLInputElement | null>(null)
   const [tab, setTab] = useState<SecurityTab>('account-information')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -48,7 +47,6 @@ export default function AccountSecurityView() {
     surname,
     initial: singleInitial,
     phoneNo: String(user?.phone || user?.phoneNumber || '').trim(),
-    avatarUrl,
   })
 
   React.useEffect(() => {
@@ -62,7 +60,6 @@ export default function AccountSecurityView() {
       surname: nextSurname,
       initial: nextInitial,
       phoneNo: String(user?.phone || user?.phoneNumber || '').trim(),
-      avatarUrl: getUserAvatarUrl(user),
     })
   }, [user?.name, user?.email, user?.phone, user?.phoneNumber])
 
@@ -81,38 +78,6 @@ export default function AccountSecurityView() {
     loadMfa()
     return () => { cancelled = true }
   }, [])
-
-  const onPickAvatar = () => {
-    avatarFileRef.current?.click()
-  }
-
-  const onAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!String(file.type || '').startsWith('image/')) {
-      setProfileError('Please select a valid image file.')
-      return
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      setProfileError('Image size should be less than 2MB.')
-      return
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = String(reader.result || '')
-      if (!result) return
-      setProfileError('')
-      setProfileForm((prev) => ({ ...prev, avatarUrl: result }))
-    }
-    reader.onerror = () => setProfileError('Failed to read selected image.')
-    reader.readAsDataURL(file)
-  }
-
-  const onRemoveAvatar = () => {
-    setProfileError('')
-    setProfileForm((prev) => ({ ...prev, avatarUrl: '' }))
-    if (avatarFileRef.current) avatarFileRef.current.value = ''
-  }
 
   const onSubmitPassword = async () => {
     setMessage('')
@@ -154,9 +119,7 @@ export default function AccountSecurityView() {
       await updateUser(Number(user.id), {
         ...(canEditUserName ? { name: name || undefined } : {}),
         phone: profileForm.phoneNo.trim() || undefined,
-        avatarUrl: profileForm.avatarUrl || null,
       })
-      setUserAvatarOverride(user, profileForm.avatarUrl || '')
       refreshUser()
       setIsProfileEditing(false)
       setProfileMessage('Account information updated successfully.')
@@ -302,10 +265,29 @@ export default function AccountSecurityView() {
         <div className="account-security-layout">
           <aside className="account-security-sidebar">
             <div className="account-security-user">
-              <div className="account-security-avatar unified-user-avatar">
-                {profileForm.avatarUrl ? <img src={profileForm.avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
+              <div className="account-security-avatar-wrap">
+                <div
+                  className="account-security-avatar account-security-avatar-lg unified-user-avatar"
+                  style={{ width: 260, height: 260, fontSize: 90 }}
+                >
+                  {avatarUrl ? <img src={avatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : initials}
+                </div>
+                <button
+                  type="button"
+                  className="account-security-avatar-edit"
+                  onClick={() => {
+                    setProfileError('')
+                    setProfileMessage('')
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  </svg>
+                  Edit
+                </button>
               </div>
-              <div>
+              <div className="account-security-user-meta">
                 <div className="account-security-name">{user?.name || 'User'}</div>
                 <div className="account-security-email">{user?.email || ''}</div>
               </div>
@@ -325,19 +307,6 @@ export default function AccountSecurityView() {
                 <h3>Staff Details</h3>
                 {profileError ? <div className="account-security-alert error">{profileError}</div> : null}
                 {profileMessage ? <div className="account-security-alert success">{profileMessage}</div> : null}
-                {isProfileEditing ? (
-                  <div className="account-security-inline-actions" style={{ justifyContent: 'flex-start', marginBottom: 10 }}>
-                    <input
-                      ref={avatarFileRef}
-                      type="file"
-                      accept="image/*"
-                      style={{ display: 'none' }}
-                      onChange={onAvatarFileChange}
-                    />
-                    <button type="button" onClick={onPickAvatar}>Change Photo</button>
-                    <button type="button" onClick={onRemoveAvatar}>Remove Photo</button>
-                  </div>
-                ) : null}
                 <div className="account-security-info-list">
                   <div className="account-security-table" role="table" aria-label="Staff Details">
                     <div className="account-security-table-row" role="row">

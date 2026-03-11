@@ -13,6 +13,8 @@ import {
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
+import { getSecuritySettings, updateSecuritySettings, type SecuritySettings } from '../services/security-settings.service'
+import { cancelAccount, exportAccountData, getAccountSettings, updateAccountSettings, type AccountSettings } from '../services/account-settings.service'
 import * as userService from '../modules/users/services/user.service'
 
 type PaginationMeta = {
@@ -45,10 +47,17 @@ type MenuSection = {
 
 const settingsMenu: MenuSection[] = [
   {
-    id: 'general',
-    label: 'General Settings',
+    id: 'account',
+    label: 'Account',
     items: [
-      { id: 'timezone-localization', label: 'Time zone & localization' },
+      { id: 'account', label: 'Account' },
+    ],
+  },
+  {
+    id: 'security',
+    label: 'Security',
+    items: [
+      { id: 'security', label: 'Security' },
     ],
   },
   {
@@ -119,14 +128,85 @@ type TicketQueueModalMode = 'add' | 'edit' | 'delete'
 type AssetCategoryModalMode = 'add' | 'edit' | 'delete'
 
 const SLA_PRIORITIES = ['Critical', 'High', 'Medium', 'Low'] as const
+
+const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
+  loginMethods: {
+    password: true,
+    passwordless: false,
+    googleSso: false,
+    sso: false,
+  },
+  ipRangeRestriction: {
+    enabled: false,
+    ranges: [],
+  },
+  sessionTimeoutMinutes: 60,
+  requireAuthForPublicUrls: true,
+  ticketSharing: {
+    publicLinks: true,
+    shareOutsideGroup: false,
+    allowRequesterShare: true,
+    requesterShareScope: 'any',
+  },
+  adminNotifications: {
+    adminUserId: null,
+  },
+  attachmentFileTypes: {
+    mode: 'all',
+    types: [],
+  },
+}
+
+const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
+  accountName: 'ITSM Workspace',
+  currentPlan: 'Standard',
+  activeSince: '',
+  assetsCount: 0,
+  agentsCount: 0,
+  dataCenter: 'US-East',
+  version: '1.0',
+  contact: {
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    invoiceEmail: '',
+  },
+}
 type SlaPriority = typeof SLA_PRIORITIES[number]
 const SLA_TIME_UNITS = ['min', 'hrs', 'days', 'weeks'] as const
 type SlaTimeUnit = typeof SLA_TIME_UNITS[number]
 type SlaFormat = 'critical_set' | 'p_set' | 'custom'
-const BUSINESS_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
-type BusinessDay = typeof BUSINESS_DAYS[number]
-type TimeSlot = { start: string; end: string }
-type BusinessSchedule = Record<BusinessDay, { enabled: boolean; slots: TimeSlot[] }>
+const SLA_OPERATIONAL_HOURS = ['Business Hours', '24x7'] as const
+type SlaOperationalHours = typeof SLA_OPERATIONAL_HOURS[number]
+type SlaApplyMatch = 'all' | 'any'
+type SlaCondition = {
+  field: string
+  operator: string
+  value: string
+}
+type SlaEscalationRule = {
+  level: number
+  afterValue: string
+  afterUnit: SlaTimeUnit
+  notify: string
+  recipients: string
+}
+const SLA_PRIORITY_LABELS: Record<SlaPriority, string> = {
+  Critical: 'Urgent',
+  High: 'High',
+  Medium: 'Medium',
+  Low: 'Low',
+}
+const SLA_TIME_UNIT_LABELS: Record<SlaTimeUnit, string> = {
+  min: 'Mins',
+  hrs: 'Hrs',
+  days: 'Days',
+  weeks: 'Weeks',
+}
+const SLA_CONDITION_FIELDS = ['Priority', 'Ticket Type', 'Queue', 'Category', 'Source', 'Requester', 'Department', 'Tag'] as const
+const SLA_CONDITION_OPERATORS = ['is', 'is not', 'contains', 'does not contain', 'in', 'not in'] as const
+const SLA_NOTIFY_CHANNELS = ['Email', 'SMS', 'Slack', 'Webhook'] as const
 const SYSTEM_TIME_ZONE = (() => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -398,9 +478,9 @@ type PrioritySlaForm = {
   responseTimeUnit: SlaTimeUnit
   resolutionTimeMin: string
   resolutionTimeUnit: SlaTimeUnit
+  operationalHours: SlaOperationalHours
   businessHours: boolean
-  timeZone: string
-  businessSchedule: BusinessSchedule
+  escalationEmail: boolean
   active: boolean
   existingId: number | null
 }
@@ -654,16 +734,6 @@ const toWorkspaceProvider = (
   return 'custom'
 }
 
-const createDefaultBusinessSchedule = (): BusinessSchedule => ({
-  Sunday: { enabled: false, slots: [{ start: '08:00', end: '17:30' }] },
-  Monday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
-  Tuesday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
-  Wednesday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
-  Thursday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
-  Friday: { enabled: true, slots: [{ start: '08:00', end: '17:30' }] },
-  Saturday: { enabled: false, slots: [{ start: '08:00', end: '17:30' }] },
-})
-
 const defaultPriorityPolicy = (priority: SlaPriority): PrioritySlaForm => {
   const defaults: Record<SlaPriority, { response: string; responseUnit: SlaTimeUnit; resolution: string; resolutionUnit: SlaTimeUnit }> = {
     Critical: { response: '15', responseUnit: 'min', resolution: '4', resolutionUnit: 'hrs' },
@@ -672,15 +742,15 @@ const defaultPriorityPolicy = (priority: SlaPriority): PrioritySlaForm => {
     Low: { response: '4', responseUnit: 'hrs', resolution: '3', resolutionUnit: 'days' },
   }
   return {
-    enabled: false,
+    enabled: true,
     name: `${priority} SLA`,
     responseTimeMin: defaults[priority].response,
     responseTimeUnit: defaults[priority].responseUnit,
     resolutionTimeMin: defaults[priority].resolution,
     resolutionTimeUnit: defaults[priority].resolutionUnit,
-    businessHours: false,
-    timeZone: SYSTEM_TIME_ZONE,
-    businessSchedule: createDefaultBusinessSchedule(),
+    operationalHours: 'Business Hours',
+    businessHours: true,
+    escalationEmail: true,
     active: true,
     existingId: null,
   }
@@ -794,6 +864,12 @@ const buildPriorityPoliciesForPolicy = (
     if (!row) continue
     const responseDisplay = splitMinutesToDisplay(row.responseTimeMin)
     const resolutionDisplay = splitMinutesToDisplay(row.resolutionTimeMin)
+    const operationalHours: SlaOperationalHours =
+      String(row?.operationalHours || '').trim() === '24x7'
+        ? '24x7'
+        : row?.businessHours === false
+          ? '24x7'
+          : 'Business Hours'
     next[priority] = {
       enabled: true,
       name: String(row.name || ''),
@@ -801,10 +877,10 @@ const buildPriorityPoliciesForPolicy = (
       responseTimeUnit: responseDisplay.unit,
       resolutionTimeMin: resolutionDisplay.value,
       resolutionTimeUnit: resolutionDisplay.unit,
-      businessHours: Boolean(row.businessHours),
-      timeZone: SYSTEM_TIME_ZONE,
-      businessSchedule: createDefaultBusinessSchedule(),
-      active: Boolean(row.active),
+      operationalHours,
+      businessHours: operationalHours === 'Business Hours',
+      escalationEmail: row?.escalationEmail === undefined ? true : Boolean(row.escalationEmail),
+      active: row?.active === undefined ? true : Boolean(row.active),
       existingId: Number(row.id),
     }
   }
@@ -828,13 +904,11 @@ const settingsTopicPanels: Record<string, PanelDef[]> = {
       { key: 'afterHoursEscalation', label: 'After-hours escalation enabled', type: 'toggle' },
     ]},
   ],
-  'timezone-localization': [
-    { id: 'localization', title: 'Regional Preferences', description: 'Default timezone and locale for records and notifications.', fields: [
-      { key: 'timezone', label: 'Default timezone', type: 'select', options: ['UTC', 'America/New_York', 'Europe/London', 'Asia/Kolkata'] },
-      { key: 'locale', label: 'Localization', type: 'select', options: ['en-US', 'en-GB', 'fr-FR', 'de-DE'] },
-      { key: 'dateFormat', label: 'Date format', type: 'select', options: ['YYYY-MM-DD', 'DD/MM/YYYY', 'MM/DD/YYYY'] },
-      { key: 'weekStart', label: 'Week starts on', type: 'select', options: ['Monday', 'Sunday'] },
-    ]},
+  'account': [
+    { id: 'account', title: 'Account', description: 'Account profile and ownership details.', fields: [] },
+  ],
+  'security': [
+    { id: 'security', title: 'Security', description: 'Security and access policies.', fields: [] },
   ],
   'roles-permissions': [
     { id: 'rbac', title: 'Role Matrix', description: 'Define role templates and scoped permissions.', fields: [
@@ -1205,6 +1279,20 @@ export default function AdminView(_props: AdminViewProps) {
   const [recentOnly, setRecentOnly] = useState(false)
   const [activeSection, setActiveSection] = useState(settingsMenu[0].id)
   const [activeItem, setActiveItem] = useState(settingsMenu[0].items[0].id)
+  const [securityLoading, setSecurityLoading] = useState(false)
+  const [securitySaving, setSecuritySaving] = useState(false)
+  const [securityError, setSecurityError] = useState('')
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null)
+  const [securityDraft, setSecurityDraft] = useState<SecuritySettings>(DEFAULT_SECURITY_SETTINGS)
+  const [securityDirty, setSecurityDirty] = useState(false)
+  const [adminNotifyUsers, setAdminNotifyUsers] = useState<Array<{ id: string; label: string }>>([])
+  const [accountLoading, setAccountLoading] = useState(false)
+  const [accountSaving, setAccountSaving] = useState(false)
+  const [accountError, setAccountError] = useState('')
+  const [accountSettings, setAccountSettings] = useState<AccountSettings | null>(null)
+  const [accountDraft, setAccountDraft] = useState<AccountSettings>(DEFAULT_ACCOUNT_SETTINGS)
+  const [accountDirty, setAccountDirty] = useState(false)
+  const [accountTab, setAccountTab] = useState<'contact' | 'other'>('contact')
   const [values, setValues] = useState<Values>(initialValues)
   const [savedValues, setSavedValues] = useState<Values>(initialValues)
   const [showConfirmSave, setShowConfirmSave] = useState(false)
@@ -1250,11 +1338,15 @@ export default function AdminView(_props: AdminViewProps) {
   const [showPolicyForm, setShowPolicyForm] = useState(false)
   const [policyFormMode, setPolicyFormMode] = useState<'create' | 'edit'>('create')
   const [policyName, setPolicyName] = useState('')
+  const [policyDescription, setPolicyDescription] = useState('')
   const [editingPolicyName, setEditingPolicyName] = useState<string | null>(null)
   const [policyFormat, setPolicyFormat] = useState<SlaFormat>('critical_set')
   const [customFormatText, setCustomFormatText] = useState('')
   const [policyTimeZone, setPolicyTimeZone] = useState<string>(SYSTEM_TIME_ZONE)
-  const [policySchedule, setPolicySchedule] = useState<BusinessSchedule>(createDefaultBusinessSchedule())
+  const [policyApplyMatch, setPolicyApplyMatch] = useState<SlaApplyMatch>('all')
+  const [policyConditions, setPolicyConditions] = useState<SlaCondition[]>([])
+  const [policyResponseRules, setPolicyResponseRules] = useState<SlaEscalationRule[]>([])
+  const [policyResolutionRules, setPolicyResolutionRules] = useState<SlaEscalationRule[]>([])
   const [slaPage, setSlaPage] = useState(1)
   const [mailForm, setMailForm] = useState<MailConfigForm>(defaultMailConfigForm())
   const [mailLoading, setMailLoading] = useState(false)
@@ -1415,6 +1507,86 @@ export default function AdminView(_props: AdminViewProps) {
     }
   }, [visibleSections, activeSection, activeItem, role])
   useEffect(() => {
+    const baseline = securitySettings || DEFAULT_SECURITY_SETTINGS
+    setSecurityDirty(JSON.stringify(securityDraft) !== JSON.stringify(baseline))
+  }, [securityDraft, securitySettings])
+  useEffect(() => {
+    const baseline = accountSettings || DEFAULT_ACCOUNT_SETTINGS
+    setAccountDirty(JSON.stringify(accountDraft) !== JSON.stringify(baseline))
+  }, [accountDraft, accountSettings])
+  useEffect(() => {
+    if (activeSection !== 'security' || role !== 'ADMIN') return
+    let cancelled = false
+    setSecurityLoading(true)
+    getSecuritySettings()
+      .then((data) => {
+        if (cancelled) return
+        const next = data || DEFAULT_SECURITY_SETTINGS
+        setSecuritySettings(next)
+        setSecurityDraft(next)
+        setSecurityError('')
+      })
+      .catch((err: any) => {
+        if (cancelled) return
+        setSecurityError(err?.response?.data?.error || err?.message || 'Unable to load security settings')
+        setSecuritySettings(DEFAULT_SECURITY_SETTINGS)
+        setSecurityDraft(DEFAULT_SECURITY_SETTINGS)
+      })
+      .finally(() => {
+        if (!cancelled) setSecurityLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeSection, role])
+  useEffect(() => {
+    if (activeSection !== 'account' || role !== 'ADMIN') return
+    let cancelled = false
+    setAccountLoading(true)
+    getAccountSettings()
+      .then((data) => {
+        if (cancelled) return
+        const next = data || DEFAULT_ACCOUNT_SETTINGS
+        setAccountSettings(next)
+        setAccountDraft(next)
+        setAccountError('')
+      })
+      .catch((err: any) => {
+        if (cancelled) return
+        setAccountError(err?.response?.data?.error || err?.message || 'Unable to load account settings')
+        setAccountSettings(DEFAULT_ACCOUNT_SETTINGS)
+        setAccountDraft(DEFAULT_ACCOUNT_SETTINGS)
+      })
+      .finally(() => {
+        if (!cancelled) setAccountLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeSection, role])
+  useEffect(() => {
+    if (activeSection !== 'security' || role !== 'ADMIN') return
+    let cancelled = false
+    userService.listUsers({ limit: 1000 })
+      .then((rows: any) => {
+        if (cancelled) return
+        const list = Array.isArray(rows) ? rows : []
+        const normalized = list
+          .map((u: any) => ({
+            id: String(u?.id || '').trim(),
+            label: String(u?.name || u?.email || u?.username || '').trim(),
+          }))
+          .filter((u: { id: string; label: string }) => u.id && u.label)
+        setAdminNotifyUsers(normalized)
+      })
+      .catch(() => {
+        if (!cancelled) setAdminNotifyUsers([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeSection, role])
+  useEffect(() => {
     const handler = () => setLeftPanelConfig(loadLeftPanelConfig())
     window.addEventListener('left-panel-config-updated', handler as EventListener)
     return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
@@ -1512,6 +1684,8 @@ export default function AdminView(_props: AdminViewProps) {
   const isEmailSignatureTemplatesView = activeItem === 'email-signature-templates'
   const isDatabaseConfigurationView = activeItem === 'database-configuration'
   const isWorkflowAutomationView = activeItem === 'workflow-automation'
+  const isAccountSection = activeSection === 'account'
+  const isSecuritySection = activeSection === 'security'
   const isApiProvider = mailForm.providerType === 'api-provider'
   const isOauthProvider = mailForm.providerType === 'google-workspace-oauth' || mailForm.providerType === 'microsoft-365-oauth'
   const isOauthMode = mailForm.connectionMode === 'oauth2'
@@ -1673,10 +1847,6 @@ export default function AdminView(_props: AdminViewProps) {
   const policyPriorityLabels = useMemo(
     () => resolveFormatLabels(policyFormat, customFormatText),
     [policyFormat, customFormatText]
-  )
-  const anyBusinessHoursEnabled = useMemo(
-    () => SLA_PRIORITIES.some((priority) => priorityPolicies[priority].enabled && priorityPolicies[priority].businessHours),
-    [priorityPolicies]
   )
   const slaPoliciesGrouped = useMemo(() => {
     const map = new Map<string, any[]>()
@@ -2224,10 +2394,14 @@ export default function AdminView(_props: AdminViewProps) {
     setPolicyFormMode('create')
     setEditingPolicyName(null)
     setPolicyName('')
+    setPolicyDescription('')
     setPolicyFormat('critical_set')
     setCustomFormatText('')
     setPolicyTimeZone(SYSTEM_TIME_ZONE)
-    setPolicySchedule(createDefaultBusinessSchedule())
+    setPolicyApplyMatch('all')
+    setPolicyConditions([])
+    setPolicyResponseRules([])
+    setPolicyResolutionRules([])
     setPriorityPolicies(createEnabledPriorityPolicies())
     setShowPolicyForm(true)
   }
@@ -2249,10 +2423,41 @@ export default function AdminView(_props: AdminViewProps) {
     const labels = resolveFormatLabels(resolvedFormat, inferred.customFormatText)
     setPriorityPolicies(buildPriorityPoliciesForPolicy(slaRows, name, labels))
     const first = rows[0]
+    setPolicyDescription(String(first?.description || ''))
     setPolicyTimeZone(String(first?.timeZone || SYSTEM_TIME_ZONE))
-    setPolicySchedule(first?.businessSchedule && typeof first.businessSchedule === 'object'
-      ? (first.businessSchedule as BusinessSchedule)
-      : createDefaultBusinessSchedule())
+    const applyMatchValue = String(first?.applyMatch || '').toLowerCase()
+    setPolicyApplyMatch(applyMatchValue === 'any' ? 'any' : 'all')
+    setPolicyConditions(Array.isArray(first?.conditions)
+      ? first.conditions.map((row: any) => ({
+        field: String(row?.field || ''),
+        operator: String(row?.operator || ''),
+        value: String(row?.value || ''),
+      }))
+      : [])
+    setPolicyResponseRules(Array.isArray(first?.responseEscalations)
+      ? first.responseEscalations.map((row: any, index: number) => {
+        const fallback = splitMinutesToDisplay(row?.afterMinutes)
+        return {
+          level: Number(row?.level) || index + 1,
+          afterValue: String(row?.afterValue ?? fallback.value ?? ''),
+          afterUnit: (row?.afterUnit as SlaTimeUnit) || fallback.unit || 'min',
+          notify: String(row?.notify || 'Email'),
+          recipients: String(row?.recipients || ''),
+        }
+      })
+      : [])
+    setPolicyResolutionRules(Array.isArray(first?.resolutionEscalations)
+      ? first.resolutionEscalations.map((row: any, index: number) => {
+        const fallback = splitMinutesToDisplay(row?.afterMinutes)
+        return {
+          level: Number(row?.level) || index + 1,
+          afterValue: String(row?.afterValue ?? fallback.value ?? ''),
+          afterUnit: (row?.afterUnit as SlaTimeUnit) || fallback.unit || 'min',
+          notify: String(row?.notify || 'Email'),
+          recipients: String(row?.recipients || ''),
+        }
+      })
+      : [])
     setShowPolicyForm(true)
   }
 
@@ -2260,62 +2465,104 @@ export default function AdminView(_props: AdminViewProps) {
     setShowPolicyForm(false)
     setEditingPolicyName(null)
     setPolicyName('')
+    setPolicyDescription('')
     setPolicyFormat('critical_set')
     setCustomFormatText('')
     setPolicyTimeZone(SYSTEM_TIME_ZONE)
-    setPolicySchedule(createDefaultBusinessSchedule())
+    setPolicyApplyMatch('all')
+    setPolicyConditions([])
+    setPolicyResponseRules([])
+    setPolicyResolutionRules([])
     setPriorityPolicies(createEmptyPriorityPolicies())
   }
 
-  const toggleBusinessDay = (day: BusinessDay, enabled: boolean) => {
-    setPolicySchedule((prev) => ({
+  const addConditionRow = () => {
+    setPolicyConditions((prev) => [
       ...prev,
-      [day]: { ...prev[day], enabled },
-    }))
+      { field: 'Priority', operator: 'is', value: '' },
+    ])
   }
 
-  const updateBusinessSlot = (day: BusinessDay, index: number, key: 'start' | 'end', value: string) => {
-    setPolicySchedule((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        slots: prev[day].slots.map((slot, slotIndex) => (slotIndex === index ? { ...slot, [key]: value } : slot)),
-      },
-    }))
+  const updateConditionRow = (index: number, key: keyof SlaCondition, value: string) => {
+    setPolicyConditions((prev) => prev.map((row, idx) => (idx === index ? { ...row, [key]: value } : row)))
   }
 
-  const addBusinessSlot = (day: BusinessDay) => {
-    setPolicySchedule((prev) => ({
-      ...prev,
-      [day]: {
-        ...prev[day],
-        slots: [...prev[day].slots, { start: '08:00', end: '17:30' }],
-      },
-    }))
+  const removeConditionRow = (index: number) => {
+    setPolicyConditions((prev) => prev.filter((_, idx) => idx !== index))
   }
 
-  const removeBusinessSlot = (day: BusinessDay, index: number) => {
-    setPolicySchedule((prev) => {
-      if (prev[day].slots.length <= 1) return prev
-      return {
+  const normalizeRuleLevels = (rows: SlaEscalationRule[]) =>
+    rows.map((row, idx) => ({ ...row, level: idx + 1 }))
+
+  const addResponseRule = () => {
+    setPolicyResponseRules((prev) =>
+      normalizeRuleLevels([
         ...prev,
-        [day]: {
-          ...prev[day],
-          slots: prev[day].slots.filter((_, slotIndex) => slotIndex !== index),
-        },
-      }
-    })
+        { level: prev.length + 1, afterValue: '15', afterUnit: 'min', notify: 'Email', recipients: '' },
+      ])
+    )
+  }
+
+  const updateResponseRule = (index: number, key: keyof SlaEscalationRule, value: string) => {
+    setPolicyResponseRules((prev) =>
+      normalizeRuleLevels(prev.map((row, idx) => (idx === index ? { ...row, [key]: value } : row)))
+    )
+  }
+
+  const removeResponseRule = (index: number) => {
+    setPolicyResponseRules((prev) => normalizeRuleLevels(prev.filter((_, idx) => idx !== index)))
+  }
+
+  const addResolutionRule = () => {
+    setPolicyResolutionRules((prev) =>
+      normalizeRuleLevels([
+        ...prev,
+        { level: prev.length + 1, afterValue: '1', afterUnit: 'hrs', notify: 'Email', recipients: '' },
+      ])
+    )
+  }
+
+  const updateResolutionRule = (index: number, key: keyof SlaEscalationRule, value: string) => {
+    setPolicyResolutionRules((prev) =>
+      normalizeRuleLevels(prev.map((row, idx) => (idx === index ? { ...row, [key]: value } : row)))
+    )
+  }
+
+  const removeResolutionRule = (index: number) => {
+    setPolicyResolutionRules((prev) => normalizeRuleLevels(prev.filter((_, idx) => idx !== index)))
   }
 
   const submitPolicyForm = async () => {
     const normalizedName = policyName.trim()
     if (!normalizedName) return alert('Policy name is required')
-    const selected = SLA_PRIORITIES.filter((priority) => priorityPolicies[priority].enabled)
-    if (!selected.length) return alert('Select at least one priority for SLA')
     if (policyFormMode === 'create') {
       const exists = slaRows.some((r) => String(r?.name || '').trim().toLowerCase() === normalizedName.toLowerCase())
       if (exists) return alert('Policy name already exists')
     }
+    const normalizedConditions = policyConditions
+      .map((row) => ({
+        field: String(row.field || '').trim(),
+        operator: String(row.operator || '').trim(),
+        value: String(row.value || '').trim(),
+      }))
+      .filter((row) => row.field || row.operator || row.value)
+    const normalizeEscalationRules = (rows: SlaEscalationRule[]) =>
+      rows
+        .map((row, index) => {
+          const afterValue = String(row.afterValue || '').trim()
+          const parsedValue = Number(afterValue)
+          return {
+            level: row.level || index + 1,
+            afterValue,
+            afterUnit: row.afterUnit,
+            afterMinutes: Number.isFinite(parsedValue) ? parsedValue * getMinutesMultiplier(row.afterUnit) : null,
+            notify: String(row.notify || 'Email').trim() || 'Email',
+            recipients: String(row.recipients || '').trim(),
+          }
+        })
+        .filter((row) => row.afterValue || row.recipients || row.notify)
+    const responseEscalations = normalizeEscalationRules(policyResponseRules)
+    const resolutionEscalations = normalizeEscalationRules(policyResolutionRules)
     try {
       setSlaBusy(true)
       const existingRows = policyFormMode === 'edit' && editingPolicyName
@@ -2340,14 +2587,21 @@ export default function AdminView(_props: AdminViewProps) {
         if (!Number.isFinite(resolutionValue) || resolutionValue < 0) throw new Error(`Invalid resolution time for ${priority}`)
         const payload = {
           name: normalizedName,
+          description: policyDescription.trim(),
           priority: priorityLabel,
           priorityRank: rank,
           format: policyFormat,
           responseTimeMin,
           resolutionTimeMin,
-          businessHours: policy.businessHours,
-          timeZone: policy.businessHours ? policyTimeZone : null,
-          businessSchedule: policy.businessHours ? policySchedule : null,
+          operationalHours: policy.operationalHours,
+          businessHours: policy.operationalHours === 'Business Hours',
+          escalationEmail: policy.escalationEmail,
+          timeZone: policyTimeZone,
+          businessSchedule: null,
+          applyMatch: policyApplyMatch,
+          conditions: normalizedConditions,
+          responseEscalations,
+          resolutionEscalations,
           active: policy.active,
         }
         if (matched?.id) {
@@ -2601,6 +2855,87 @@ export default function AdminView(_props: AdminViewProps) {
       return
     }
     setAssetCategoryTargetId(leftPanelConfig.assetCategories[0].id)
+  }
+
+  const normalizeListInput = (value: string) =>
+    value
+      .split(/[\n,]+/g)
+      .map((v) => v.trim())
+      .filter(Boolean)
+
+  const updateSecurityDraft = (next: Partial<SecuritySettings>) => {
+    setSecurityDraft((prev) => ({ ...prev, ...next }))
+  }
+
+  const handleSecuritySave = async () => {
+    setSecurityError('')
+    const login = securityDraft.loginMethods
+    if (!login.password && !login.passwordless && !login.googleSso && !login.sso) {
+      setSecurityError('At least one login method must be enabled.')
+      return
+    }
+    if (securityDraft.ipRangeRestriction.enabled && securityDraft.ipRangeRestriction.ranges.length === 0) {
+      setSecurityError('Provide at least one IP range or disable IP range restriction.')
+      return
+    }
+    if (securityDraft.attachmentFileTypes.mode === 'specific' && securityDraft.attachmentFileTypes.types.length === 0) {
+      setSecurityError('Add at least one attachment file type or choose All file types.')
+      return
+    }
+    try {
+      setSecuritySaving(true)
+      const saved = await updateSecuritySettings(securityDraft)
+      setSecuritySettings(saved)
+      setSecurityDraft(saved)
+      setSecurityError('')
+    } catch (err: any) {
+      setSecurityError(err?.response?.data?.error || err?.message || 'Unable to save security settings')
+    } finally {
+      setSecuritySaving(false)
+    }
+  }
+
+  const handleSecurityCancel = () => {
+    const baseline = securitySettings || DEFAULT_SECURITY_SETTINGS
+    setSecurityDraft(baseline)
+    setSecurityError('')
+  }
+
+  const updateAccountDraft = (next: Partial<AccountSettings>) => {
+    setAccountDraft((prev) => ({ ...prev, ...next }))
+  }
+
+  const handleAccountSave = async () => {
+    setAccountError('')
+    if (!accountDraft.accountName.trim()) {
+      setAccountError('Account name is required.')
+      return
+    }
+    if (!accountDraft.contact.firstName.trim() || !accountDraft.contact.lastName.trim()) {
+      setAccountError('Primary contact first and last name are required.')
+      return
+    }
+    if (!accountDraft.contact.email.trim()) {
+      setAccountError('Primary contact email is required.')
+      return
+    }
+    try {
+      setAccountSaving(true)
+      const saved = await updateAccountSettings(accountDraft)
+      setAccountSettings(saved)
+      setAccountDraft(saved)
+      setAccountError('')
+    } catch (err: any) {
+      setAccountError(err?.response?.data?.error || err?.message || 'Unable to update account settings')
+    } finally {
+      setAccountSaving(false)
+    }
+  }
+
+  const handleAccountCancel = () => {
+    const baseline = accountSettings || DEFAULT_ACCOUNT_SETTINGS
+    setAccountDraft(baseline)
+    setAccountError('')
   }
   const submitAssetCategoryModal = () => {
     if (!assetCategoryModalMode) return
@@ -3034,264 +3369,350 @@ export default function AdminView(_props: AdminViewProps) {
             ) : (
               <>
                 {showPolicyForm ? (
-                  <div style={{ marginBottom: 14 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '240px 240px 320px 1fr auto auto', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-                      <label style={{ fontWeight: 600 }}>Policy Name</label>
-                      <label style={{ fontWeight: 600 }}>Format</label>
-                      <label style={{ fontWeight: 600 }}>Time Zone</label>
-                      <div />
-                      <div />
-                      <div />
-                      <input
-                        placeholder="Enter policy name"
-                        value={policyName}
-                        disabled={slaBusy}
-                        onChange={(e) => setPolicyName(e.target.value)}
-                        className="admin-inline-input"
-                      />
-                      <select
-                        value={policyFormat}
-                        disabled={slaBusy}
-                        onChange={(e) => setPolicyFormat(e.target.value as SlaFormat)}
-                        className="admin-inline-input"
-                      >
-                        <option value="critical_set">Critical, High, Medium, Low</option>
-                        <option value="p_set">P1, P2, P3, P4</option>
-                        <option value="custom">Custom</option>
-                      </select>
-                      <select
-                        value={policyTimeZone}
-                        disabled={slaBusy}
-                        onChange={(e) => setPolicyTimeZone(e.target.value)}
-                        className="admin-inline-input"
-                      >
-                        {TIME_ZONE_OPTIONS.map((zone) => (
-                          <option key={zone} value={zone}>
-                            {zone}{zone === SYSTEM_TIME_ZONE ? ' (System)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                      <div />
-                      <button className="admin-settings-ghost" onClick={closePolicyForm} disabled={slaBusy}>Cancel</button>
-                      <button className="admin-settings-primary" onClick={submitPolicyForm} disabled={slaBusy}>
-                        {slaBusy ? 'Saving...' : policyFormMode === 'edit' ? 'Update Policy' : 'Create Policy'}
-                      </button>
+                  <div className="sla-policy-form">
+                    <div className="sla-policy-form-header">
+                      <div>
+                        <div className="sla-policy-form-title">{policyFormMode === 'edit' ? 'Edit SLA Policy' : 'New SLA Policy'}</div>
+                        <div className="sla-policy-form-sub">Set response and resolution targets plus escalation steps.</div>
+                      </div>
+                      <div className="sla-policy-form-actions">
+                        <button className="admin-settings-ghost" onClick={closePolicyForm} disabled={slaBusy}>Cancel</button>
+                        <button className="admin-settings-primary" onClick={submitPolicyForm} disabled={slaBusy}>
+                          {slaBusy ? 'Saving...' : policyFormMode === 'edit' ? 'Update' : 'Save'}
+                        </button>
+                      </div>
                     </div>
-                    {policyFormat === 'custom' ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-                        <label style={{ fontWeight: 600 }}>Custom Labels</label>
+
+                    <div className="sla-policy-card">
+                      <label className="admin-field-row">
+                        <span>Name</span>
                         <input
-                          placeholder="Ex: Sev1, Sev2, Sev3, Sev4"
-                          value={customFormatText}
+                          placeholder="New SLA Policy"
+                          value={policyName}
                           disabled={slaBusy}
-                          onChange={(e) => setCustomFormatText(e.target.value)}
-                          className="admin-inline-input"
+                          onChange={(e) => setPolicyName(e.target.value)}
                         />
+                      </label>
+                      <label className="admin-field-row">
+                        <span>Description</span>
+                        <textarea
+                          placeholder="Describe when this SLA applies"
+                          value={policyDescription}
+                          disabled={slaBusy}
+                          onChange={(e) => setPolicyDescription(e.target.value)}
+                          rows={3}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="sla-policy-card">
+                      <div className="sla-policy-card-head">
+                        <div>
+                          <h4>SLA Targets</h4>
+                          <p>Set Service Level Targets for each ticket priority</p>
+                        </div>
                       </div>
-                    ) : null}
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: anyBusinessHoursEnabled ? 'minmax(640px, 1fr) 470px' : 'minmax(640px, 1fr)',
-                        gap: 12,
-                        alignItems: 'start',
-                        marginBottom: 10,
-                      }}
-                    >
-                      <div style={{ maxWidth: anyBusinessHoursEnabled ? 780 : '100%' }}>
-                        <table className="rbac-permission-matrix sla-priority-table" style={{ width: '100%', tableLayout: 'fixed' }}>
-                          <colgroup>
-                            <col style={{ width: 78 }} />
-                            <col style={{ width: 52 }} />
-                            <col style={{ width: 188 }} />
-                            <col style={{ width: 188 }} />
-                            <col style={{ width: 96 }} />
-                            <col style={{ width: 62 }} />
-                          </colgroup>
-                          <thead>
-                            <tr>
-                              <th>Need SLA</th>
-                              <th>Priority</th>
-                              <th>Response</th>
-                              <th>Resolution</th>
-                              <th>Business Hours</th>
-                              <th>Active</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {SLA_PRIORITIES.map((priority) => {
-                              const policy = priorityPolicies[priority]
-                              return (
-                                <tr key={priority}>
-                                  <td>
-                                    <input
-                                      type="checkbox"
-                                      checked={policy.enabled}
-                                      onChange={(e) =>
-                                        setPriorityPolicies((prev) => ({
-                                          ...prev,
-                                          [priority]: { ...prev[priority], enabled: e.target.checked },
-                                        }))
-                                      }
-                                    />
-                                  </td>
-                                  <td>{policyPriorityLabels[SLA_PRIORITIES.indexOf(priority)]}</td>
-                                  <td>
-                                    <div className="admin-inline-gridbox">
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        step={1}
-                                        value={policy.responseTimeMin}
-                                        disabled={!policy.enabled || slaBusy}
-                                        onChange={(e) =>
-                                          setPriorityPolicies((prev) => ({
-                                            ...prev,
-                                            [priority]: { ...prev[priority], responseTimeMin: e.target.value },
-                                          }))
-                                        }
-                                        className="admin-inline-grid-input"
-                                      />
-                                      <select
-                                        value={policy.responseTimeUnit}
-                                        disabled={!policy.enabled || slaBusy}
-                                        onChange={(e) =>
-                                          setPriorityPolicies((prev) => ({
-                                            ...prev,
-                                            [priority]: { ...prev[priority], responseTimeUnit: e.target.value as SlaTimeUnit },
-                                          }))
-                                        }
-                                        className="admin-inline-grid-select"
-                                      >
-                                        {SLA_TIME_UNITS.map((unit) => (
-                                          <option key={unit} value={unit}>{unit}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </td>
-                                  <td>
-                                    <div className="admin-inline-gridbox">
-                                      <input
-                                        type="number"
-                                        min={0}
-                                        step={1}
-                                        value={policy.resolutionTimeMin}
-                                        disabled={!policy.enabled || slaBusy}
-                                        onChange={(e) =>
-                                          setPriorityPolicies((prev) => ({
-                                            ...prev,
-                                            [priority]: { ...prev[priority], resolutionTimeMin: e.target.value },
-                                          }))
-                                        }
-                                        className="admin-inline-grid-input"
-                                      />
-                                      <select
-                                        value={policy.resolutionTimeUnit}
-                                        disabled={!policy.enabled || slaBusy}
-                                        onChange={(e) =>
-                                          setPriorityPolicies((prev) => ({
-                                            ...prev,
-                                            [priority]: { ...prev[priority], resolutionTimeUnit: e.target.value as SlaTimeUnit },
-                                          }))
-                                        }
-                                        className="admin-inline-grid-select"
-                                      >
-                                        {SLA_TIME_UNITS.map((unit) => (
-                                          <option key={unit} value={unit}>{unit}</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </td>
-                                  <td>
-                                    <input
-                                      type="checkbox"
-                                      checked={policy.businessHours}
-                                      disabled={!policy.enabled || slaBusy}
-                                      onChange={(e) =>
-                                        setPriorityPolicies((prev) => ({
-                                          ...prev,
-                                          [priority]: { ...prev[priority], businessHours: e.target.checked },
-                                        }))
-                                      }
-                                    />
-                                  </td>
-                                  <td>
-                                    <input
-                                      type="checkbox"
-                                      checked={policy.active}
-                                      disabled={!policy.enabled || slaBusy}
-                                      onChange={(e) =>
-                                        setPriorityPolicies((prev) => ({
-                                          ...prev,
-                                          [priority]: { ...prev[priority], active: e.target.checked },
-                                        }))
-                                      }
-                                    />
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      {anyBusinessHoursEnabled ? (
-                        <div className="admin-inline-card">
-                        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Business Hours Schedule</div>
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          {BUSINESS_DAYS.map((day) => {
-                            const dayInfo = policySchedule[day]
+                      <table className="sla-targets-table">
+                        <colgroup>
+                          <col style={{ width: 160 }} />
+                          <col style={{ width: 260 }} />
+                          <col style={{ width: 260 }} />
+                          <col style={{ width: 220 }} />
+                          <col style={{ width: 170 }} />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th>Priority</th>
+                            <th>Respond within</th>
+                            <th>Resolve within</th>
+                            <th>Operational Hrs</th>
+                            <th>Escalation email</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {SLA_PRIORITIES.map((priority) => {
+                            const policy = priorityPolicies[priority]
                             return (
-                              <div key={day} style={{ display: 'grid', gridTemplateColumns: '20px 44px 1fr auto', gap: 6, alignItems: 'start' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={dayInfo.enabled}
-                                  disabled={slaBusy}
-                                  onChange={(e) => toggleBusinessDay(day, e.target.checked)}
-                                />
-                                <span style={{ fontSize: 12, marginTop: 4 }}>{day.slice(0, 3)}</span>
-                                <div style={{ display: 'grid', gap: 4 }}>
-                                  {dayInfo.slots.map((slot, slotIndex) => (
-                                    <div key={`${day}-${slotIndex}`} style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr auto', gap: 4, alignItems: 'center' }}>
-                                      <input
-                                        type="time"
-                                        value={slot.start}
-                                        disabled={!dayInfo.enabled || slaBusy}
-                                        onChange={(e) => updateBusinessSlot(day, slotIndex, 'start', e.target.value)}
-                                      />
-                                      <span style={{ fontSize: 11 }}>to</span>
-                                      <input
-                                        type="time"
-                                        value={slot.end}
-                                        disabled={!dayInfo.enabled || slaBusy}
-                                        onChange={(e) => updateBusinessSlot(day, slotIndex, 'end', e.target.value)}
-                                      />
-                                      <button
-                                        type="button"
-                                        className="admin-settings-ghost"
-                                        disabled={!dayInfo.enabled || slaBusy || dayInfo.slots.length <= 1}
-                                        onClick={() => removeBusinessSlot(day, slotIndex)}
-                                        style={{ padding: '2px 6px' }}
-                                      >
-                                        -
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                                <button
-                                  type="button"
-                                  className="admin-settings-ghost"
-                                  disabled={!dayInfo.enabled || slaBusy}
-                                  onClick={() => addBusinessSlot(day)}
-                                  style={{ padding: '2px 6px' }}
-                                >
-                                  +
-                                </button>
-                              </div>
+                              <tr key={priority}>
+                                <td className="sla-priority-label">{SLA_PRIORITY_LABELS[priority]}</td>
+                                <td>
+                                  <div className="sla-time-input">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      value={policy.responseTimeMin}
+                                      disabled={slaBusy}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], responseTimeMin: e.target.value },
+                                        }))
+                                      }
+                                    />
+                                    <select
+                                      value={policy.responseTimeUnit}
+                                      disabled={slaBusy}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], responseTimeUnit: e.target.value as SlaTimeUnit },
+                                        }))
+                                      }
+                                    >
+                                      {SLA_TIME_UNITS.map((unit) => (
+                                        <option key={unit} value={unit}>{SLA_TIME_UNIT_LABELS[unit]}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="sla-time-input">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={1}
+                                      value={policy.resolutionTimeMin}
+                                      disabled={slaBusy}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], resolutionTimeMin: e.target.value },
+                                        }))
+                                      }
+                                    />
+                                    <select
+                                      value={policy.resolutionTimeUnit}
+                                      disabled={slaBusy}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], resolutionTimeUnit: e.target.value as SlaTimeUnit },
+                                        }))
+                                      }
+                                    >
+                                      {SLA_TIME_UNITS.map((unit) => (
+                                        <option key={unit} value={unit}>{SLA_TIME_UNIT_LABELS[unit]}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </td>
+                                <td>
+                                  <select
+                                    value={policy.operationalHours}
+                                    disabled={slaBusy}
+                                    onChange={(e) =>
+                                      setPriorityPolicies((prev) => ({
+                                        ...prev,
+                                        [priority]: { ...prev[priority], operationalHours: e.target.value as SlaOperationalHours },
+                                      }))
+                                    }
+                                  >
+                                    {SLA_OPERATIONAL_HOURS.map((opt) => (
+                                      <option key={opt} value={opt}>{opt}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td>
+                                  <label className="admin-toggle">
+                                    <input
+                                      type="checkbox"
+                                      checked={policy.escalationEmail}
+                                      disabled={slaBusy}
+                                      onChange={(e) =>
+                                        setPriorityPolicies((prev) => ({
+                                          ...prev,
+                                          [priority]: { ...prev[priority], escalationEmail: e.target.checked },
+                                        }))
+                                      }
+                                    />
+                                    <span className="toggle-slider" />
+                                  </label>
+                                </td>
+                              </tr>
                             )
                           })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="sla-policy-card">
+                      <div className="sla-policy-card-head">
+                        <div>
+                          <h4>Apply this to:</h4>
+                          <p>Choose when this SLA policy must be enforced</p>
                         </div>
+                      </div>
+                      <div className="sla-apply-row">
+                        <label>
+                          <input
+                            type="radio"
+                            name="sla-apply-match"
+                            checked={policyApplyMatch === 'all'}
+                            onChange={() => setPolicyApplyMatch('all')}
+                          />
+                          Match ALL of the conditions below
+                        </label>
+                        <label>
+                          <input
+                            type="radio"
+                            name="sla-apply-match"
+                            checked={policyApplyMatch === 'any'}
+                            onChange={() => setPolicyApplyMatch('any')}
+                          />
+                          Match ANY of the conditions below
+                        </label>
+                      </div>
+                      <div className="sla-conditions">
+                        {policyConditions.length === 0 ? (
+                          <div className="sla-empty">No conditions added yet.</div>
+                        ) : (
+                          policyConditions.map((condition, index) => (
+                            <div key={`sla-cond-${index}`} className="sla-condition-row">
+                              <select
+                                value={condition.field}
+                                onChange={(e) => updateConditionRow(index, 'field', e.target.value)}
+                                disabled={slaBusy}
+                              >
+                                {SLA_CONDITION_FIELDS.map((field) => (
+                                  <option key={field} value={field}>{field}</option>
+                                ))}
+                              </select>
+                              <select
+                                value={condition.operator}
+                                onChange={(e) => updateConditionRow(index, 'operator', e.target.value)}
+                                disabled={slaBusy}
+                              >
+                                {SLA_CONDITION_OPERATORS.map((op) => (
+                                  <option key={op} value={op}>{op}</option>
+                                ))}
+                              </select>
+                              <input
+                                value={condition.value}
+                                onChange={(e) => updateConditionRow(index, 'value', e.target.value)}
+                                placeholder="Value"
+                                disabled={slaBusy}
+                              />
+                              <button className="admin-settings-ghost" onClick={() => removeConditionRow(index)} disabled={slaBusy}>
+                                Remove
+                              </button>
+                            </div>
+                          ))
+                        )}
+                        <button className="admin-settings-ghost" onClick={addConditionRow} disabled={slaBusy}>
+                          + Add new condition
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="sla-policy-card">
+                      <div className="sla-policy-card-head">
+                        <div>
+                          <h4>What happens when the due date approaches / this SLA is violated?</h4>
                         </div>
-                      ) : null}
+                      </div>
+                      <div className="sla-escalation-section">
+                        <div className="sla-escalation-title">Set Escalation Rule when a ticket is not responded to on time</div>
+                        {policyResponseRules.length === 0 ? (
+                          <div className="sla-empty">No escalation rules added.</div>
+                        ) : (
+                          policyResponseRules.map((rule, index) => (
+                            <div key={`sla-response-${index}`} className="sla-rule-row">
+                              <span className="sla-rule-badge">Rule {rule.level}</span>
+                              <div className="sla-time-input">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={rule.afterValue}
+                                  onChange={(e) => updateResponseRule(index, 'afterValue', e.target.value)}
+                                  disabled={slaBusy}
+                                />
+                                <select
+                                  value={rule.afterUnit}
+                                  onChange={(e) => updateResponseRule(index, 'afterUnit', e.target.value as SlaTimeUnit)}
+                                  disabled={slaBusy}
+                                >
+                                  {SLA_TIME_UNITS.map((unit) => (
+                                    <option key={unit} value={unit}>{SLA_TIME_UNIT_LABELS[unit]}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <select
+                                value={rule.notify}
+                                onChange={(e) => updateResponseRule(index, 'notify', e.target.value)}
+                                disabled={slaBusy}
+                              >
+                                {SLA_NOTIFY_CHANNELS.map((channel) => (
+                                  <option key={channel} value={channel}>{channel}</option>
+                                ))}
+                              </select>
+                              <input
+                                value={rule.recipients}
+                                onChange={(e) => updateResponseRule(index, 'recipients', e.target.value)}
+                                placeholder="Notify recipients"
+                                disabled={slaBusy}
+                              />
+                              <button className="admin-settings-ghost" onClick={() => removeResponseRule(index)} disabled={slaBusy}>
+                                Remove
+                              </button>
+                            </div>
+                          ))
+                        )}
+                        <button className="admin-settings-ghost" onClick={addResponseRule} disabled={slaBusy}>
+                          + Add rule
+                        </button>
+                      </div>
+                      <div className="sla-escalation-section">
+                        <div className="sla-escalation-title">Set Escalation Hierarchy when a ticket is not resolved on time</div>
+                        {policyResolutionRules.length === 0 ? (
+                          <div className="sla-empty">No escalation levels configured.</div>
+                        ) : (
+                          policyResolutionRules.map((rule, index) => (
+                            <div key={`sla-resolution-${index}`} className="sla-rule-row">
+                              <span className="sla-rule-badge">Level {rule.level}</span>
+                              <div className="sla-time-input">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={rule.afterValue}
+                                  onChange={(e) => updateResolutionRule(index, 'afterValue', e.target.value)}
+                                  disabled={slaBusy}
+                                />
+                                <select
+                                  value={rule.afterUnit}
+                                  onChange={(e) => updateResolutionRule(index, 'afterUnit', e.target.value as SlaTimeUnit)}
+                                  disabled={slaBusy}
+                                >
+                                  {SLA_TIME_UNITS.map((unit) => (
+                                    <option key={unit} value={unit}>{SLA_TIME_UNIT_LABELS[unit]}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <select
+                                value={rule.notify}
+                                onChange={(e) => updateResolutionRule(index, 'notify', e.target.value)}
+                                disabled={slaBusy}
+                              >
+                                {SLA_NOTIFY_CHANNELS.map((channel) => (
+                                  <option key={channel} value={channel}>{channel}</option>
+                                ))}
+                              </select>
+                              <input
+                                value={rule.recipients}
+                                onChange={(e) => updateResolutionRule(index, 'recipients', e.target.value)}
+                                placeholder="Notify recipients"
+                                disabled={slaBusy}
+                              />
+                              <button className="admin-settings-ghost" onClick={() => removeResolutionRule(index)} disabled={slaBusy}>
+                                Remove
+                              </button>
+                            </div>
+                          ))
+                        )}
+                        <button className="admin-settings-ghost" onClick={addResolutionRule} disabled={slaBusy}>
+                          + Add level {policyResolutionRules.length + 1} rule
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : slaLoading ? (
@@ -4221,12 +4642,54 @@ export default function AdminView(_props: AdminViewProps) {
             {!isQueueManagement && (
               <div className="admin-settings-main-head">
                 <div>
-                  <h2>{title}</h2>
-                  <p>{selectedSection?.label || 'Configuration'} configuration workspace</p>
+                  <h2>{isAccountSection ? 'Accounts' : isSecuritySection ? 'Security' : title}</h2>
+                  {isAccountSection ? (
+                    <p>Account profile, ownership, and export controls.</p>
+                  ) : isSecuritySection ? (
+                    <p>Security and access controls for your workspace.</p>
+                  ) : (
+                    <p>{selectedSection?.label || 'Configuration'} configuration workspace</p>
+                  )}
                 </div>
+                {isAccountSection && (
+                  <div className="admin-settings-footer-actions">
+                    <button
+                      className="admin-settings-ghost"
+                      onClick={handleAccountCancel}
+                      disabled={!accountDirty || accountSaving}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="admin-settings-primary"
+                      onClick={handleAccountSave}
+                      disabled={!accountDirty || accountSaving || accountLoading}
+                    >
+                      Update
+                    </button>
+                  </div>
+                )}
+                {isSecuritySection && (
+                  <div className="admin-settings-footer-actions">
+                    <button
+                      className="admin-settings-ghost"
+                      onClick={handleSecurityCancel}
+                      disabled={!securityDirty || securitySaving}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="admin-settings-primary"
+                      onClick={handleSecuritySave}
+                      disabled={!securityDirty || securitySaving || securityLoading}
+                    >
+                      Save
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-            {!isQueueManagement && (
+            {!isQueueManagement && !isAccountSection && !isSecuritySection && (
               <div className="admin-settings-toolbar">
                 <div className="admin-settings-inline-search">
                   <input
@@ -4246,7 +4709,400 @@ export default function AdminView(_props: AdminViewProps) {
                 </div>
               </div>
             )}
-            <div className="admin-settings-grid">
+            {isAccountSection && (
+              <div className="admin-settings-grid" style={{ gridTemplateColumns: '320px minmax(0, 1fr)' }}>
+                <article className="admin-settings-card" style={{ alignSelf: 'start' }}>
+                  <h3>Account Name</h3>
+                  <label className="admin-field-row">
+                    <input
+                      value={accountDraft.accountName}
+                      onChange={(e) => updateAccountDraft({ accountName: e.target.value })}
+                      placeholder="Account name"
+                    />
+                  </label>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Current Plan</div>
+                    <div style={{ color: '#475569' }}>{accountDraft.currentPlan || '-'}</div>
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Active Since</div>
+                    <div style={{ color: '#475569' }}>{accountDraft.activeSince || '-'}</div>
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Assets</div>
+                    <div style={{ color: '#475569' }}>{accountDraft.assetsCount}</div>
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Agents</div>
+                    <div style={{ color: '#475569' }}>{accountDraft.agentsCount}</div>
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Data Center</div>
+                    <div style={{ color: '#475569' }}>{accountDraft.dataCenter || '-'}</div>
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Version</div>
+                    <div style={{ color: '#475569' }}>{accountDraft.version || '-'}</div>
+                  </div>
+                </article>
+                <article className="admin-settings-card">
+                  {accountError && <div className="error-message">{accountError}</div>}
+                  {accountLoading ? (
+                    <p>Loading account settings...</p>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', gap: 16, borderBottom: '1px solid #e5e7eb', paddingBottom: 8 }}>
+                        <button
+                          className={`admin-settings-ghost${accountTab === 'contact' ? ' active' : ''}`}
+                          onClick={() => setAccountTab('contact')}
+                        >
+                          Contact Details
+                        </button>
+                        <button
+                          className={`admin-settings-ghost${accountTab === 'other' ? ' active' : ''}`}
+                          onClick={() => setAccountTab('other')}
+                        >
+                          Other Details
+                        </button>
+                      </div>
+                      {accountTab === 'contact' ? (
+                        <>
+                          <h3 style={{ marginTop: 16 }}>Primary contact details</h3>
+                          <p>Used for all account-related communications.</p>
+                          <label className="admin-field-row">
+                            <span>First Name</span>
+                            <input
+                              value={accountDraft.contact.firstName}
+                              onChange={(e) =>
+                                updateAccountDraft({
+                                  contact: { ...accountDraft.contact, firstName: e.target.value },
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="admin-field-row">
+                            <span>Last Name</span>
+                            <input
+                              value={accountDraft.contact.lastName}
+                              onChange={(e) =>
+                                updateAccountDraft({
+                                  contact: { ...accountDraft.contact, lastName: e.target.value },
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="admin-field-row">
+                            <span>Email</span>
+                            <input
+                              value={accountDraft.contact.email}
+                              onChange={(e) =>
+                                updateAccountDraft({
+                                  contact: { ...accountDraft.contact, email: e.target.value },
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="admin-field-row">
+                            <span>Phone</span>
+                            <input
+                              value={accountDraft.contact.phone}
+                              onChange={(e) =>
+                                updateAccountDraft({
+                                  contact: { ...accountDraft.contact, phone: e.target.value },
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="admin-field-row">
+                            <span>Send invoice to</span>
+                            <input
+                              value={accountDraft.contact.invoiceEmail}
+                              onChange={(e) =>
+                                updateAccountDraft({
+                                  contact: { ...accountDraft.contact, invoiceEmail: e.target.value },
+                                })
+                              }
+                            />
+                          </label>
+                        </>
+                      ) : (
+                        <>
+                          <h3 style={{ marginTop: 16 }}>Export Data</h3>
+                          <p>Generate an export of service desk data and send it to the primary contact.</p>
+                          <button
+                            className="admin-settings-ghost"
+                            onClick={() => exportAccountData().catch(() => setAccountError('Export failed'))}
+                          >
+                            Export now
+                          </button>
+                          <div style={{ marginTop: 24 }}>
+                            <h3>Cancel Account</h3>
+                            <p>Request account cancellation. This action can be undone by support.</p>
+                            <button
+                              className="admin-settings-danger"
+                              onClick={() => cancelAccount().catch(() => setAccountError('Cancellation failed'))}
+                            >
+                              Cancel my account
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </article>
+              </div>
+            )}
+            {isSecuritySection && (
+              <div className="admin-settings-grid">
+                {securityError && <div className="error-message">{securityError}</div>}
+                {securityLoading ? (
+                  <article className="admin-settings-card">
+                    <p>Loading security settings...</p>
+                  </article>
+                ) : (
+                  <>
+                    <article className="admin-settings-card">
+                      <h3>Default Login Policy</h3>
+                      <p>Choose which login methods are allowed for your ITSM workspace.</p>
+                      {([
+                        { key: 'password', label: 'Password login', help: 'Standard email and password sign-in.' },
+                        { key: 'passwordless', label: 'Passwordless login', help: 'Send one-time codes for sign-in.' },
+                        { key: 'googleSso', label: 'Google SSO', help: 'Allow Google Workspace SSO.' },
+                        { key: 'sso', label: 'Single sign-on', help: 'Enable SAML/OIDC SSO.' },
+                      ] as const).map((method) => (
+                        <label key={method.key} className="admin-field-row switch-row" style={{ marginTop: 10 }}>
+                          <span>
+                            <strong>{method.label}</strong>
+                            <div style={{ fontSize: 12, color: '#6b7280' }}>{method.help}</div>
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(securityDraft.loginMethods[method.key])}
+                            onChange={(e) =>
+                              setSecurityDraft((prev) => ({
+                                ...prev,
+                                loginMethods: { ...prev.loginMethods, [method.key]: e.target.checked },
+                              }))
+                            }
+                          />
+                        </label>
+                      ))}
+                    </article>
+
+                    <article className="admin-settings-card">
+                      <h3>IP Range Restriction</h3>
+                      <p>Restrict access to trusted IP ranges (CIDR or single IP per line).</p>
+                      <label className="admin-field-row switch-row">
+                        <span>Enable IP range restriction</span>
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.ipRangeRestriction.enabled}
+                          onChange={(e) =>
+                            updateSecurityDraft({
+                              ipRangeRestriction: { ...securityDraft.ipRangeRestriction, enabled: e.target.checked },
+                            })
+                          }
+                        />
+                      </label>
+                      {securityDraft.ipRangeRestriction.enabled && (
+                        <label className="admin-field-row" style={{ marginTop: 10 }}>
+                          <span>Allowed IP ranges</span>
+                          <textarea
+                            value={securityDraft.ipRangeRestriction.ranges.join('\n')}
+                            onChange={(e) =>
+                              updateSecurityDraft({
+                                ipRangeRestriction: {
+                                  ...securityDraft.ipRangeRestriction,
+                                  ranges: normalizeListInput(e.target.value),
+                                },
+                              })
+                            }
+                            placeholder="e.g. 192.168.0.0/24"
+                          />
+                        </label>
+                      )}
+                    </article>
+
+                    <article className="admin-settings-card">
+                      <h3>Session Timeout</h3>
+                      <p>Automatically sign out users after inactivity.</p>
+                      <label className="admin-field-row">
+                        <span>Timeout (minutes)</span>
+                        <select
+                          value={String(securityDraft.sessionTimeoutMinutes)}
+                          onChange={(e) =>
+                            updateSecurityDraft({ sessionTimeoutMinutes: Number(e.target.value) || 60 })
+                          }
+                        >
+                          {[15, 30, 60, 120, 240, 480, 720, 1440].map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </article>
+
+                    <article className="admin-settings-card">
+                      <h3>Authentication for Public URLs</h3>
+                      <p>Require login before accessing public ticket and approval links.</p>
+                      <label className="admin-field-row switch-row">
+                        <span>Require authentication for public URLs</span>
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.requireAuthForPublicUrls}
+                          onChange={(e) => updateSecurityDraft({ requireAuthForPublicUrls: e.target.checked })}
+                        />
+                      </label>
+                    </article>
+
+                    <article className="admin-settings-card">
+                      <h3>Tickets Sharing</h3>
+                      <p>Control how tickets can be shared inside and outside the workspace.</p>
+                      <label className="admin-field-row switch-row">
+                        <span>Share tickets using public links</span>
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.ticketSharing.publicLinks}
+                          onChange={(e) =>
+                            updateSecurityDraft({
+                              ticketSharing: { ...securityDraft.ticketSharing, publicLinks: e.target.checked },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="admin-field-row switch-row" style={{ marginTop: 10 }}>
+                        <span>Share tickets outside restricted groups/workspaces</span>
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.ticketSharing.shareOutsideGroup}
+                          onChange={(e) =>
+                            updateSecurityDraft({
+                              ticketSharing: { ...securityDraft.ticketSharing, shareOutsideGroup: e.target.checked },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="admin-field-row switch-row" style={{ marginTop: 10 }}>
+                        <span>Allow requesters to share tickets</span>
+                        <input
+                          type="checkbox"
+                          checked={securityDraft.ticketSharing.allowRequesterShare}
+                          onChange={(e) =>
+                            updateSecurityDraft({
+                              ticketSharing: { ...securityDraft.ticketSharing, allowRequesterShare: e.target.checked },
+                            })
+                          }
+                        />
+                      </label>
+                      {securityDraft.ticketSharing.allowRequesterShare && (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 6 }}>Can share with</div>
+                          <label style={{ marginRight: 16 }}>
+                            <input
+                              type="radio"
+                              name="requester-share-scope"
+                              checked={securityDraft.ticketSharing.requesterShareScope === 'any'}
+                              onChange={() =>
+                                updateSecurityDraft({
+                                  ticketSharing: { ...securityDraft.ticketSharing, requesterShareScope: 'any' },
+                                })
+                              }
+                            />
+                            <span style={{ marginLeft: 6 }}>Any users</span>
+                          </label>
+                          <label>
+                            <input
+                              type="radio"
+                              name="requester-share-scope"
+                              checked={securityDraft.ticketSharing.requesterShareScope === 'department'}
+                              onChange={() =>
+                                updateSecurityDraft({
+                                  ticketSharing: { ...securityDraft.ticketSharing, requesterShareScope: 'department' },
+                                })
+                              }
+                            />
+                            <span style={{ marginLeft: 6 }}>Only department users</span>
+                          </label>
+                        </div>
+                      )}
+                    </article>
+
+                    <article className="admin-settings-card">
+                      <h3>Admin Notifications</h3>
+                      <p>Send notifications to a selected account administrator.</p>
+                      <label className="admin-field-row">
+                        <span>Send notifications to</span>
+                        <select
+                          value={securityDraft.adminNotifications.adminUserId || ''}
+                          onChange={(e) =>
+                            updateSecurityDraft({
+                              adminNotifications: { adminUserId: e.target.value || null },
+                            })
+                          }
+                        >
+                          <option value="">None</option>
+                          {adminNotifyUsers.map((u) => (
+                            <option key={u.id} value={u.id}>{u.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>
+                        Notifications are sent when agents are added/removed, IP ranges change, or API keys are enabled.
+                      </div>
+                    </article>
+
+                    <article className="admin-settings-card">
+                      <h3>Attachment File Types</h3>
+                      <p>Control which attachment types can be uploaded to tickets.</p>
+                      <label className="admin-field-row switch-row">
+                        <span>Allow all file types</span>
+                        <input
+                          type="radio"
+                          name="attachment-mode"
+                          checked={securityDraft.attachmentFileTypes.mode === 'all'}
+                          onChange={() =>
+                            updateSecurityDraft({
+                              attachmentFileTypes: { ...securityDraft.attachmentFileTypes, mode: 'all' },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="admin-field-row switch-row" style={{ marginTop: 10 }}>
+                        <span>Allow specific file types only</span>
+                        <input
+                          type="radio"
+                          name="attachment-mode"
+                          checked={securityDraft.attachmentFileTypes.mode === 'specific'}
+                          onChange={() =>
+                            updateSecurityDraft({
+                              attachmentFileTypes: { ...securityDraft.attachmentFileTypes, mode: 'specific' },
+                            })
+                          }
+                        />
+                      </label>
+                      {securityDraft.attachmentFileTypes.mode === 'specific' && (
+                        <label className="admin-field-row" style={{ marginTop: 10 }}>
+                          <span>Allowed file types</span>
+                          <input
+                            value={securityDraft.attachmentFileTypes.types.join(', ')}
+                            onChange={(e) =>
+                              updateSecurityDraft({
+                                attachmentFileTypes: {
+                                  ...securityDraft.attachmentFileTypes,
+                                  types: normalizeListInput(e.target.value),
+                                },
+                              })
+                            }
+                            placeholder="pdf, png, jpg, docx"
+                          />
+                        </label>
+                      )}
+                    </article>
+                  </>
+                )}
+              </div>
+            )}
+            {!isAccountSection && !isSecuritySection && (
+              <div className="admin-settings-grid">
               {topicPanels.length > 0 ? topicPanels.map((panel) => (
                 <article key={panel.id} className="admin-settings-card">
                   <h3>{panel.title}</h3>
@@ -4508,6 +5364,7 @@ export default function AdminView(_props: AdminViewProps) {
                 </article>
               ) : null}
             </div>
+            )}
           </section>
         </div>
       </div>
@@ -4553,6 +5410,10 @@ export default function AdminView(_props: AdminViewProps) {
     </>
   )
 }
+
+
+
+
 
 
 
