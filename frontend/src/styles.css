@@ -10002,10 +10002,32 @@ body.tickets-queue-expanded .detail-view-container {
   justify-items: center;
   gap: 6px;
 }
+.column-bar-track {
+  position: relative;
+  width: 28px;
+  height: 120px;
+  border-radius: 10px;
+  background: #eef2f7;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
 .column-bar-fill {
-  width: 26px;
-  border-radius: 8px;
+  width: 100%;
+  border-radius: 10px;
   transition: height 0.2s ease;
+  min-height: 2px;
+}
+.column-bar-value {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-heading);
+}
+.column-bar-label {
+  font-size: 11px;
+  color: var(--text-label);
+  text-align: center;
+  line-height: 1.2;
 }
 .column-bar-value {
   font-size: 13px;

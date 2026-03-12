@@ -88,6 +88,51 @@ function DonutChart({
   )
 }
 
+function PieChart({
+  segments,
+  size = 150,
+}: {
+  segments: { label: string; value: number; color: string }[]
+  size?: number
+}) {
+  const total = segments.reduce((acc, seg) => acc + seg.value, 0)
+  const radius = size / 2
+  const center = radius
+  const polarToCartesian = (angleDeg: number) => {
+    const angleRad = ((angleDeg - 90) * Math.PI) / 180
+    return {
+      x: center + radius * Math.cos(angleRad),
+      y: center + radius * Math.sin(angleRad),
+    }
+  }
+
+  let startAngle = 0
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="donut-chart">
+      {total <= 0 ? (
+        <circle cx={center} cy={center} r={radius} fill="#e2e8f0" />
+      ) : (
+        segments.map((seg) => {
+          const angle = (seg.value / total) * 360
+          const endAngle = startAngle + angle
+          const start = polarToCartesian(startAngle)
+          const end = polarToCartesian(endAngle)
+          const largeArc = angle > 180 ? 1 : 0
+          const d = [
+            `M ${center} ${center}`,
+            `L ${start.x} ${start.y}`,
+            `A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+            'Z',
+          ].join(' ')
+          startAngle = endAngle
+          return <path key={seg.label} d={d} fill={seg.color} />
+        })
+      )}
+    </svg>
+  )
+}
+
 function LegendList({ items }: { items: { label: string; value: number; color: string }[] }) {
   return (
     <div className="donut-legend">
@@ -206,13 +251,15 @@ function ColumnChart({ items }: { items: { label: string; value: number; color: 
     <div className="column-chart">
       {items.map((item) => (
         <div key={item.label} className="column-bar">
-          <span
-            className="column-bar-fill"
-            style={{
-              height: `${(item.value / maxValue) * 100}%`,
-              background: item.color,
-            }}
-          />
+          <div className="column-bar-track">
+            <span
+              className="column-bar-fill"
+              style={{
+                height: `${(item.value / maxValue) * 100}%`,
+                background: item.color,
+              }}
+            />
+          </div>
           <span className="column-bar-value">{item.value}</span>
           <span className="column-bar-label">{item.label}</span>
         </div>
@@ -769,14 +816,12 @@ export default function Dashboard() {
                 <h3 className="panel-title">Assets by Type</h3>
               </div>
               <div className="panel-body">
-                <DonutChart
+                <PieChart
                   segments={Object.entries(assetStats.byType || {}).map(([label, value], idx) => ({
                     label,
                     value,
                     color: TYPE_COLORS[idx % TYPE_COLORS.length],
                   }))}
-                  thickness={28}
-                  centerLabel={`${assetStats.total}`}
                 />
                 <LegendList
                   items={Object.entries(assetStats.byType || {}).map(([label, value], idx) => ({
@@ -792,7 +837,15 @@ export default function Dashboard() {
                 <h3 className="panel-title">Asset Status</h3>
               </div>
               <div className="panel-body">
-                <ColumnChart items={assetStats.statusBreakdown} />
+                {(() => {
+                  const nonZeroStatus = assetStats.statusBreakdown.filter((item) => item.value > 0)
+                  return (
+                    <>
+                      <PieChart segments={nonZeroStatus} />
+                      <LegendList items={nonZeroStatus} />
+                    </>
+                  )
+                })()}
               </div>
             </div>
             <div className="panel-card">

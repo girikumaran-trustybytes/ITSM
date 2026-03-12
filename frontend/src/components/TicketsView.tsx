@@ -325,10 +325,7 @@ export default function TicketsView() {
     const abs = Math.abs(Math.floor(remainingMs / 1000))
     const hh = Math.floor(abs / 3600)
     const mm = Math.floor((abs % 3600) / 60)
-    const ss = abs % 60
-    const core = hh > 0
-      ? `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
-      : `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+    const core = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
     return negative ? `-${core}` : core
   }
 
