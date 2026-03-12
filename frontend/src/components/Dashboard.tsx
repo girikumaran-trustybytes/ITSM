@@ -773,7 +773,7 @@ export default function Dashboard() {
                 <h3 className="panel-title">Ticket Status</h3>
               </div>
               <div className="panel-body">
-                <DonutChart segments={statusSegments} thickness={28} />
+                <DonutChart segments={statusSegments} thickness={36} />
                 <LegendList items={statusSegments} />
               </div>
             </div>
@@ -792,7 +792,7 @@ export default function Dashboard() {
                 <h3 className="panel-title">Open Tickets by Types</h3>
               </div>
               <div className="panel-body">
-                <DonutChart segments={openTypeSegments} thickness={28} />
+                <DonutChart segments={openTypeSegments} thickness={36} />
                 <LegendList items={openTypeSegments} />
               </div>
             </div>
@@ -816,12 +816,14 @@ export default function Dashboard() {
                 <h3 className="panel-title">Assets by Type</h3>
               </div>
               <div className="panel-body">
-                <PieChart
+                <DonutChart
                   segments={Object.entries(assetStats.byType || {}).map(([label, value], idx) => ({
                     label,
                     value,
                     color: TYPE_COLORS[idx % TYPE_COLORS.length],
                   }))}
+                  thickness={32}
+                  centerLabel={`${assetStats.total}`}
                 />
                 <LegendList
                   items={Object.entries(assetStats.byType || {}).map(([label, value], idx) => ({
@@ -841,7 +843,7 @@ export default function Dashboard() {
                   const nonZeroStatus = assetStats.statusBreakdown.filter((item) => item.value > 0)
                   return (
                     <>
-                      <PieChart segments={nonZeroStatus} />
+                      <DonutChart segments={nonZeroStatus} thickness={32} />
                       <LegendList items={nonZeroStatus} />
                     </>
                   )

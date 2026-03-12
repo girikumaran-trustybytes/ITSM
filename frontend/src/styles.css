@@ -3501,14 +3501,14 @@ html,
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: rgba(255,255,255,0.14);
+  background: #334155;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 10px;
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
   overflow: hidden;
 }
 .queue-avatar-image {
@@ -3530,6 +3530,11 @@ html,
   right: -2px;
   bottom: -2px;
   border: none;
+}
+.queue-avatar-icon {
+  width: 14px;
+  height: 14px;
+  color: #fff;
 }
 .queue-avatar-presence-available {
   background: #22c55e;
@@ -3555,10 +3560,10 @@ html,
   transform: rotate(90deg);
 }
 .queue-avatar-dark {
-  background: rgba(0,0,0,0.2);
+  background: #334155;
 }
 .queue-avatar-accent {
-  background: rgba(255,255,255,0.25);
+  background: #334155;
 }
 .queue-name {
   font-size: 11px;

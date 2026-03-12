@@ -90,6 +90,7 @@ export type Incident = {
   status: string
   type: string
   endUser: string
+  clientCompany?: string
   dateReported: string
   lastAction: string
   lastActionTime: string
@@ -252,6 +253,37 @@ export default function TicketsView() {
     endDate: '',
   })
 
+  const formatCompanyFromDomain = (email: string) => {
+    const raw = String(email || '').trim().toLowerCase()
+    if (!raw || !raw.includes('@')) return ''
+    const domain = raw.split('@')[1]?.trim() || ''
+    if (!domain) return ''
+    const parts = domain.split('.').filter(Boolean)
+    if (parts.length === 0) return ''
+    const base = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+    const blocked = new Set(['gmail', 'yahoo', 'outlook', 'hotmail', 'icloud', 'protonmail', 'aol', 'live'])
+    if (!base || blocked.has(base)) return ''
+    return base.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  const deriveRequesterCompany = (requester: any, fallbackEmail?: string) => {
+    const rawCompany = String(
+      requester?.company ||
+      requester?.client ||
+      requester?.companyName ||
+      requester?.organization ||
+      requester?.orgName ||
+      requester?.accountName ||
+      requester?.account?.name ||
+      requester?.account?.companyName ||
+      requester?.tenant ||
+      ''
+    ).trim()
+    if (rawCompany) return rawCompany
+    const email = String(requester?.email || fallbackEmail || '').trim()
+    return formatCompanyFromDomain(email)
+  }
+
   const inferInboundEndUser = (ticketData: any) => {
     const requester = ticketData?.requester
     if (requester && (requester.name || requester.email || requester.username)) {
@@ -265,6 +297,7 @@ export default function TicketsView() {
         site: requester.site || '',
         accountManager: requester.accountManager || requester.reportingManager || '',
         avatarUrl: requester.avatarUrl || requester.profilePic || requester.avatar || '',
+        company: deriveRequesterCompany(requester, requester?.email),
       }
     }
 
@@ -283,6 +316,7 @@ export default function TicketsView() {
       phone: undefined,
       site: undefined,
       accountManager: undefined,
+      company: formatCompanyFromDomain(email),
     }
   }
 
@@ -591,6 +625,9 @@ export default function TicketsView() {
       const items = Array.isArray(data) ? data : (data?.items || [])
       const mapped = items.map((t: any) => {
         const lastActionInfo = resolveLastAction(t)
+        const requester = t.requester || {}
+        const requesterEmail = requester?.email || t.requesterEmail || ''
+        const clientCompany = deriveRequesterCompany(requester, requesterEmail)
         return ({
         id: t.ticketId || String(t.id),
         slaTimeLeft: t.slaTimeLeft || t?.sla?.resolution?.remainingLabel || '--:--',
@@ -602,7 +639,8 @@ export default function TicketsView() {
         priority: t.priority || 'Low',
         status: String(t.status || '').toLowerCase() === 'resolved' ? 'Closed' : t.status,
         type: t.type,
-        endUser: t.requester?.name || t.requester?.email || '',
+        endUser: requester?.name || requester?.email || '',
+        clientCompany,
         dateReported: t.createdAt || '',
         lastAction: lastActionInfo.label,
         lastActionTime: lastActionInfo.time,
@@ -696,23 +734,27 @@ export default function TicketsView() {
         const label = lastActionLabel || (lastActionTime ? 'Updated' : '')
         return { label, time: lastActionTime }
       }
-      const lastActionInfo = resolveLastAction(d)
-      const mapped: Incident = {
-        id: d.ticketId || String(d.id || id),
-        slaTimeLeft: d.slaTimeLeft || d?.sla?.resolution?.remainingLabel || '--:--',
-        sla: d.sla || null,
-        subject: d.subject || d.description || 'Ticket',
+        const lastActionInfo = resolveLastAction(d)
+        const requester = d?.requester || {}
+        const requesterEmail = requester?.email || d?.requesterEmail || ''
+        const clientCompany = deriveRequesterCompany(requester, requesterEmail)
+        const mapped: Incident = {
+          id: d.ticketId || String(d.id || id),
+          slaTimeLeft: d.slaTimeLeft || d?.sla?.resolution?.remainingLabel || '--:--',
+          sla: d.sla || null,
+          subject: d.subject || d.description || 'Ticket',
         category: d.category || '',
         issueDetail: d.issueDetail || d.subCategory || d.resolutionCategory || '',
-        resolution: d.resolution || d.resolutionText || d.closureNotes || '',
-        priority: d.priority || 'Low',
-        status: d.status || 'New',
-        type: d.type || 'Incident',
-        endUser: d.requester?.name || d.requester?.email || '',
-        dateReported: d.createdAt || '',
-        lastAction: lastActionInfo.label,
-        lastActionTime: lastActionInfo.time,
-        assetTag: d.asset?.assetTag || d.asset?.tag || d.asset?.serial || d.assetTag || '',
+          resolution: d.resolution || d.resolutionText || d.closureNotes || '',
+          priority: d.priority || 'Low',
+          status: d.status || 'New',
+          type: d.type || 'Incident',
+          endUser: requester?.name || requester?.email || '',
+          clientCompany,
+          dateReported: d.createdAt || '',
+          lastAction: lastActionInfo.label,
+          lastActionTime: lastActionInfo.time,
+          assetTag: d.asset?.assetTag || d.asset?.tag || d.asset?.serial || d.assetTag || '',
         staff: d.assignedTo?.name || d.assignee?.name || d.staff?.name || d.staff || '',
         assignedAgentId: d.assignedTo?.id || d.assignee?.id,
         assignedAgentName: d.assignedTo?.name || d.assignee?.name,
@@ -741,13 +783,14 @@ export default function TicketsView() {
         resolution: '',
         priority: 'Low',
         status: 'New',
-        type: 'Incident',
-        endUser: '',
-        createdFrom: 'ITSM Platform',
-        dateReported: new Date().toLocaleString(),
-        lastAction: '',
-        lastActionTime: '',
-      })
+          type: 'Incident',
+          endUser: '',
+          clientCompany: '',
+          createdFrom: 'ITSM Platform',
+          dateReported: new Date().toLocaleString(),
+          lastAction: '',
+          lastActionTime: '',
+        })
       setShowDetailView(true)
     })
   }, [ticketId, incidents])
@@ -1045,6 +1088,7 @@ export default function TicketsView() {
     id: '',
     slaTimeLeft: '',
     team: '',
+    subject: '',
     category: '',
     assetTag: '',
     priority: '',
@@ -1064,6 +1108,7 @@ export default function TicketsView() {
     status: 80,
     id: 80,
     team: 120,
+    subject: 180,
     sla: 140,
     assetTag: 120,
     priority: 80,
@@ -1084,6 +1129,7 @@ export default function TicketsView() {
     status: 100,
     id: 100,
     team: 140,
+    subject: 220,
     sla: 160,
     assetTag: 140,
     priority: 100,
@@ -1109,6 +1155,7 @@ export default function TicketsView() {
     status: baseColWidths.status,
     id: baseColWidths.id,
     team: baseColWidths.team,
+    subject: baseColWidths.subject,
     sla: baseColWidths.sla,
     assetTag: baseColWidths.assetTag,
     priority: baseColWidths.priority,
@@ -1301,14 +1348,17 @@ export default function TicketsView() {
       viewing: '',
       id: '',
       slaTimeLeft: '',
+      team: '',
       subject: '',
       category: '',
+      assetTag: '',
       priority: '',
       status: '',
       type: '',
       endUser: '',
       lastAction: '',
       dateReported: '',
+      staff: '',
       issueDetail: '',
       resolution: '',
       dateClosed: ''
@@ -2280,6 +2330,15 @@ Click below to proceed:
     return buttons
   }
 
+  const renderUnassignedAvatar = () => (
+    <div className="queue-avatar queue-avatar-dark">
+      <svg className="queue-avatar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M4 20c1.6-4 14.4-4 16 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </div>
+  )
+
   const actionIconMap: Record<string, string> = {
     Back: 'arrow-left',
     Accept: 'circle-check-big',
@@ -2711,7 +2770,7 @@ Click below to proceed:
                           setQueueFilter((prev) => prev.type === 'teamUnassigned' && prev.team === team ? { type: 'all' } : { type: 'teamUnassigned', team })
                         }}
                       >
-                        <div className="queue-avatar queue-avatar-dark">U</div>
+                        {renderUnassignedAvatar()}
                         <div className="queue-name">Unassigned</div>
                         <div className="queue-count">{group.unassigned}</div>
                       </div>
@@ -2753,7 +2812,7 @@ Click below to proceed:
         {queueView === 'staff' && (
           <>
             <div className={`queue-item${queueFilter.type === 'unassigned' ? ' queue-item-active' : ''}`} onClick={() => setQueueFilter((prev) => prev.type === 'unassigned' ? { type: 'all' } : { type: 'unassigned' })}>
-              <div className="queue-avatar queue-avatar-dark">U</div>
+              {renderUnassignedAvatar()}
               <div className="queue-name">Unassigned</div>
               <div className="queue-count">{countUnassigned}</div>
             </div>
@@ -3377,7 +3436,7 @@ Click below to proceed:
     // Filter by global search
     if (globalSearch.trim()) {
       const searchLower = globalSearch.toLowerCase()
-          const globalMatch = (
+        const globalMatch = (
           incident.id.toLowerCase().includes(searchLower) ||
           incident.subject.toLowerCase().includes(searchLower) ||
           incident.category.toLowerCase().includes(searchLower) ||
@@ -3386,6 +3445,8 @@ Click below to proceed:
           incident.priority.toLowerCase().includes(searchLower) ||
           incident.status.toLowerCase().includes(searchLower) ||
           incident.type.toLowerCase().includes(searchLower) ||
+          incident.endUser.toLowerCase().includes(searchLower) ||
+          String(incident.clientCompany || '').toLowerCase().includes(searchLower) ||
           String(incident.lastAction || '').toLowerCase().includes(searchLower) ||
           String(incident.lastActionTime || '').toLowerCase().includes(searchLower) ||
           incident.dateReported.toLowerCase().includes(searchLower) ||
@@ -3403,18 +3464,24 @@ Click below to proceed:
       const teamLabel = mapTeam(incident).team
       if (!String(teamLabel || '').toLowerCase().includes(searchValues.team.toLowerCase())) return false
     }
+    if (searchValues.subject && !String(incident.subject || '').toLowerCase().includes(searchValues.subject.toLowerCase())) return false
     if (searchValues.assetTag && !String(incident.assetTag || '').toLowerCase().includes(searchValues.assetTag.toLowerCase())) return false
     if (searchValues.category && !incident.category.toLowerCase().includes(searchValues.category.toLowerCase())) return false
     if (searchValues.slaTimeLeft && !String(incident.slaTimeLeft || '').toLowerCase().includes(searchValues.slaTimeLeft.toLowerCase())) return false
     if (searchValues.priority && !incident.priority.toLowerCase().includes(searchValues.priority.toLowerCase())) return false
     if (searchValues.status && !incident.status.toLowerCase().includes(searchValues.status.toLowerCase())) return false
     if (searchValues.type && !incident.type.toLowerCase().includes(searchValues.type.toLowerCase())) return false
-    if (searchValues.endUser && !incident.endUser.toLowerCase().includes(searchValues.endUser.toLowerCase())) return false
     if (searchValues.lastAction && !incident.lastAction.toLowerCase().includes(searchValues.lastAction.toLowerCase())) return false
     if (searchValues.dateReported && !incident.dateReported.toLowerCase().includes(searchValues.dateReported.toLowerCase())) return false
     if (searchValues.staff && !String(incident.staff || '').toLowerCase().includes(searchValues.staff.toLowerCase())) return false
     if (searchValues.issueDetail && !String(incident.issueDetail || '').toLowerCase().includes(searchValues.issueDetail.toLowerCase())) return false
     if (searchValues.resolution && !String(incident.resolution || '').toLowerCase().includes(searchValues.resolution.toLowerCase())) return false
+    if (searchValues.endUser) {
+      const needle = searchValues.endUser.toLowerCase()
+      const clientMatch = String(incident.clientCompany || '').toLowerCase().includes(needle)
+      const endUserMatch = incident.endUser.toLowerCase().includes(needle)
+      if (!clientMatch && !endUserMatch) return false
+    }
     if (searchValues.dateClosed) {
       const closedLabel = incident.closedAt ? new Date(incident.closedAt).toLocaleString() : ''
       if (!closedLabel.toLowerCase().includes(searchValues.dateClosed.toLowerCase())) return false
@@ -3517,6 +3584,7 @@ Click below to proceed:
       status: 'status',
       id: 'id',
       team: 'team',
+      subject: 'subject',
       type: 'type',
       endUser: 'endUser',
       category: 'category',
@@ -3655,7 +3723,7 @@ Click below to proceed:
     return { width, height, points }
   }, [ticketVisuals])
 
-  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.team}px ${columnWidths.id}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.sla}px ${columnWidths.assetTag}px ${columnWidths.priority}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.staff}px ${columnWidths.category}px ${columnWidths.issueDetail}px ${columnWidths.resolution}px ${columnWidths.dateClosed}px 1fr`
+  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.team}px ${columnWidths.id}px ${columnWidths.subject}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.sla}px ${columnWidths.assetTag}px ${columnWidths.priority}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.staff}px ${columnWidths.category}px ${columnWidths.issueDetail}px ${columnWidths.resolution}px ${columnWidths.dateClosed}px 1fr`
   const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
   const activeSlaPriorityRank = Number(selectedTicket?.sla?.priorityRank || rankFromPriorityLabel(selectedTicket?.sla?.priority || selectedTicket?.priority))
   const activeSlaPolicyName = String(selectedTicket?.sla?.policyName || 'Select Policy')
@@ -5120,8 +5188,9 @@ Click below to proceed:
             <div className="col-status col-header">Status<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')} /></div>
             <div className="col-team col-header">Team<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'team')} onDoubleClick={() => handleAutoFit('team')} /></div>
             <div className="col-id col-header">Ticket ID<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')} /></div>
-            <div className="col-type col-header">Ticket Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
-            <div className="col-endUser col-header">Client<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
+              <div className="col-subject col-header">Subject<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')} /></div>
+              <div className="col-type col-header">Ticket Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
+              <div className="col-endUser col-header">Client<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
             <div className="col-sla col-header">SLA Time Left<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'sla')} onDoubleClick={() => handleAutoFit('sla')} /></div>
             <div className="col-assetTag col-header">Asset Tag<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'assetTag')} onDoubleClick={() => handleAutoFit('assetTag')} /></div>
             <div className="col-priority col-header">Priority<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')} /></div>
@@ -5146,6 +5215,7 @@ Click below to proceed:
               <div className="col-status"><input className="table-filter-input" value={searchValues.status} onChange={(e) => handleSearchChange('status', e.target.value)} /></div>
               <div className="col-team"><input className="table-filter-input" value={searchValues.team} onChange={(e) => handleSearchChange('team', e.target.value)} /></div>
               <div className="col-id"><input className="table-filter-input" value={searchValues.id} onChange={(e) => handleSearchChange('id', e.target.value)} /></div>
+              <div className="col-subject"><input className="table-filter-input" value={searchValues.subject} onChange={(e) => handleSearchChange('subject', e.target.value)} /></div>
               <div className="col-type"><input className="table-filter-input" value={searchValues.type} onChange={(e) => handleSearchChange('type', e.target.value)} /></div>
               <div className="col-endUser"><input className="table-filter-input" value={searchValues.endUser} onChange={(e) => handleSearchChange('endUser', e.target.value)} /></div>
               <div className="col-sla"><input className="table-filter-input" value={searchValues.slaTimeLeft} onChange={(e) => handleSearchChange('slaTimeLeft', e.target.value)} /></div>
@@ -5190,8 +5260,9 @@ Click below to proceed:
               </div>
               <div className="col-team">{mapTeam(incident).team || '-'}</div>
               <div className="col-id">{incident.id}</div>
+              <div className="col-subject">{incident.subject || '-'}</div>
               <div className="col-type">{incident.type || '-'}</div>
-              <div className="col-endUser">{incident.endUser || '-'}</div>
+              <div className="col-endUser">{incident.clientCompany || incident.endUser || '-'}</div>
               <div className="col-sla">
                 {(() => {
                   const isClosed = String(incident.status || '').trim().toLowerCase() === 'closed'
@@ -5224,7 +5295,7 @@ Click below to proceed:
                   if (!staffLabel && !record) {
                     return (
                       <div className="staff-cell">
-                        <div className="queue-avatar queue-avatar-dark">U</div>
+                        {renderUnassignedAvatar()}
                         <span>Unassigned</span>
                       </div>
                     )
@@ -5581,23 +5652,6 @@ Click below to proceed:
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
