@@ -139,6 +139,10 @@ export default function TicketsView() {
   const [slaNowMs, setSlaNowMs] = useState(() => Date.now())
   const [activeDetailTab, setActiveDetailTab] = useState('Progress')
   const [progressFilter, setProgressFilter] = useState<ProgressFilterType>('All Actions')
+  const [isEditingSubject, setIsEditingSubject] = useState(false)
+  const [subjectDraft, setSubjectDraft] = useState('')
+  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null)
+  const [actionDetail, setActionDetail] = useState<any | null>(null)
   const [showProgressFilterMenu, setShowProgressFilterMenu] = useState(false)
   const [progressExpanded, setProgressExpanded] = useState(true)
   const [progressAtEnd, setProgressAtEnd] = useState(false)
@@ -318,6 +322,15 @@ export default function TicketsView() {
       accountManager: undefined,
       company: formatCompanyFromDomain(email),
     }
+  }
+
+  const generateActionId = (seed: string) => {
+    let hash = 0
+    for (let i = 0; i < seed.length; i += 1) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(i)
+      hash |= 0
+    }
+    return String(Math.abs(hash))
   }
 
   const inferCreatedFrom = (ticketData: any) => {
@@ -557,6 +570,8 @@ export default function TicketsView() {
         const kind = noteRaw.toLowerCase().startsWith('[email]')
           ? 'conversation'
           : classifyTimelineKind(note || fallback, internal)
+        const rawActionId = h?.id || h?.historyId || h?.eventId || ''
+        const actionId = rawActionId ? String(rawActionId) : generateActionId(`${ticketKey}|${h?.createdAt || ''}|${note || fallback}`)
         return {
           author: resolveHistoryAuthor(h, ticketData),
           text: note || fallback,
@@ -565,12 +580,22 @@ export default function TicketsView() {
           internal,
           changedById: Number(h?.changedById || 0) || null,
           kind,
+          actionId,
         }
       })
       .filter((e: any) => String(e.text || '').trim().length > 0)
 
     const merged = [
-      { author: initialAuthor, text: `Ticket created: ${initialText}`, time: initialTime, action: createdAction, internal: false, changedById: null, kind: 'public' as const },
+      {
+        author: initialAuthor,
+        text: `Ticket created: ${initialText}`,
+        time: initialTime,
+        action: createdAction,
+        internal: false,
+        changedById: null,
+        kind: 'public' as const,
+        actionId: generateActionId(`${ticketKey}|created|${initialTime}|${initialText}`),
+      },
       ...historyComments,
     ]
 
@@ -634,7 +659,7 @@ export default function TicketsView() {
         sla: t.sla || null,
         subject: t.subject || t.description || '',
         category: t.category || '',
-        issueDetail: t.issueDetail || t.subCategory || t.resolutionCategory || '',
+        issueDetail: t.issueDetail || t.subcategory || t.subCategory || t.resolutionCategory || '',
         resolution: t.resolution || t.resolutionText || t.closureNotes || '',
         priority: t.priority || 'Low',
         status: String(t.status || '').toLowerCase() === 'resolved' ? 'Closed' : t.status,
@@ -738,13 +763,13 @@ export default function TicketsView() {
         const requester = d?.requester || {}
         const requesterEmail = requester?.email || d?.requesterEmail || ''
         const clientCompany = deriveRequesterCompany(requester, requesterEmail)
-        const mapped: Incident = {
-          id: d.ticketId || String(d.id || id),
+      const mapped: Incident = {
+        id: d.ticketId || String(d.id || id),
           slaTimeLeft: d.slaTimeLeft || d?.sla?.resolution?.remainingLabel || '--:--',
           sla: d.sla || null,
           subject: d.subject || d.description || 'Ticket',
         category: d.category || '',
-        issueDetail: d.issueDetail || d.subCategory || d.resolutionCategory || '',
+        issueDetail: d.issueDetail || d.subcategory || d.subCategory || d.resolutionCategory || '',
           resolution: d.resolution || d.resolutionText || d.closureNotes || '',
           priority: d.priority || 'Low',
           status: d.status || 'New',
@@ -768,6 +793,13 @@ export default function TicketsView() {
         closedByName: d.closedBy?.name || d.closedByName || undefined,
       }
       setSelectedTicket(mapped)
+      syncSelectedTicketInList(mapped.id, {
+        category: mapped.category,
+        issueDetail: mapped.issueDetail,
+        resolution: mapped.resolution,
+        closedAt: mapped.closedAt,
+        closedByName: mapped.closedByName,
+      })
       setEndUser(inferInboundEndUser(d))
       hydrateTimelineFromTicket(d)
       setShowDetailView(true)
@@ -1076,6 +1108,7 @@ export default function TicketsView() {
   const [resolutionValue, setResolutionValue] = useState('Not set')
   const [editingTicketField, setEditingTicketField] = useState<string | null>(null)
   const [editingEndUserField, setEditingEndUserField] = useState<null | 'name' | 'email' | 'phone' | 'site' | 'accountManager'>(null)
+  const statusMenuRef = useRef<HTMLDivElement | null>(null)
   const [endUserDraft, setEndUserDraft] = useState({
     name: '',
     email: '',
@@ -3375,6 +3408,38 @@ Click below to proceed:
     }
   }
 
+  const openActionDetail = (entry: any) => {
+    setActionDetail(entry)
+    setActiveActionMenuId(null)
+  }
+
+  const forwardActionEntry = (entry: any) => {
+    const safeText = escapeHtml(String(entry?.text || '').trim())
+    const safeActionId = String(entry?.actionId || '-')
+    const html = `<div><strong>Forwarded action (ID: ${safeActionId})</strong></div><div>${safeText.replace(/\n/g, '<br/>')}</div>`
+    setComposerMode('noteEmail')
+    setShowActionComposer(true)
+    setComposerBodyHtml(html)
+    setComposerBodyText(htmlToPlainText(html))
+    setComposerForm((prev) => ({ ...prev, body: htmlToPlainText(html) }))
+    if (composerEditorRef.current) {
+      composerEditorRef.current.innerHTML = html
+    }
+    setActiveActionMenuId(null)
+  }
+
+  React.useEffect(() => {
+    if (!activeActionMenuId) return undefined
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('.progress-action-menu') || target.closest('.progress-action-trigger')) return
+      setActiveActionMenuId(null)
+    }
+    window.addEventListener('mousedown', handleClick)
+    return () => window.removeEventListener('mousedown', handleClick)
+  }, [activeActionMenuId])
+
   const handleDeleteTicket = async () => {
     if (!selectedTicket) return
     if (!confirm('Delete this ticket? This cannot be undone.')) return
@@ -4006,6 +4071,18 @@ Click below to proceed:
   }
   const closeTicketFieldEditor = () => setEditingTicketField(null)
 
+  React.useEffect(() => {
+    if (editingTicketField !== 'status') return undefined
+    const handleClick = (event: MouseEvent) => {
+      if (!statusMenuRef.current) return
+      if (!statusMenuRef.current.contains(event.target as Node)) {
+        setEditingTicketField(null)
+      }
+    }
+    window.addEventListener('mousedown', handleClick)
+    return () => window.removeEventListener('mousedown', handleClick)
+  }, [editingTicketField])
+
   const renderTicketFieldValue = (
     field: string,
     value: string,
@@ -4115,6 +4192,8 @@ Click below to proceed:
     setShowProgressFilterMenu(false)
     setSelectedSlaPolicyName('')
     setActiveDetailTab('Progress')
+    setIsEditingSubject(false)
+    setSubjectDraft(selectedTicket?.subject || '')
   }, [selectedTicket?.id])
 
   React.useEffect(() => {
@@ -4185,6 +4264,50 @@ Click below to proceed:
             <div className={`detail-view-card${isCompactDetailLayout ? ' compact' : ''}`}>
         {(!isCompactDetailLayout || activeDetailTab === 'Progress') && (
         <div className="progress-card">
+          <div className="ticket-detail-header ticket-detail-header-inline">
+            <div className="ticket-detail-id">
+              <div className={`ticket-detail-icon status-badge ${statusClass(selectedTicket.status || '')}`}>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 7a2 2 0 0 1 2-2h7l3 3v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+                  <path d="M13 5v3h3" />
+                  <path d="M8 11h6" />
+                  <path d="M8 14h5" />
+                </svg>
+              </div>
+              <div className="ticket-detail-meta">
+                <div className="ticket-detail-code ticket-detail-code-lg">[{selectedTicket.id}]</div>
+                <div className="ticket-detail-subject">
+                  {isEditingSubject ? (
+                    <input
+                      className="ticket-detail-subject-input"
+                      value={subjectDraft}
+                      autoFocus
+                      onChange={(e) => setSubjectDraft(e.target.value)}
+                      onBlur={commitSubjectEdit}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitSubjectEdit()
+                        if (e.key === 'Escape') {
+                          setIsEditingSubject(false)
+                          setSubjectDraft(selectedTicket.subject || '')
+                        }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="ticket-detail-subject-btn"
+                      onClick={() => {
+                        setSubjectDraft(selectedTicket.subject || '')
+                        setIsEditingSubject(true)
+                      }}
+                    >
+                      {selectedTicket.subject || 'Not set'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="progress-card-header">
             <span className="progress-title">Progress</span>
             <div className="progress-header-right">
@@ -4692,7 +4815,26 @@ Click below to proceed:
                       <div className="progress-author">{identity.name}</div>
                       {actionLabel ? <div className="progress-action-line">| {actionLabel}</div> : null}
                     </div>
-                    <div className="progress-time">{c.time}</div>
+                    <div className="progress-meta-right">
+                      <div className="progress-time">{c.time}</div>
+                      <div className="progress-action-id">ID: {String((c as any)?.actionId || '-')}</div>
+                      <div className="progress-action-buttons">
+                        <button
+                          type="button"
+                          className="progress-action-trigger"
+                          onClick={() => setActiveActionMenuId((prev) => (prev === String((c as any)?.actionId || '') ? null : String((c as any)?.actionId || '')))}
+                          aria-label="More actions"
+                        >
+                          ...
+                        </button>
+                        {activeActionMenuId === String((c as any)?.actionId || '') && (
+                          <div className="progress-action-menu">
+                            <button type="button" onClick={() => openActionDetail(c)}>View/Edit Action</button>
+                            <button type="button" onClick={() => forwardActionEntry(c)}>Forward</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="progress-text">{c.text}</div>
                 </div>
@@ -4743,6 +4885,47 @@ Click below to proceed:
             )}
           </div>
         </div>
+        {actionDetail && (
+          <div className="modal-overlay" onClick={() => setActionDetail(null)}>
+            <div className="modal-content action-detail-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>{String(actionDetail.action || 'Action')}</h2>
+                <div className="action-detail-id">ID: {String(actionDetail.actionId || '-')}</div>
+                <button className="modal-close" onClick={() => setActionDetail(null)}>x</button>
+              </div>
+              <div className="modal-body">
+                <div className="detail-row">
+                  <label>Action by</label>
+                  <span>{String(actionDetail.author || 'System')}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Date Done</label>
+                  <span>{String(actionDetail.time || '-')}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Date Created</label>
+                  <span>{String(actionDetail.time || '-')}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Hide from End-User</label>
+                  <span>{actionDetail.internal ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Action is Important</label>
+                  <span>No</span>
+                </div>
+                <div className="detail-row">
+                  <label>Application</label>
+                  <span>itsm-agent-web-application</span>
+                </div>
+                <div className="detail-row">
+                  <label>Note</label>
+                  <span>{String(actionDetail.text || '-')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         )}
         {(!isCompactDetailLayout || activeDetailTab === 'Details') && (
         <div className="detail-sidebar-wrap">
@@ -4790,25 +4973,23 @@ Click below to proceed:
                 <div className="sidebar-field">
                   <label>Status</label>
                   {editingTicketField === 'status' ? (
-                    <select
-                      className="sidebar-select"
-                      autoFocus
-                      value={selectedTicket.status || ''}
-                      onBlur={closeTicketFieldEditor}
-                      onChange={(e) => {
-                        applyStatus(e.target.value, `Status updated to ${e.target.value}`)
-                        closeTicketFieldEditor()
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Escape') closeTicketFieldEditor()
-                      }}
-                    >
-                      {statusOptions.map((option) => (
-                        <option key={`status-${option || 'empty'}`} value={option}>
-                          {option || 'Not set'}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="status-menu-wrap" ref={statusMenuRef}>
+                      <div className="status-menu">
+                        {statusOptions.map((option) => (
+                          <button
+                            key={`status-${option || 'empty'}`}
+                            type="button"
+                            className={`status-menu-item${String(option || '').toLowerCase() === String(selectedTicket.status || '').toLowerCase() ? ' active' : ''}`}
+                            onClick={() => {
+                              applyStatus(option, `Status updated to ${option}`)
+                              closeTicketFieldEditor()
+                            }}
+                          >
+                            {option || 'Not set'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
                     <button
                       type="button"
@@ -4819,6 +5000,26 @@ Click below to proceed:
                     </button>
                   )}
                 </div>
+                {isTicketClosed && (
+                  <div className="closure-section">
+                    <div className="closure-title-row">
+                      <h4 className="closure-title">Closure details</h4>
+                      <span className="closure-chevron">^</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Date Closed</label>
+                      <span>{closedAtMs ? new Date(closedAtMs).toLocaleString() : '-'}</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Closed by</label>
+                      <span>{closedByName}</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Time to Close</label>
+                      <span>{timeToCloseLabel}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="sidebar-field">
                   <label>Team</label>
                   {renderTicketFieldValue(
@@ -4883,7 +5084,7 @@ Click below to proceed:
                     (value) => {
                       const next = value === 'Not set' ? '' : value
                       setIssueDetailValue(next)
-                      syncSelectedTicketInList(selectedTicket.id, { issueDetail: next })
+                      updateTicketPatch({ subcategory: next }, { issueDetail: next })
                     },
                     ['Not set', ...issueDetailOptions]
                   )}
@@ -4895,7 +5096,7 @@ Click below to proceed:
                     resolutionValue,
                     (value) => {
                       setResolutionValue(value)
-                      syncSelectedTicketInList(selectedTicket.id, { resolution: value })
+                      updateTicketPatch({ resolution: value }, { resolution: value })
                     },
                     uniqueOptions([...defaultResolutionOptions, selectedTicket.resolution, resolutionValue])
                   )}
@@ -5017,26 +5218,6 @@ Click below to proceed:
                     <div className="sla-done-line">Resolution completed {resolutionSla.completedLabel !== '-' ? `at ${resolutionSla.completedLabel}` : ''}</div>
                   )}
                 </div>
-                {isTicketClosed && (
-                  <div className="closure-section">
-                    <div className="closure-title-row">
-                      <h4 className="closure-title">Closure details</h4>
-                      <span className="closure-chevron">^</span>
-                    </div>
-                    <div className="sidebar-field">
-                      <label>Date Closed</label>
-                      <span>{closedAtMs ? new Date(closedAtMs).toLocaleString() : '-'}</span>
-                    </div>
-                    <div className="sidebar-field">
-                      <label>Closed by</label>
-                      <span>{closedByName}</span>
-                    </div>
-                    <div className="sidebar-field">
-                      <label>Time to Close</label>
-                      <span>{timeToCloseLabel}</span>
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="enduser-card">
                 <h3 className="sidebar-title" style={{ marginTop: 0, marginBottom: 8 }}>End-User details</h3>
@@ -5656,3 +5837,14 @@ Click below to proceed:
 
 
 
+  const commitSubjectEdit = async () => {
+    if (!selectedTicket) return
+    const next = String(subjectDraft || '').trim()
+    if (!next || next === selectedTicket.subject) {
+      setIsEditingSubject(false)
+      setSubjectDraft(selectedTicket.subject || '')
+      return
+    }
+    setIsEditingSubject(false)
+    updateTicketPatch({ subject: next }, { subject: next })
+  }

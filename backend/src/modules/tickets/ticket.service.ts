@@ -1154,6 +1154,9 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
     if (payload.type !== undefined) data.type = payload.type
     if (payload.priority !== undefined) data.priority = payload.priority
     if (payload.category !== undefined) data.category = payload.category
+    if (payload.subcategory !== undefined) data.subcategory = payload.subcategory
+    if (payload.resolutionCategory !== undefined) data.resolutionCategory = payload.resolutionCategory
+    if (payload.resolution !== undefined) data.resolution = payload.resolution
     if (payload.createdFrom !== undefined) data.createdFrom = payload.createdFrom
     if (payload.assigneeId !== undefined) data.assigneeId = payload.assigneeId || null
     if (payload.requesterId !== undefined) data.requesterId = payload.requesterId || null
