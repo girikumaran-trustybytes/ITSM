@@ -14,6 +14,7 @@ export type AccountSettings = {
     email: string
     phone: string
     invoiceEmail: string
+    invoiceCc: string
   }
 }
 
@@ -36,4 +37,3 @@ export async function cancelAccount(): Promise<{ ok: boolean }> {
   const res = await api.post('/system/account-settings/cancel')
   return res.data
 }
-

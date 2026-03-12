@@ -12,7 +12,7 @@ import {
 } from '../utils/leftPanelConfig'
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
-import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, type MailProvider } from '../services/config.service'
+import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, updateMailConfig, type MailProvider } from '../services/config.service'
 import { getSecuritySettings, updateSecuritySettings, type SecuritySettings } from '../services/security-settings.service'
 import { cancelAccount, exportAccountData, getAccountSettings, updateAccountSettings, type AccountSettings } from '../services/account-settings.service'
 import * as userService from '../modules/users/services/user.service'
@@ -171,6 +171,7 @@ const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
     email: '',
     phone: '',
     invoiceEmail: '',
+    invoiceCc: '',
   },
 }
 type SlaPriority = typeof SLA_PRIORITIES[number]
@@ -1989,6 +1990,7 @@ export default function AdminView(_props: AdminViewProps) {
       const provider = String(data?.provider || 'custom') as MailProvider
       const smtp = data?.smtp || {}
       const imap = data?.imap || {}
+      const settings = data?.settings || {}
       const inboundRoutes: any[] = Array.isArray((data as any)?.inbound?.inboundRoutes) ? (data as any).inbound.inboundRoutes : []
       const outboundRoutes: any[] = Array.isArray((data as any)?.inbound?.outboundRoutes) ? (data as any).inbound.outboundRoutes : []
       const findInboundEmail = (queue: string, fallback: string) =>
@@ -2008,8 +2010,8 @@ export default function AdminView(_props: AdminViewProps) {
         oauthConnected: false,
         oauthTokenExpiry: '',
         workspaceProvider: toWorkspaceProvider(provider),
-        supportMail: String(smtp?.from || ''),
-        inboundEmailAddress: String(smtp?.from || ''),
+        supportMail: String(settings?.supportMail || smtp?.from || ''),
+        inboundEmailAddress: String(settings?.inboundEmailAddress || smtp?.from || ''),
         inboundDefaultQueue: String(data?.inbound?.defaultQueue || 'Support Team'),
         inboundSupportEmail: findInboundEmail('Support Team', 'support@trustybytes.in'),
         inboundHrEmail: findInboundEmail('HR Team', 'hr@trustybytes.in'),
@@ -2022,7 +2024,7 @@ export default function AdminView(_props: AdminViewProps) {
         smtpEncryption: Boolean(smtp?.secure) ? 'SSL' : 'None',
         enablePush: false,
         ignoreAutoReply: true,
-        preventEmailLoop: true,
+        preventEmailLoop: settings?.preventEmailLoop === undefined ? true : Boolean(settings?.preventEmailLoop),
         processAttachments: true,
         overwriteStatusOnReply: false,
         autoReopenOnReply: true,
@@ -2034,17 +2036,17 @@ export default function AdminView(_props: AdminViewProps) {
         outboundManagementFrom: findOutboundFrom('Management Team', 'management@trustybytes.in'),
         maxAttachmentSizeMb: '20',
         signatureTemplate: 'Kind regards,\nTrustyBytes Support Team',
-        allowExternalEmailCreation: true,
+        allowExternalEmailCreation: settings?.allowExternalEmailCreation === undefined ? true : Boolean(settings?.allowExternalEmailCreation),
         allowInternalOnly: false,
         allowedDomains: '',
         blockedDomains: '',
         spfDkimStatus: 'Unknown',
-        emailLogRetentionDays: '90',
+        emailLogRetentionDays: String(settings?.emailLogRetentionDays || '90'),
         retryFailedSend: true,
         maxRetryCount: '3',
-        routingRuleHelpdeskQueue: 'If email sent to support@ -> Queue = Support Team',
-        routingRuleAccessType: 'If subject contains "Access" -> Type = Access Request',
-        routingRuleSupplierType: 'If sender domain = vendor.com -> Type = Supplier Ticket',
+        routingRuleHelpdeskQueue: String(settings?.routingRuleHelpdeskQueue || 'If email sent to support@ -> Queue = Support Team'),
+        routingRuleAccessType: String(settings?.routingRuleAccessType || 'If subject contains "Access" -> Type = Access Request'),
+        routingRuleSupplierType: String(settings?.routingRuleSupplierType || 'If sender domain = vendor.com -> Type = Supplier Ticket'),
         lastSyncTime: nowStamp,
         lastEmailReceived: '',
         lastEmailSent: '',
@@ -2317,8 +2319,63 @@ export default function AdminView(_props: AdminViewProps) {
   }
 
   const saveMailConfiguration = async () => {
-    await saveInboundRouting()
-    setMailResult((prev) => (prev ? `${prev}. Configuration snapshot saved.` : 'Configuration snapshot saved'))
+    if (role !== 'ADMIN') return
+    const defaultQueue = String(mailForm.inboundDefaultQueue || '').trim()
+    if (!defaultQueue) {
+      setMailResult('Inbound default queue/team is required')
+      return
+    }
+    try {
+      setMailBusy(true)
+      setMailResult('')
+      await updateMailConfig({
+        provider: mailForm.provider,
+        smtp: {
+          host: mailForm.smtp.host.trim(),
+          port: Number(mailForm.smtp.port || 0),
+          secure: mailForm.smtpEncryption !== 'None',
+          user: mailForm.smtp.user.trim(),
+          pass: mailForm.smtp.pass,
+          from: mailForm.smtp.from.trim() || mailForm.supportMail.trim(),
+        },
+        imap: {
+          host: mailForm.imap.host.trim(),
+          port: Number(mailForm.imap.port || 0),
+          secure: mailForm.imapEncryption !== 'None',
+          user: mailForm.imap.user.trim(),
+          pass: mailForm.imap.pass,
+          mailbox: mailForm.imap.mailbox.trim() || 'INBOX',
+        },
+        inbound: {
+          defaultQueue,
+          inboundRoutes: [
+            { email: String(mailForm.inboundSupportEmail || '').trim().toLowerCase(), queue: 'Support Team' },
+            { email: String(mailForm.inboundHrEmail || '').trim().toLowerCase(), queue: 'HR Team' },
+            { email: String(mailForm.inboundManagementEmail || '').trim().toLowerCase(), queue: 'Management Team' },
+          ],
+          outboundRoutes: [
+            { queue: 'Support Team', from: String(mailForm.outboundSupportFrom || '').trim().toLowerCase() },
+            { queue: 'HR Team', from: String(mailForm.outboundHrFrom || '').trim().toLowerCase() },
+            { queue: 'Management Team', from: String(mailForm.outboundManagementFrom || '').trim().toLowerCase() },
+          ],
+        },
+        settings: {
+          supportMail: mailForm.supportMail.trim(),
+          inboundEmailAddress: mailForm.inboundEmailAddress.trim(),
+          allowExternalEmailCreation: mailForm.allowExternalEmailCreation,
+          preventEmailLoop: mailForm.preventEmailLoop,
+          emailLogRetentionDays: mailForm.emailLogRetentionDays,
+          routingRuleHelpdeskQueue: mailForm.routingRuleHelpdeskQueue,
+          routingRuleAccessType: mailForm.routingRuleAccessType,
+          routingRuleSupplierType: mailForm.routingRuleSupplierType,
+        },
+      })
+      setMailResult('Configuration saved.')
+    } catch (error: any) {
+      setMailResult(error?.response?.data?.error || 'Failed to save mail configuration')
+    } finally {
+      setMailBusy(false)
+    }
   }
 
   const saveTemplate = () => {
@@ -4719,10 +4776,6 @@ export default function AdminView(_props: AdminViewProps) {
                     />
                   </label>
                   <div style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Current Plan</div>
-                    <div style={{ color: '#475569' }}>{accountDraft.currentPlan || '-'}</div>
-                  </div>
-                  <div style={{ marginTop: 16 }}>
                     <div style={{ fontWeight: 700, color: '#0f172a' }}>Active Since</div>
                     <div style={{ color: '#475569' }}>{accountDraft.activeSince || '-'}</div>
                   </div>
@@ -4733,10 +4786,6 @@ export default function AdminView(_props: AdminViewProps) {
                   <div style={{ marginTop: 16 }}>
                     <div style={{ fontWeight: 700, color: '#0f172a' }}>Agents</div>
                     <div style={{ color: '#475569' }}>{accountDraft.agentsCount}</div>
-                  </div>
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Data Center</div>
-                    <div style={{ color: '#475569' }}>{accountDraft.dataCenter || '-'}</div>
                   </div>
                   <div style={{ marginTop: 16 }}>
                     <div style={{ fontWeight: 700, color: '#0f172a' }}>Version</div>
@@ -4818,6 +4867,17 @@ export default function AdminView(_props: AdminViewProps) {
                               onChange={(e) =>
                                 updateAccountDraft({
                                   contact: { ...accountDraft.contact, invoiceEmail: e.target.value },
+                                })
+                              }
+                            />
+                          </label>
+                          <label className="admin-field-row">
+                            <span>CC for invoice</span>
+                            <input
+                              value={accountDraft.contact.invoiceCc}
+                              onChange={(e) =>
+                                updateAccountDraft({
+                                  contact: { ...accountDraft.contact, invoiceCc: e.target.value },
                                 })
                               }
                             />

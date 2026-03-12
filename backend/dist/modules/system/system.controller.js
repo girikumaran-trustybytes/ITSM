@@ -44,6 +44,7 @@ const DEFAULT_ACCOUNT_SETTINGS = {
         email: '',
         phone: '',
         invoiceEmail: '',
+        invoiceCc: '',
     },
 };
 function toBool(value, fallback = false) {
@@ -185,6 +186,7 @@ function normalizeAccountSettings(input) {
             email: String(contact.email || '').trim(),
             phone: String(contact.phone || '').trim(),
             invoiceEmail: String(contact.invoiceEmail || '').trim(),
+            invoiceCc: String(contact.invoiceCc || '').trim(),
         },
     };
 }

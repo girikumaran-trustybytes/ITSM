@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyImap = exports.sendSmtpMail = exports.verifySmtp = exports.resolveOutboundFromForQueue = exports.resolveInboundQueueByRecipient = exports.setInboundRoutingConfig = exports.getInboundRoutingConfig = exports.getPublicMailConfig = exports.loadMailConfigFromEnv = void 0;
+exports.verifyImap = exports.sendSmtpMail = exports.verifySmtp = exports.resolveOutboundFromForQueue = exports.resolveInboundQueueByRecipient = exports.setInboundRoutingConfig = exports.getInboundRoutingConfig = exports.getPublicMailConfig = exports.loadMailConfigFromEnv = exports.getMailConfigOverride = exports.setMailConfigOverride = void 0;
 const net_1 = __importDefault(require("net"));
 const tls_1 = __importDefault(require("tls"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
@@ -150,7 +150,7 @@ function toInt(value, fallback) {
         return fallback;
     return Math.max(1, Math.floor(n));
 }
-function loadMailConfigFromEnv() {
+function loadMailConfigBase() {
     const provider = normalizeMailProvider(process.env.MAIL_PROVIDER || 'gmail');
     const preset = MAIL_PROVIDER_PRESETS[provider];
     return {
@@ -172,6 +172,18 @@ function loadMailConfigFromEnv() {
             mailbox: String(process.env.IMAP_MAILBOX || 'INBOX').trim() || 'INBOX',
         },
     };
+}
+let runtimeMailConfigOverride = null;
+function setMailConfigOverride(next) {
+    runtimeMailConfigOverride = next && Object.keys(next).length ? next : null;
+}
+exports.setMailConfigOverride = setMailConfigOverride;
+function getMailConfigOverride() {
+    return runtimeMailConfigOverride;
+}
+exports.getMailConfigOverride = getMailConfigOverride;
+function loadMailConfigFromEnv() {
+    return mergeConfig(runtimeMailConfigOverride ?? undefined);
 }
 exports.loadMailConfigFromEnv = loadMailConfigFromEnv;
 function getPublicMailConfig() {
@@ -259,7 +271,7 @@ function resolveOutboundFromForQueue(queueName) {
 }
 exports.resolveOutboundFromForQueue = resolveOutboundFromForQueue;
 function mergeConfig(override) {
-    const base = loadMailConfigFromEnv();
+    const base = loadMailConfigBase();
     const provider = normalizeMailProvider(override?.provider || base.provider);
     const preset = MAIL_PROVIDER_PRESETS[provider];
     return {

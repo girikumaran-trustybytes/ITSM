@@ -9,6 +9,7 @@ router.use(authenticateJWT)
 router.use(permit(['ADMIN']))
 
 router.get('/config', ctrl.getConfig)
+router.put('/config', ctrl.updateConfig)
 router.post('/config/inbound', ctrl.updateInboundRouting)
 router.post('/smtp/test', ctrl.testSmtp)
 router.post('/imap/test', ctrl.testImap)

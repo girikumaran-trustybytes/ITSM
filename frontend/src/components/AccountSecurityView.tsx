@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { changePassword, getMyMfaSettings, resetAuthenticatorApp, setupAuthenticatorApp, updateMyMfaSettings, verifyAuthenticatorAppSetup } from '../services/auth.service'
 import { updateUser } from '../modules/users/services/user.service'
-import { getUserAvatarUrl, getUserInitials } from '../utils/avatar'
+import { getUserAvatarUrl, getUserInitials, setUserAvatarOverride } from '../utils/avatar'
 
 type SecurityTab = 'account-information' | 'password' | 'two-factor-authentication'
 
@@ -18,6 +18,12 @@ export default function AccountSecurityView() {
   const [profileBusy, setProfileBusy] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
   const [profileError, setProfileError] = useState('')
+  const [showAvatarEditor, setShowAvatarEditor] = useState(false)
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const [avatarError, setAvatarError] = useState('')
+  const [avatarDraftUrl, setAvatarDraftUrl] = useState('')
+  const [avatarDraftFile, setAvatarDraftFile] = useState<File | null>(null)
+  const avatarInputRef = React.useRef<HTMLInputElement | null>(null)
   const [isProfileEditing, setIsProfileEditing] = useState(false)
   const [form, setForm] = useState({
     currentPassword: '',
@@ -127,6 +133,109 @@ export default function AccountSecurityView() {
       setProfileError(err?.response?.data?.error || err?.message || 'Failed to save account information')
     } finally {
       setProfileBusy(false)
+    }
+  }
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(new Error('Failed to read file'))
+      reader.onload = () => resolve(String(reader.result || ''))
+      reader.readAsDataURL(file)
+    })
+
+  const loadImage = (src: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image()
+      img.onload = () => resolve(img)
+      img.onerror = () => reject(new Error('Failed to load image'))
+      img.src = src
+    })
+
+  const cropToSquare = async (src: string, size = 256) => {
+    const img = await loadImage(src)
+    const width = img.naturalWidth || img.width
+    const height = img.naturalHeight || img.height
+    const side = Math.min(width, height)
+    const sx = Math.max(0, Math.floor((width - side) / 2))
+    const sy = Math.max(0, Math.floor((height - side) / 2))
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas not supported')
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size)
+    return canvas.toDataURL('image/jpeg', 0.86)
+  }
+
+  const openAvatarEditor = () => {
+    setAvatarError('')
+    setAvatarDraftUrl('')
+    setAvatarDraftFile(null)
+    setShowAvatarEditor(true)
+  }
+
+  const onAvatarFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAvatarError('')
+    const isValidType = /image\/(jpeg|jpg|png)/i.test(file.type)
+    if (!isValidType) {
+      setAvatarError('Please upload a JPG or PNG image.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Image size must be 5MB or less.')
+      return
+    }
+    try {
+      const rawUrl = await readFileAsDataUrl(file)
+      setAvatarDraftFile(file)
+      setAvatarDraftUrl(rawUrl)
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Failed to load image')
+    }
+  }
+
+  const onSaveAvatar = async () => {
+    if (!user?.id) {
+      setAvatarError('User ID not found.')
+      return
+    }
+    if (!avatarDraftUrl) {
+      setAvatarError('Please upload a photo to continue.')
+      return
+    }
+    setAvatarError('')
+    setAvatarBusy(true)
+    try {
+      const cropped = await cropToSquare(avatarDraftUrl, 256)
+      await updateUser(Number(user.id), { avatarUrl: cropped })
+      setUserAvatarOverride(user, cropped)
+      await refreshUser()
+      setShowAvatarEditor(false)
+      setProfileMessage('Profile picture updated successfully.')
+    } catch (err: any) {
+      setAvatarError(err?.response?.data?.error || err?.message || 'Failed to update profile picture')
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
+  const onRemoveAvatar = async () => {
+    if (!user?.id) return
+    setAvatarBusy(true)
+    setAvatarError('')
+    try {
+      await updateUser(Number(user.id), { avatarUrl: null })
+      setUserAvatarOverride(user, '')
+      await refreshUser()
+      setShowAvatarEditor(false)
+      setProfileMessage('Profile picture removed.')
+    } catch (err: any) {
+      setAvatarError(err?.response?.data?.error || err?.message || 'Failed to remove profile picture')
+    } finally {
+      setAvatarBusy(false)
     }
   }
 
@@ -278,13 +387,15 @@ export default function AccountSecurityView() {
                   onClick={() => {
                     setProfileError('')
                     setProfileMessage('')
+                    openAvatarEditor()
                   }}
+                  aria-label="Edit profile picture"
                 >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                    <path d="M4 4h10v2H6v12h12v-8h2v10H4z" />
+                    <path d="M14.6 4.6 19.4 9.4 9 19.8 4.2 20.2 4.6 15.4z" />
+                    <path d="M17.2 2.8 21.2 6.8 19.8 8.2 15.8 4.2z" />
                   </svg>
-                  Edit
                 </button>
               </div>
               <div className="account-security-user-meta">
@@ -555,6 +666,58 @@ export default function AccountSecurityView() {
               <button type="button" onClick={onCloseAuthenticatorSetup}>Cancel</button>
               <button type="button" onClick={onVerifyAuthenticator} disabled={mfaBusy}>
                 {mfaBusy ? 'Confirming...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showAvatarEditor ? (
+        <div className="account-security-avatar-modal" role="dialog" aria-modal="true" aria-label="Edit profile picture">
+          <div className="account-security-avatar-modal-card">
+            <div className="account-security-avatar-modal-header">
+              <div>
+                <h4>Profile picture</h4>
+                <p>{avatarUrl ? 'Update your profile picture.' : 'Upload your first profile picture.'}</p>
+              </div>
+              <button type="button" className="account-security-avatar-modal-close" onClick={() => setShowAvatarEditor(false)} aria-label="Close">
+                x
+              </button>
+            </div>
+            <div className="account-security-avatar-modal-body">
+              <div className="account-security-avatar-preview">
+                {avatarDraftUrl ? (
+                  <img src={avatarDraftUrl} alt="Avatar preview" />
+                ) : avatarUrl ? (
+                  <img src={avatarUrl} alt={user?.name || 'User'} />
+                ) : (
+                  <div className="account-security-avatar-placeholder">{initials}</div>
+                )}
+              </div>
+              <div className="account-security-avatar-actions">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg"
+                  onChange={onAvatarFileChange}
+                  style={{ display: 'none' }}
+                />
+                <button type="button" onClick={() => avatarInputRef.current?.click()}>
+                  {avatarUrl || avatarDraftUrl ? 'Upload a new photo' : 'Upload a photo'}
+                </button>
+                {avatarUrl ? (
+                  <button type="button" className="ghost" onClick={onRemoveAvatar} disabled={avatarBusy}>
+                    Remove photo
+                  </button>
+                ) : null}
+              </div>
+              {avatarError ? <div className="account-security-alert error">{avatarError}</div> : null}
+            </div>
+            <div className="account-security-avatar-modal-footer">
+              <button type="button" className="ghost" onClick={() => setShowAvatarEditor(false)} disabled={avatarBusy}>
+                Cancel
+              </button>
+              <button type="button" onClick={onSaveAvatar} disabled={avatarBusy || !avatarDraftUrl}>
+                {avatarBusy ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

@@ -185,7 +185,7 @@ function toInt(value: unknown, fallback: number): number {
   return Math.max(1, Math.floor(n))
 }
 
-export function loadMailConfigFromEnv(): MailConfig {
+function loadMailConfigBase(): MailConfig {
   const provider = normalizeMailProvider(process.env.MAIL_PROVIDER || 'gmail')
   const preset = MAIL_PROVIDER_PRESETS[provider]
 
@@ -208,6 +208,20 @@ export function loadMailConfigFromEnv(): MailConfig {
       mailbox: String(process.env.IMAP_MAILBOX || 'INBOX').trim() || 'INBOX',
     },
   }
+}
+
+let runtimeMailConfigOverride: Partial<MailConfig> | null = null
+
+export function setMailConfigOverride(next: Partial<MailConfig> | null) {
+  runtimeMailConfigOverride = next && Object.keys(next).length ? next : null
+}
+
+export function getMailConfigOverride() {
+  return runtimeMailConfigOverride
+}
+
+export function loadMailConfigFromEnv(): MailConfig {
+  return mergeConfig(runtimeMailConfigOverride ?? undefined)
 }
 
 export function getPublicMailConfig() {
@@ -292,7 +306,7 @@ export function resolveOutboundFromForQueue(queueName: string | undefined) {
 }
 
 function mergeConfig(override?: Partial<MailConfig>): MailConfig {
-  const base = loadMailConfigFromEnv()
+  const base = loadMailConfigBase()
   const provider = normalizeMailProvider(override?.provider || base.provider)
   const preset = MAIL_PROVIDER_PRESETS[provider]
   return {

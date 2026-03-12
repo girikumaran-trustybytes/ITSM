@@ -72,6 +72,7 @@ type AccountSettings = {
     email: string
     phone: string
     invoiceEmail: string
+    invoiceCc: string
   }
 }
 
@@ -89,6 +90,7 @@ const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
     email: '',
     phone: '',
     invoiceEmail: '',
+    invoiceCc: '',
   },
 }
 
@@ -232,6 +234,7 @@ function normalizeAccountSettings(input: any): AccountSettings {
       email: String(contact.email || '').trim(),
       phone: String(contact.phone || '').trim(),
       invoiceEmail: String(contact.invoiceEmail || '').trim(),
+      invoiceCc: String(contact.invoiceCc || '').trim(),
     },
   }
 }
