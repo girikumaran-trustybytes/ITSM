@@ -120,7 +120,8 @@ export default function ReportsView() {
     const total = tickets.length
     const open = tickets.filter((t) => {
       const s = String(t.status || '').toLowerCase()
-      return s !== 'closed' && s !== 'resolved'
+      const normalized = s === 'resolved' ? 'closed' : s
+      return normalized !== 'closed'
     }).length
     const withSupplier = tickets.filter((t) => String(t.status || '').toLowerCase().includes('supplier')).length
     const byStatus = tickets.reduce<Record<string, number>>((acc, t) => {
@@ -138,19 +139,32 @@ export default function ReportsView() {
 
   const assetStats = useMemo(() => {
     const total = assets.length
-    const inUse = assets.filter((a) => String(a.status || '').toLowerCase() === 'in use').length
-    const available = assets.filter((a) => String(a.status || '').toLowerCase() === 'available').length
-    const retired = assets.filter((a) => String(a.status || '').toLowerCase() === 'retired').length
-    const faulty = assets.filter((a) => {
-      const s = String(a.status || '').toLowerCase()
-      return s.includes('fault') || s.includes('repair')
-    }).length
+    const statusOrder = [
+      'Assigned',
+      'Unassigned',
+      'In Stock',
+      'Reserved',
+      'Under Maintenance',
+      'Faulty',
+      'Damaged',
+      'Lost',
+      'Retired',
+      'Decommissioned',
+    ]
+    const statusCounts = statusOrder.reduce<Record<string, number>>((acc, label) => {
+      acc[label] = 0
+      return acc
+    }, {})
+    assets.forEach((a) => {
+      const key = String(a.status || '').trim()
+      if (key && key in statusCounts) statusCounts[key] += 1
+    })
     const byType = assets.reduce<Record<string, number>>((acc, a) => {
       const key = a.assetType || a.category || 'Unknown'
       acc[key] = (acc[key] || 0) + 1
       return acc
     }, {})
-    return { total, inUse, available, retired, faulty, byType }
+    return { total, byType, statusCounts }
   }, [assets])
 
   const userStats = useMemo(() => {
@@ -185,13 +199,15 @@ export default function ReportsView() {
 
   const availabilityStats = useMemo(() => ([
     { label: 'Total Assets', value: assetStats.total, icon: 'stack' },
-    { label: 'In Use', value: assetStats.inUse, icon: 'check' },
-    { label: 'Near License Expires', value: 0, icon: 'license' },
-    { label: 'Repair', value: assetStats.faulty, icon: 'tool' },
-    { label: 'Near ASM Expires', value: 0, icon: 'bell' },
-    { label: 'Overall Cost', value: 0, icon: 'cash' },
-    { label: 'Maintenance', value: 0, icon: 'wrench' },
-    { label: 'Decommissioned', value: assetStats.retired, icon: 'x' },
+    { label: 'Assigned', value: assetStats.statusCounts.Assigned || 0, icon: 'check' },
+    { label: 'Unassigned', value: assetStats.statusCounts.Unassigned || 0, icon: 'user-x' },
+    { label: 'In Stock', value: assetStats.statusCounts['In Stock'] || 0, icon: 'package' },
+    { label: 'Under Maintenance', value: assetStats.statusCounts['Under Maintenance'] || 0, icon: 'wrench' },
+    { label: 'Faulty', value: assetStats.statusCounts.Faulty || 0, icon: 'tool' },
+    { label: 'Damaged', value: assetStats.statusCounts.Damaged || 0, icon: 'alert-triangle' },
+    { label: 'Lost', value: assetStats.statusCounts.Lost || 0, icon: 'help-circle' },
+    { label: 'Retired', value: assetStats.statusCounts.Retired || 0, icon: 'archive' },
+    { label: 'Decommissioned', value: assetStats.statusCounts.Decommissioned || 0, icon: 'x' },
   ]), [assetStats])
 
   const topEntries = (record: Record<string, number>, limit = 6) =>

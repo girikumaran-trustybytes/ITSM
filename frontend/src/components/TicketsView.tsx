@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as ticketService from '../modules/tickets/services/ticket.service'
@@ -17,6 +17,18 @@ const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
 const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
 const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
+
+function formatDateTime(value: any) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const year = date.getFullYear()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${month}/${day}/${year} ${hours}:${minutes}`
+}
 
 type LocalAttachment = {
   key: string
@@ -183,7 +195,7 @@ export default function TicketsView() {
   const [cannedForm, setCannedForm] = useState({ name: '', html: '' })
   const [actionStateByTicket, setActionStateByTicket] = useState<Record<string, { accepted: boolean; ackSent: boolean; supplierLogged: boolean }>>({})
   const [composerMode, setComposerMode] = useState<
-    'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+    'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
   >('emailUser')
   const [composerForm, setComposerForm] = useState({
     to: '',
@@ -484,7 +496,6 @@ export default function TicketsView() {
     if (fromStatus || toStatus) {
       const toKey = toStatus.toLowerCase()
       if (toKey === 'acknowledged') return 'Accept Ticket'
-      if (toKey === 'resolved') return 'Resolve Ticket'
       if (toKey === 'closed') return 'Close Ticket'
       if (toStatus) return toStatus
     }
@@ -553,7 +564,7 @@ export default function TicketsView() {
           if (!value) return ''
           const d = new Date(value)
           if (Number.isNaN(d.getTime())) return ''
-          return d.toLocaleString()
+          return d.toISOString()
         }
         const history = Array.isArray(ticket?.history) ? ticket.history : []
         const lastHistory = history.slice().sort((a: any, b: any) => {
@@ -592,10 +603,10 @@ export default function TicketsView() {
         issueDetail: t.issueDetail || t.subCategory || t.resolutionCategory || '',
         resolution: t.resolution || t.resolutionText || t.closureNotes || '',
         priority: t.priority || 'Low',
-        status: t.status,
+        status: String(t.status || '').toLowerCase() === 'resolved' ? 'Closed' : t.status,
         type: t.type,
         endUser: t.requester?.name || t.requester?.email || '',
-        dateReported: t.createdAt ? new Date(t.createdAt).toLocaleString() : '',
+        dateReported: t.createdAt || '',
         lastAction: lastActionInfo.label,
         lastActionTime: lastActionInfo.time,
         assetTag: t.asset?.assetTag || t.asset?.tag || t.asset?.serial || t.assetTag || '',
@@ -662,7 +673,7 @@ export default function TicketsView() {
           if (!value) return ''
           const date = new Date(value)
           if (Number.isNaN(date.getTime())) return ''
-          return date.toLocaleString()
+          return date.toISOString()
         }
         const history = Array.isArray(ticket?.history) ? ticket.history : []
         const lastHistory = history.slice().sort((a: any, b: any) => {
@@ -701,7 +712,7 @@ export default function TicketsView() {
         status: d.status || 'New',
         type: d.type || 'Incident',
         endUser: d.requester?.name || d.requester?.email || '',
-        dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : '',
+        dateReported: d.createdAt || '',
         lastAction: lastActionInfo.label,
         lastActionTime: lastActionInfo.time,
         assetTag: d.asset?.assetTag || d.asset?.tag || d.asset?.serial || d.assetTag || '',
@@ -892,10 +903,36 @@ export default function TicketsView() {
     Infrastructure: ['Power', 'Data Connection', 'Router', 'Server', 'Printer'],
     'Infrastructure>Power': ['Switch', 'Socket']
   }
-  const defaultTicketTypeOptions = ['Incident', 'Service request', 'HR request', 'Task', 'New starter']
-  const defaultWorkflowOptions = ['Fault Workflow', 'Incident Management Workflow', 'Service Request Workflow', 'Change Workflow']
+  const defaultTicketTypeOptions = [
+    'Incident',
+    'Service request',
+    'Task',
+    'New starter',
+    'Problem',
+    'Offboarding request',
+    'New Assets',
+  ]
+  const defaultWorkflowOptions = [
+    'Fault Workflow',
+    'Incident Management Workflow',
+    'Service Request Workflow',
+    'Task Workflow',
+    'Problem Workflow',
+    'Offboarding Request Workflow',
+    'Onboarding Request Workflow',
+    'Purchase and Rental Workflow',
+    'Change Workflow',
+  ]
 
-  const createTicketTypeOptions = ['Incident', 'Service request', 'HR request', 'Task', 'New starter']
+  const createTicketTypeOptions = [
+    'Incident',
+    'Service request',
+    'Task',
+    'New starter',
+    'Problem',
+    'Offboarding request',
+    'New Assets',
+  ]
   const createTeamOptions = React.useMemo(
     () =>
       ticketQueues
@@ -915,9 +952,11 @@ export default function TicketsView() {
   const selectedCreateType = String(newIncidentForm.ticketType || '').trim().toLowerCase()
   const isIncidentType = selectedCreateType === 'incident'
   const isServiceRequestType = selectedCreateType === 'service request'
-  const isHrRequestType = selectedCreateType === 'hr request'
   const isTaskType = selectedCreateType === 'task'
   const isNewStarterType = selectedCreateType === 'new starter'
+  const isProblemType = selectedCreateType === 'problem'
+  const isOffboardingType = selectedCreateType === 'offboarding request'
+  const isNewAssetsType = selectedCreateType === 'new assets'
   const supportTeamOption = React.useMemo(
     () => createTeamOptions.find((team) => team.label.toLowerCase().includes('support')) || createTeamOptions[0] || null,
     [createTeamOptions]
@@ -937,7 +976,7 @@ export default function TicketsView() {
   }, [agents])
 
   React.useEffect(() => {
-    if ((isIncidentType || isTaskType || isServiceRequestType) && !String(newIncidentForm.teamId || '').trim() && supportTeamOption?.key) {
+    if ((isIncidentType || isTaskType || isServiceRequestType || isProblemType || isOffboardingType || isNewAssetsType) && !String(newIncidentForm.teamId || '').trim() && supportTeamOption?.key) {
       setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
       return
     }
@@ -945,8 +984,16 @@ export default function TicketsView() {
       setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
       return
     }
-    if (isHrRequestType && hrTeamOption?.key && newIncidentForm.teamId !== hrTeamOption.key) {
+    if (isOffboardingType && hrTeamOption?.key && newIncidentForm.teamId !== hrTeamOption.key) {
       setNewIncidentForm((prev) => ({ ...prev, teamId: hrTeamOption.key }))
+      return
+    }
+    if (isProblemType && supportTeamOption?.key && newIncidentForm.teamId !== supportTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
+      return
+    }
+    if (isNewAssetsType && supportTeamOption?.key && newIncidentForm.teamId !== supportTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
       return
     }
     if (isNewStarterType) {
@@ -958,13 +1005,27 @@ export default function TicketsView() {
       if (!String(newIncidentForm.description || '').trim()) updates.description = starterTemplate
       if (Object.keys(updates).length > 0) setNewIncidentForm((prev) => ({ ...prev, ...updates }))
     }
-  }, [isIncidentType, isTaskType, isServiceRequestType, isHrRequestType, isNewStarterType, newIncidentForm.teamId, newIncidentForm.description, supportTeamOption, hrTeamOption])
-  const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Resolved', 'Closed']
+  }, [isIncidentType, isTaskType, isServiceRequestType, isNewStarterType, isProblemType, isOffboardingType, isNewAssetsType, newIncidentForm.teamId, newIncidentForm.description, supportTeamOption, hrTeamOption])
+  const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Closed']
   const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
   const createdFromOptions = ['User portal', 'ITSM Platform']
 
   const uniqueOptions = (values: Array<string | null | undefined>) =>
     Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)))
+
+  const ticketTypeWorkflowMap: Record<string, string> = {
+    incident: 'Fault Workflow',
+    'service request': 'Service Request Workflow',
+    task: 'Task Workflow',
+    'new starter': 'Onboarding Request Workflow',
+    problem: 'Problem Workflow',
+    'offboarding request': 'Offboarding Request Workflow',
+    'new assets': 'Purchase and Rental Workflow',
+  }
+  const getWorkflowForType = (type: string) => {
+    const key = String(type || '').trim().toLowerCase()
+    return ticketTypeWorkflowMap[key] || 'Incident Management Workflow'
+  }
 
   const [ticketWorkflowValue, setTicketWorkflowValue] = useState('Incident Management Workflow')
   const [ticketTeamValue, setTicketTeamValue] = useState('')
@@ -1115,6 +1176,13 @@ export default function TicketsView() {
     const typeValue = String(newIncidentForm.ticketType || '').trim()
     const subjectValue = String(newIncidentForm.subject || '').trim()
     const descriptionValue = String(newIncidentForm.description || '').trim()
+    const requiresTeam =
+      isIncidentType ||
+      isTaskType ||
+      isServiceRequestType ||
+      isProblemType ||
+      isOffboardingType ||
+      isNewAssetsType
     if (!typeValue || !subjectValue || !descriptionValue) {
       alert('Please fill in all required fields: Ticket Type, Subject, and Description')
       return
@@ -1123,7 +1191,7 @@ export default function TicketsView() {
       alert('Priority is required for this ticket type')
       return
     }
-    if ((isIncidentType || isTaskType) && !String(newIncidentForm.teamId || '').trim()) {
+    if (requiresTeam && !String(newIncidentForm.teamId || '').trim()) {
       alert('Team is required for this ticket type')
       return
     }
@@ -1139,6 +1207,7 @@ export default function TicketsView() {
     }
 
     const teamIdValue = String(newIncidentForm.teamId || '').trim()
+    const workflowValue = getWorkflowForType(typeValue)
     const teamLabelValue = createTeamOptions.find((team) => team.key === teamIdValue)?.label || ''
     const staffLabelValue = taskStaffOptions.find((staff) => staff.id === String(newIncidentForm.staffId || ''))?.label || ''
     const metaLines: string[] = []
@@ -1161,6 +1230,7 @@ export default function TicketsView() {
       try {
         const payload = {
           type: typeValue,
+          workflow: workflowValue,
           priority: String(newIncidentForm.priority || '').trim() || undefined,
           category: teamLabelValue || selectedCreateTeamLabel || undefined,
           description: finalDescription,
@@ -1181,11 +1251,12 @@ export default function TicketsView() {
           priority: (created.priority || newIncidentForm.priority || 'Low') as Incident['priority'],
           status: created.status || 'New',
           type: created.type,
+          workflow: created.workflow || workflowValue,
           endUser: '',
           createdFrom: user?.role === 'USER' ? 'User portal' : 'ITSM Platform',
           dateReported: new Date(created.createdAt).toLocaleString(),
           lastAction: 'Created',
-          lastActionTime: new Date().toLocaleString()
+          lastActionTime: new Date().toISOString()
         }
 
         setIncidents([newIncident, ...incidents])
@@ -1208,11 +1279,12 @@ export default function TicketsView() {
           priority: (newIncidentForm.priority || 'Low') as Incident['priority'],
           status: 'New',
           type: typeValue,
+          workflow: workflowValue,
           endUser: '',
           createdFrom: user?.role === 'USER' ? 'User portal' : 'ITSM Platform',
           dateReported: new Date().toLocaleString(),
           lastAction: 'Created',
-          lastActionTime: new Date().toLocaleString()
+          lastActionTime: new Date().toISOString()
         }
         setIncidents([newIncident, ...incidents])
         setShowNewIncidentModal(false)
@@ -1469,8 +1541,6 @@ export default function TicketsView() {
         buttons.push({ label: 'Approve', onClick: go('In Progress') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
       } else if (statusKey === 'in progress') {
-        buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
-      } else if (statusKey === 'resolved') {
         buttons.push({ label: 'Close', onClick: () => openComposer('close') })
       }
       return buttons
@@ -1539,8 +1609,7 @@ export default function TicketsView() {
       else if (statusKey === 'hr review') {
         buttons.push({ label: 'Approve', onClick: go('In Progress') })
         buttons.push({ label: 'Reject', onClick: go('Rejected') })
-      } else if (statusKey === 'in progress') buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
-      else if (statusKey === 'resolved') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      } else if (statusKey === 'in progress') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
       return buttons
     }
 
@@ -1555,8 +1624,7 @@ export default function TicketsView() {
       return buttons
     }
 
-    if (statusKey === 'in progress') buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
-    if (statusKey === 'resolved') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+    if (statusKey === 'in progress') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
     if (statusKey === 'awaiting approval') {
       buttons.push({ label: 'Approve', onClick: go('In Progress') })
       buttons.push({ label: 'Reject', onClick: go('Rejected') })
@@ -1574,9 +1642,10 @@ export default function TicketsView() {
     const key = ticket.id
     const base = actionStateByTicket[key] || { accepted: false, ackSent: false, supplierLogged: false }
     const status = String(ticket.status || '').toLowerCase()
-    const inferredAccepted = status !== 'new'
-    const inferredAck = ['in progress', 'resolved', 'closed', 'with supplier', 'awaiting approval'].includes(status)
-    const inferredSupplier = status.includes('supplier')
+    const normalizedStatus = status === 'resolved' ? 'closed' : status
+    const inferredAccepted = normalizedStatus !== 'new'
+    const inferredAck = ['in progress', 'closed', 'with supplier', 'awaiting approval'].includes(normalizedStatus)
+    const inferredSupplier = normalizedStatus.includes('supplier')
     return {
       accepted: base.accepted || inferredAccepted,
       ackSent: base.ackSent || inferredAck,
@@ -1602,7 +1671,7 @@ export default function TicketsView() {
   }
 
   const getComposerHeading = (
-    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail' = composerMode
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail' = composerMode
   ) => {
     if (mode === 'acknowledge') return 'Acknowledge'
     if (mode === 'emailUser') return 'Email End User'
@@ -1610,7 +1679,6 @@ export default function TicketsView() {
     if (mode === 'emailSupplier') return 'Email Supplier'
     if (mode === 'callbackSupplier') return 'Call Back Supplier'
     if (mode === 'approval') return 'Requesting Approval'
-    if (mode === 'resolve') return 'Resolve Ticket'
     if (mode === 'close') return 'Close Ticket'
     return 'Note + Email'
   }
@@ -1745,7 +1813,7 @@ Click below to proceed:
   }
 
   const resolveComposerTemplateAction = (
-    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
   ) => {
     if (mode === 'acknowledge') return 'Acknowledge'
     if (mode === 'emailUser') return 'Email User'
@@ -1753,7 +1821,6 @@ Click below to proceed:
     if (mode === 'emailSupplier') return 'Email Supplier'
     if (mode === 'callbackSupplier') return 'Call Back Supplier'
     if (mode === 'approval') return 'Requesting Approval'
-    if (mode === 'resolve') return 'Resolve'
     if (mode === 'close') return 'Close'
     return 'Note + Email'
   }
@@ -1795,7 +1862,7 @@ Click below to proceed:
   }
 
   const getComposerTemplateBody = (
-    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
   ) => {
     const templates = loadStoredList<EmailTemplateRecord[]>(EMAIL_TEMPLATE_STORAGE_KEY, [])
     if (!Array.isArray(templates) || templates.length === 0) return ''
@@ -2119,11 +2186,11 @@ Click below to proceed:
   }
 
   const openComposer = (
-    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'resolve' | 'close' | 'noteEmail'
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
   ) => {
     if (!selectedTicket) return
     setComposerMode(mode)
-    const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'resolve' || mode === 'close' || mode === 'noteEmail'
+    const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'close' || mode === 'noteEmail'
       ? getEndUserAutoRecipient()
       : ''
     const subjectDefault = buildReplySubject(selectedTicket)
@@ -2212,7 +2279,6 @@ Click below to proceed:
     buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
     buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
     if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
-    if (acknowledgedDone) buttons.push({ label: 'Resolve', onClick: () => openComposer('resolve') })
     buttons.push({ label: 'Close', onClick: () => openComposer('close') })
     return buttons
   }
@@ -2231,7 +2297,6 @@ Click below to proceed:
     'Request Approval': 'clipboard-check',
     'Note + Email': 'mail-plus',
     'Call Back Supplier': 'phone-call',
-    Resolve: 'circle-check-big',
     'Re-open': 'rotate-ccw',
     Start: 'play',
     Approve: 'thumbs-up',
@@ -2256,7 +2321,8 @@ Click below to proceed:
 
   const isOpenStatus = (status: string) => {
     const s = (status || '').toLowerCase()
-    return s !== 'closed' && s !== 'resolved'
+    const normalized = s === 'resolved' ? 'closed' : s
+    return normalized !== 'closed'
   }
 
   // Compute queue counts early before queueSidebar JSX uses them
@@ -3095,21 +3161,7 @@ Click below to proceed:
         ? `\nAttachments: ${uploadedItems.map((a: any) => a.filename).join(', ')}`
         : ''
 
-      if (composerMode === 'resolve') {
-        await ticketService.resolveTicketWithDetails(selectedTicket.id, {
-          resolution: resolvedBody,
-          resolutionCategory: composerForm.issueDetail || undefined,
-          sendEmail: Boolean(composerForm.to.trim()),
-        })
-        if (attachmentIds.length) {
-          await ticketService.privateNote(selectedTicket.id, {
-            note: `Resolution attachments uploaded${attachmentLabel}`,
-            attachmentIds,
-          })
-        }
-        updateTicketStatusLocal(selectedTicket.id, 'Resolved')
-        addTicketComment(selectedTicket.id, `Resolved: ${resolvedBody}`)
-      } else if (composerMode === 'close') {
+      if (composerMode === 'close') {
         if (composerForm.to.trim()) {
           await ticketService.respond(selectedTicket.id, {
             message: resolvedBody,
@@ -3299,11 +3351,11 @@ Click below to proceed:
         window.open(`mailto:${detail.to || 'admin@example.com'}?subject=${subject}`)
       } else if (action === 'log') {
         addTicketComment(target.id, message || 'Logged to supplier')
-      } else if (action === 'resolve') {
+      } else if (action === 'close') {
         const updated = incidents.map(i => i.id === target.id ? { ...i, status: 'Closed' as Incident['status'] } : i)
         setIncidents(updated)
         setSelectedTicket(prev => prev ? { ...prev, status: 'Closed' } : prev)
-        addTicketComment(target.id, message || 'Ticket resolved/closed')
+        addTicketComment(target.id, message || 'Ticket closed')
       }
     }
 
@@ -3408,11 +3460,14 @@ Click below to proceed:
         }
         if (rule.field === 'status' && rule.value.toLowerCase() === 'open') {
           const s = String(incident.status || '').toLowerCase()
-          if (s === 'closed' || s === 'resolved') return false
+          const normalized = s === 'resolved' ? 'closed' : s
+          if (normalized === 'closed') return false
         } else if (rule.field === 'status' && rule.value.toLowerCase() === 'all') {
           // Show all tickets.
         } else if (rule.field === 'status' && rule.value.toLowerCase() === 'closed') {
-          if (String(incident.status || '').toLowerCase() !== 'closed') return false
+          const s = String(incident.status || '').toLowerCase()
+          const normalized = s === 'resolved' ? 'closed' : s
+          if (normalized !== 'closed') return false
         } else if (rule.field !== 'sla') {
           if (String((incident as any)[rule.field] || '').toLowerCase() !== String(rule.value || '').toLowerCase()) return false
         }
@@ -3554,9 +3609,13 @@ Click below to proceed:
     const total = incidents.length
     const open = incidents.filter((t) => {
       const s = String(t.status || '').toLowerCase()
-      return s !== 'closed' && s !== 'resolved'
+      const normalized = s === 'resolved' ? 'closed' : s
+      return normalized !== 'closed'
     }).length
-    const closed = incidents.filter((t) => String(t.status || '').toLowerCase() === 'closed').length
+    const closed = incidents.filter((t) => {
+      const s = String(t.status || '').toLowerCase()
+      return (s === 'resolved' ? 'closed' : s) === 'closed'
+    }).length
     const byPriority = incidents.reduce<Record<string, number>>((acc, t) => {
       const key = String(t.priority || 'Low')
       acc[key] = (acc[key] || 0) + 1
@@ -5106,13 +5165,27 @@ Click below to proceed:
             </div>
           )}
           {pageItems.map((incident) => (
-            <div key={incident.id} className="table-row" style={ticketsGridStyle}>
-              <div className="col-checkbox">
+            <div
+              key={incident.id}
+              className="table-row"
+              style={ticketsGridStyle}
+              onClick={() => handleTicketClick(incident)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handleTicketClick(incident)
+                }
+              }}
+            >
+              <div className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selectedTickets.includes(incident.id)}
                   onChange={() => handleSelectTicket(incident.id)}
                   aria-label={`Select ${incident.id}`}
+                  onClick={(e) => e.stopPropagation()}
                 />
               </div>
               <div className="col-status">
@@ -5143,17 +5216,8 @@ Click below to proceed:
               </div>
               <div className="col-assetTag">{incident.assetTag || '-'}</div>
               <div className="col-priority">{incident.priority || '-'}</div>
-              <div className="col-lastAction">
-                {(() => {
-                  const label = String(incident.lastAction || '').trim()
-                  const time = String(incident.lastActionTime || '').trim()
-                  if (label && time) return `${label} · ${time}`
-                  if (time) return time
-                  if (label) return label
-                  return '-'
-                })()}
-              </div>
-              <div className="col-date">{incident.dateReported || '-'}</div>
+              <div className="col-lastAction">{formatDateTime(incident.lastActionTime) || '-'}</div>
+              <div className="col-date">{formatDateTime(incident.dateReported) || '-'}</div>
               <div className="col-staff">
                 {(() => {
                   const staffLabel = String(incident.staff || incident.assignedAgentName || '').trim()
@@ -5463,7 +5527,7 @@ Click below to proceed:
                 />
               </div>
 
-              {(isIncidentType || isServiceRequestType || isHrRequestType || isTaskType) && (
+              {(isIncidentType || isServiceRequestType || isTaskType || isProblemType || isOffboardingType || isNewAssetsType) && (
                 <div className="form-section">
                   <label className="form-label">Assets</label>
                   <input

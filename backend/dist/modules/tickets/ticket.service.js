@@ -20,6 +20,21 @@ let slaSchemaReady = null;
 let slaConfigSchemaReady = null;
 let ticketOriginSchemaReady = null;
 let ticketTeamSchemaReady = null;
+let resolvedStatusMigration = null;
+const normalizeTicketStatus = (value) => {
+    const raw = String(value || '').trim();
+    if (raw.toLowerCase() === 'resolved')
+        return 'Closed';
+    return raw;
+};
+async function ensureResolvedStatusMigration() {
+    if (!resolvedStatusMigration) {
+        resolvedStatusMigration = (async () => {
+            await (0, db_1.query)('UPDATE "Ticket" SET "status" = \'Closed\' WHERE "status" = \'Resolved\'');
+        })();
+    }
+    await resolvedStatusMigration;
+}
 function buildTicketWhere(idOrTicketId, alias = 't', startIndex = 1) {
     if (isNumericId(idOrTicketId)) {
         return { clause: `${alias}."id" = $${startIndex}`, params: [Number(idOrTicketId)] };
@@ -27,8 +42,13 @@ function buildTicketWhere(idOrTicketId, alias = 't', startIndex = 1) {
     return { clause: `${alias}."ticketId" = $${startIndex}`, params: [idOrTicketId] };
 }
 async function getTicketRecord(idOrTicketId) {
+    await ensureResolvedStatusMigration();
     const where = buildTicketWhere(idOrTicketId, 't', 1);
-    return (0, db_1.queryOne)(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params);
+    const ticket = await (0, db_1.queryOne)(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params);
+    if (ticket?.status) {
+        ticket.status = normalizeTicketStatus(ticket.status);
+    }
+    return ticket;
 }
 function normalizePriority(value) {
     const v = String(value || '').trim().toLowerCase();
@@ -203,7 +223,7 @@ async function upsertSlaTrackingForTicket(ticket, options) {
     const resolutionTargetAt = businessHoursEnabled && businessSchedule
         ? addBusinessMinutes(startTime, resolutionMin, businessTimeZone, businessSchedule)
         : new Date(startTime.getTime() + resolutionMin * 60 * 1000);
-    const status = ['Resolved', 'Closed'].includes(String(ticket.status || '')) ? 'resolved' : 'running';
+    const status = normalizeTicketStatus(ticket.status) === 'Closed' ? 'resolved' : 'running';
     await (0, db_1.query)(`INSERT INTO "SlaTracking" (
       "ticketId", "slaName", "startTime", "breachTime", "status", "policyId",
       "responseTargetAt", "resolutionTargetAt", "firstRespondedAt", "firstRespondedById", "resolvedAt", "createdAt", "updatedAt"
@@ -249,7 +269,7 @@ function buildSlaSnapshot(ticket, tracking) {
     const responseTargetMs = tracking.responseTargetAt ? new Date(tracking.responseTargetAt).getTime() : null;
     const resolutionTargetMs = tracking.resolutionTargetAt ? new Date(tracking.resolutionTargetAt).getTime() : null;
     const responseDone = Boolean(tracking.firstRespondedAt && tracking.firstRespondedById);
-    const resolutionDone = Boolean(tracking.resolvedAt) || ['Resolved', 'Closed'].includes(String(ticket.status || ''));
+    const resolutionDone = Boolean(tracking.resolvedAt) || normalizeTicketStatus(ticket.status) === 'Closed';
     const responseCompletedMs = tracking.firstRespondedAt ? new Date(tracking.firstRespondedAt).getTime() : null;
     const resolutionCompletedMs = tracking.resolvedAt
         ? new Date(tracking.resolvedAt).getTime()
@@ -392,7 +412,8 @@ function normalizeTeamId(value) {
 }
 function canUserModifyTicketStatus(status) {
     const normalized = String(status || '').trim().toLowerCase();
-    return !['resolved', 'closed', 'cancelled'].includes(normalized);
+    const effective = normalized === 'resolved' ? 'closed' : normalized;
+    return !['closed', 'cancelled'].includes(effective);
 }
 async function getAgentTicketScope(userId) {
     const serviceAccount = await (0, db_1.queryOne)(`SELECT "autoUpgradeQueues", "queueIds"
@@ -518,6 +539,7 @@ async function getNextTicketTag() {
     return `TB#${String(num).padStart(5, '0')}`;
 }
 const getTickets = async (opts = {}, viewer) => {
+    await ensureResolvedStatusMigration();
     const page = opts.page ?? 1;
     const pageSize = opts.pageSize ?? 20;
     const conditions = [];
@@ -543,6 +565,10 @@ const getTickets = async (opts = {}, viewer) => {
         (0, db_1.queryOne)(`SELECT COUNT(*)::text AS count FROM "Ticket" t ${where}`, params),
     ]);
     await attachSlaData(items);
+    items.forEach((ticket) => {
+        if (ticket?.status)
+            ticket.status = normalizeTicketStatus(ticket.status);
+    });
     const total = Number(totalRow?.count || 0);
     await (0, logger_1.auditLog)({
         action: 'list_tickets',
@@ -560,6 +586,7 @@ const getTickets = async (opts = {}, viewer) => {
 };
 exports.getTickets = getTickets;
 const getTicketById = async (id, viewer) => {
+    await ensureResolvedStatusMigration();
     const where = buildTicketWhere(id, 't', 1);
     const t = await (0, db_1.queryOne)(`SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee", row_to_json(asset) AS "asset"
      FROM "Ticket" t
@@ -569,6 +596,8 @@ const getTicketById = async (id, viewer) => {
      WHERE ${where.clause}`, where.params);
     if (!t)
         return null;
+    if (t?.status)
+        t.status = normalizeTicketStatus(t.status);
     await assertViewerTicketAccess(t, viewer, 'view');
     const [attachments, history] = await Promise.all([
         (0, db_1.query)('SELECT * FROM "Attachment" WHERE "ticketId" = $1', [t.id]),
@@ -634,7 +663,7 @@ const createTicket = async (payload, creator = 'system') => {
         priority,
         impact,
         urgency,
-        status: payload.status || 'New',
+        status: normalizeTicketStatus(payload.status || 'New'),
         subcategory: payload.subcategory,
         description: payload.description,
         slaStart: now,
@@ -678,22 +707,23 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
     if (!t)
         throw { status: 404, message: 'Ticket not found' };
     await assertViewerTicketAccess(t, user, 'update');
-    const can = workflow_service_1.workflowEngine.canTransition(t.type, t.status, toState);
+    const normalizedToState = normalizeTicketStatus(toState);
+    const can = workflow_service_1.workflowEngine.canTransition(t.type, t.status, normalizedToState);
     if (!can)
-        throw { status: 400, message: `Invalid transition from ${t.status} to ${toState}` };
+        throw { status: 400, message: `Invalid transition from ${t.status} to ${normalizedToState}` };
     const from = t.status;
     const where = buildTicketWhere(ticketId, 't', 2);
-    const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [toState, ...where.params]);
+    const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [normalizedToState, ...where.params]);
     const updated = updatedRows[0];
     const changedById = await resolveChangedById(user);
-    if (['Resolved', 'Closed'].includes(String(toState || ''))) {
+    if (normalizeTicketStatus(normalizedToState) === 'Closed') {
         await ensureSlaTrackingSchema();
         await (0, db_1.query)('UPDATE "SlaTracking" SET "resolvedAt" = COALESCE("resolvedAt", NOW()), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2', ['resolved', t.id]);
     }
     await (0, db_1.query)('INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())', [
         t.id,
         from,
-        toState,
+        normalizedToState,
         changedById,
         '',
         false,
@@ -702,7 +732,7 @@ const transitionTicket = async (ticketId, toState, user = 'system') => {
         action: 'transition',
         ticketId: updated.ticketId,
         user,
-        meta: { from, to: toState },
+        meta: { from, to: normalizedToState },
     });
     const tracking = await (0, db_1.queryOne)('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id]);
     updated.sla = buildSlaSnapshot(updated, tracking);
@@ -877,7 +907,7 @@ const resolveTicketWithDetails = async (ticketId, opts) => {
     const from = t.status;
     const where = buildTicketWhere(ticketId, 't', 4);
     const updatedRows = await (0, db_1.query)(`UPDATE "Ticket" t SET "status" = $1, "resolution" = $2, "resolutionCategory" = $3, "resolvedAt" = NOW(), "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`, [
-        'Resolved',
+        'Closed',
         opts.resolution,
         opts.resolutionCategory || null,
         ...where.params,
@@ -889,18 +919,18 @@ const resolveTicketWithDetails = async (ticketId, opts) => {
     await (0, db_1.query)('INSERT INTO "TicketStatusHistory" ("ticketId", "oldStatus", "newStatus", "changedById", "changedAt") VALUES ($1, $2, $3, $4, NOW())', [
         t.id,
         from,
-        'Resolved',
+        'Closed',
         changedById,
     ]);
-    await (0, logger_1.auditLog)({ action: 'resolve', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } });
+    await (0, logger_1.auditLog)({ action: 'close', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } });
     if (opts.sendEmail && t.requesterId) {
         try {
             const requester = await (0, db_1.queryOne)('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId]);
             if (requester?.email)
-                await mailer_service_1.default.sendTicketResolved(requester.email, updated);
+                await mailer_service_1.default.sendTicketClosed(requester.email, updated);
         }
         catch (e) {
-            console.warn('Failed sending ticket resolved email', e);
+            console.warn('Failed sending ticket closed email', e);
         }
     }
     return updated;

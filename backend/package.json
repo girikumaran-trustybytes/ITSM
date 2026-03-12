@@ -1,6 +1,6 @@
 {
   "name": "itsm-backend",
-  "version": "1.0.59",
+  "version": "1.0.61",
   "private": true,
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",

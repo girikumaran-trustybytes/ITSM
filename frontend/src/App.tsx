@@ -501,6 +501,7 @@ function MainShell() {
   const userAvatarUrl = getUserAvatarUrl(user)
   const rememberedRoute = String(getLastRoute() || '').trim()
   const shellDefaultRoute = rememberedRoute && rememberedRoute.startsWith('/') && rememberedRoute !== '/login'
+    && rememberedRoute !== '/'
     ? rememberedRoute
     : getDefaultItsmRoute(user)
 

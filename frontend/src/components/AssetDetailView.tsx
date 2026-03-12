@@ -23,13 +23,26 @@ export default function AssetDetailView() {
   const [showRetireModal, setShowRetireModal] = React.useState(false)
   const [retireBusy, setRetireBusy] = React.useState(false)
   const [retireCondition, setRetireCondition] = React.useState<'ok' | 'not_ok'>('ok')
-  const [retireStatus, setRetireStatus] = React.useState<'Unassigned' | 'In Store' | 'Faulty' | 'Retire'>('Unassigned')
+  const [retireStatus, setRetireStatus] = React.useState('Unassigned')
   const [leftPanelCollapsed, setLeftPanelCollapsed] = React.useState(() => {
     if (typeof window === 'undefined') return false
     return window.innerWidth <= 1100
   })
 
   const numericId = Number(assetId)
+
+  const ASSET_STATUS_OPTIONS = [
+    'Assigned',
+    'Unassigned',
+    'In Stock',
+    'Reserved',
+    'Under Maintenance',
+    'Faulty',
+    'Damaged',
+    'Lost',
+    'Retired',
+    'Decommissioned',
+  ]
 
   React.useEffect(() => {
     document.body.classList.add('assets-view-active')
@@ -488,7 +501,7 @@ export default function AssetDetailView() {
                     onChange={(e) => {
                       const next = e.target.value === 'not_ok' ? 'not_ok' : 'ok'
                       setRetireCondition(next)
-                      setRetireStatus(next === 'ok' ? 'Unassigned' : 'Faulty')
+                      setRetireStatus(next === 'ok' ? 'In Stock' : 'Faulty')
                     }}
                     disabled={retireBusy}
                   >
@@ -501,20 +514,12 @@ export default function AssetDetailView() {
                   <select
                     className="form-select"
                     value={retireStatus}
-                    onChange={(e) => setRetireStatus(e.target.value as 'Unassigned' | 'In Store' | 'Faulty' | 'Retire')}
+                    onChange={(e) => setRetireStatus(e.target.value)}
                     disabled={retireBusy}
                   >
-                    {retireCondition === 'ok' ? (
-                      <>
-                        <option value="Unassigned">Unassigned</option>
-                        <option value="In Store">In Store</option>
-                      </>
-                    ) : (
-                      <>
-                        <option value="Faulty">Faulty</option>
-                        <option value="Retire">Retire</option>
-                      </>
-                    )}
+                    {ASSET_STATUS_OPTIONS.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
                   </select>
                 </div>
               </div>

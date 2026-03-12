@@ -43,7 +43,7 @@ function toMessage(item: NotificationRow) {
   if (entity === 'ticket') {
     if (action.includes('create')) return { title: `New ticket logged`, sub: ticketLabel }
     if (action.includes('transition')) return { title: `${ticketLabel} status updated`, sub: `Action: ${item.action}` }
-    if (action.includes('resolve')) return { title: `${ticketLabel} resolved`, sub: `Action: ${item.action}` }
+    if (action.includes('resolve')) return { title: `${ticketLabel} closed`, sub: `Action: ${item.action}` }
     if (action.includes('delete')) return { title: `${ticketLabel} deleted`, sub: `Action: ${item.action}` }
     return { title: `${ticketLabel} updated`, sub: `Action: ${item.action}` }
   }

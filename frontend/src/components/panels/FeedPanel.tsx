@@ -36,7 +36,7 @@ function toTitle(action: string) {
   if (key === 'assign_asset') return 'Asset Assigned'
   if (key === 'unassign_asset') return 'Asset Unassigned'
   if (key === 'transition') return 'Ticket Status Updated'
-  if (key === 'resolve') return 'Resolved'
+  if (key === 'resolve') return 'Closed'
   if (key === 'respond') return 'Mark As Responded'
   if (key === 'update_ticket') return 'Ticket Updated'
   if (key === 'delete_ticket') return 'Ticket Deleted'
@@ -55,7 +55,7 @@ function toDetail(item: any) {
   }
   if (action === 'assign_asset') return `Asset assigned${item?.meta?.assetId ? `: ${item.meta.assetId}` : ''}`
   if (action === 'respond') return String(item?.meta?.message || '').trim() || 'Response sent to requester.'
-  if (action === 'resolve') return String(item?.meta?.resolution || '').trim() || 'Ticket resolved.'
+  if (action === 'resolve') return String(item?.meta?.resolution || '').trim() || 'Ticket closed.'
   if (action === 'update_ticket') return 'Ticket details updated.'
   if (action === 'create_ticket') return String(item?.meta?.subject || '').trim() || 'Ticket created.'
   if (action === 'delete_ticket') return 'Ticket removed.'

@@ -162,13 +162,12 @@ workflowEngine.register({
 })
 workflowEngine.register({
   name: 'HR Request',
-  states: ['New', 'HR Review', 'In Progress', 'Resolved', 'Closed', 'Rejected'],
+  states: ['New', 'HR Review', 'In Progress', 'Closed', 'Rejected'],
   transitions: [
     { from: 'New', to: 'HR Review', name: 'send_to_hr' },
     { from: 'HR Review', to: 'In Progress', name: 'start_review' },
     { from: 'HR Review', to: 'Rejected', name: 'reject' },
-    { from: 'In Progress', to: 'Resolved', name: 'resolve' },
-    { from: 'Resolved', to: 'Closed', name: 'close' },
+    { from: 'In Progress', to: 'Closed', name: 'close' },
   ],
 })
 workflowEngine.register({

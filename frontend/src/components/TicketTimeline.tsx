@@ -13,7 +13,7 @@ const TimelineStep = ({ title, subtitle, active }: { title: string; subtitle?: s
 
 export default function TicketTimeline() {
   const [showModal, setShowModal] = useState(false)
-  const [modalMode, setModalMode] = useState<'email' | 'log' | 'resolve'>('email')
+  const [modalMode, setModalMode] = useState<'email' | 'log' | 'close'>('email')
 
   return null
 }

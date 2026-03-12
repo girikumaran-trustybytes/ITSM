@@ -116,10 +116,10 @@ exports.default = {
         const senderFrom = String(mappedFrom || PLATFORM_BASE_MAIL).trim() || PLATFORM_BASE_MAIL;
         await (0, mail_integration_1.sendSmtpMail)({ to: email, cc, bcc, subject, text, html, attachments, from: senderFrom });
     },
-    async sendTicketResolved(email, ticket) {
-        const subject = `[ITSM] Ticket resolved: ${ticket?.ticketId || ticket?.id || ''}`.trim();
+    async sendTicketClosed(email, ticket) {
+        const subject = `[ITSM] Ticket closed: ${ticket?.ticketId || ticket?.id || ''}`.trim();
         const text = [
-            'Your ticket has been resolved.',
+            'Your ticket has been closed.',
             `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
             `Resolution: ${ticket?.resolution || '-'}`,
         ].join('\n');

@@ -15,6 +15,22 @@ let slaSchemaReady: Promise<void> | null = null
 let slaConfigSchemaReady: Promise<void> | null = null
 let ticketOriginSchemaReady: Promise<void> | null = null
 let ticketTeamSchemaReady: Promise<void> | null = null
+let resolvedStatusMigration: Promise<void> | null = null
+
+const normalizeTicketStatus = (value: any) => {
+  const raw = String(value || '').trim()
+  if (raw.toLowerCase() === 'resolved') return 'Closed'
+  return raw
+}
+
+async function ensureResolvedStatusMigration() {
+  if (!resolvedStatusMigration) {
+    resolvedStatusMigration = (async () => {
+      await query('UPDATE "Ticket" SET "status" = \'Closed\' WHERE "status" = \'Resolved\'')
+    })()
+  }
+  await resolvedStatusMigration
+}
 
 function buildTicketWhere(idOrTicketId: string, alias = 't', startIndex = 1) {
   if (isNumericId(idOrTicketId)) {
@@ -24,8 +40,13 @@ function buildTicketWhere(idOrTicketId: string, alias = 't', startIndex = 1) {
 }
 
 async function getTicketRecord(idOrTicketId: string) {
+  await ensureResolvedStatusMigration()
   const where = buildTicketWhere(idOrTicketId, 't', 1)
-  return queryOne<any>(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params)
+  const ticket = await queryOne<any>(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params)
+  if (ticket?.status) {
+    ticket.status = normalizeTicketStatus(ticket.status)
+  }
+  return ticket
 }
 
 function normalizePriority(value: any) {
@@ -203,7 +224,7 @@ async function upsertSlaTrackingForTicket(ticket: any, options?: { keepFirstResp
   const resolutionTargetAt = businessHoursEnabled && businessSchedule
     ? addBusinessMinutes(startTime, resolutionMin, businessTimeZone, businessSchedule)
     : new Date(startTime.getTime() + resolutionMin * 60 * 1000)
-  const status = ['Resolved', 'Closed'].includes(String(ticket.status || '')) ? 'resolved' : 'running'
+  const status = normalizeTicketStatus(ticket.status) === 'Closed' ? 'resolved' : 'running'
   await query(
     `INSERT INTO "SlaTracking" (
       "ticketId", "slaName", "startTime", "breachTime", "status", "policyId",
@@ -251,7 +272,7 @@ function buildSlaSnapshot(ticket: any, tracking: any) {
   const responseTargetMs = tracking.responseTargetAt ? new Date(tracking.responseTargetAt).getTime() : null
   const resolutionTargetMs = tracking.resolutionTargetAt ? new Date(tracking.resolutionTargetAt).getTime() : null
   const responseDone = Boolean(tracking.firstRespondedAt && tracking.firstRespondedById)
-  const resolutionDone = Boolean(tracking.resolvedAt) || ['Resolved', 'Closed'].includes(String(ticket.status || ''))
+  const resolutionDone = Boolean(tracking.resolvedAt) || normalizeTicketStatus(ticket.status) === 'Closed'
   const responseCompletedMs = tracking.firstRespondedAt ? new Date(tracking.firstRespondedAt).getTime() : null
   const resolutionCompletedMs = tracking.resolvedAt
     ? new Date(tracking.resolvedAt).getTime()
@@ -417,7 +438,8 @@ function normalizeTeamId(value: any): string {
 
 function canUserModifyTicketStatus(status: any) {
   const normalized = String(status || '').trim().toLowerCase()
-  return !['resolved', 'closed', 'cancelled'].includes(normalized)
+  const effective = normalized === 'resolved' ? 'closed' : normalized
+  return !['closed', 'cancelled'].includes(effective)
 }
 
 async function getAgentTicketScope(userId: number): Promise<AgentTicketScope> {
@@ -559,6 +581,7 @@ async function getNextTicketTag(): Promise<string> {
 }
 
 export const getTickets = async (opts: { page?: number; pageSize?: number; q?: string } = {}, viewer?: any) => {
+  await ensureResolvedStatusMigration()
   const page = opts.page ?? 1
   const pageSize = opts.pageSize ?? 20
   const conditions: string[] = []
@@ -590,6 +613,9 @@ export const getTickets = async (opts: { page?: number; pageSize?: number; q?: s
     ),
   ])
   await attachSlaData(items)
+  items.forEach((ticket: any) => {
+    if (ticket?.status) ticket.status = normalizeTicketStatus(ticket.status)
+  })
 
   const total = Number(totalRow?.count || 0)
   await auditLog({
@@ -608,6 +634,7 @@ export const getTickets = async (opts: { page?: number; pageSize?: number; q?: s
 }
 
 export const getTicketById = async (id: string, viewer?: any) => {
+  await ensureResolvedStatusMigration()
   const where = buildTicketWhere(id, 't', 1)
   const t = await queryOne<any>(
     `SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee", row_to_json(asset) AS "asset"
@@ -619,6 +646,7 @@ export const getTicketById = async (id: string, viewer?: any) => {
     where.params
   )
   if (!t) return null
+  if (t?.status) t.status = normalizeTicketStatus(t.status)
   await assertViewerTicketAccess(t, viewer, 'view')
 
   const [attachments, history] = await Promise.all([
@@ -683,7 +711,7 @@ export const createTicket = async (payload: any, creator = 'system') => {
     priority,
     impact,
     urgency,
-    status: payload.status || 'New',
+    status: normalizeTicketStatus(payload.status || 'New'),
     subcategory: payload.subcategory,
     description: payload.description,
     slaStart: now,
@@ -727,18 +755,19 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
   if (!t) throw { status: 404, message: 'Ticket not found' }
   await assertViewerTicketAccess(t, user, 'update')
 
-  const can = workflowEngine.canTransition(t.type, t.status, toState)
-  if (!can) throw { status: 400, message: `Invalid transition from ${t.status} to ${toState}` }
+  const normalizedToState = normalizeTicketStatus(toState)
+  const can = workflowEngine.canTransition(t.type, t.status, normalizedToState)
+  if (!can) throw { status: 400, message: `Invalid transition from ${t.status} to ${normalizedToState}` }
 
   const from = t.status
   const where = buildTicketWhere(ticketId, 't', 2)
   const updatedRows = await query(
     `UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
-    [toState, ...where.params]
+    [normalizedToState, ...where.params]
   )
   const updated = updatedRows[0]
   const changedById = await resolveChangedById(user)
-  if (['Resolved', 'Closed'].includes(String(toState || ''))) {
+  if (normalizeTicketStatus(normalizedToState) === 'Closed') {
     await ensureSlaTrackingSchema()
     await query(
       'UPDATE "SlaTracking" SET "resolvedAt" = COALESCE("resolvedAt", NOW()), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2',
@@ -751,7 +780,7 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
     [
       t.id,
       from,
-      toState,
+      normalizedToState,
       changedById,
       '',
       false,
@@ -761,7 +790,7 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
     action: 'transition',
     ticketId: updated.ticketId,
     user,
-    meta: { from, to: toState },
+    meta: { from, to: normalizedToState },
   })
   const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id])
   updated.sla = buildSlaSnapshot(updated, tracking)
@@ -990,7 +1019,7 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
   const updatedRows = await query(
     `UPDATE "Ticket" t SET "status" = $1, "resolution" = $2, "resolutionCategory" = $3, "resolvedAt" = NOW(), "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
     [
-      'Resolved',
+      'Closed',
       opts.resolution,
       opts.resolutionCategory || null,
       ...where.params,
@@ -1009,19 +1038,19 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
     [
       t.id,
       from,
-      'Resolved',
+      'Closed',
       changedById,
     ]
   )
 
-  await auditLog({ action: 'resolve', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } })
+  await auditLog({ action: 'close', ticketId: updated.ticketId, user: opts.user, meta: { resolution: opts.resolution, resolutionCategory: opts.resolutionCategory } })
 
   if (opts.sendEmail && t.requesterId) {
     try {
       const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
-      if (requester?.email) await mailer.sendTicketResolved(requester.email, updated)
+      if (requester?.email) await mailer.sendTicketClosed(requester.email, updated)
     } catch (e) {
-      console.warn('Failed sending ticket resolved email', e)
+      console.warn('Failed sending ticket closed email', e)
     }
   }
 

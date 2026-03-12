@@ -75,7 +75,7 @@ const emptyForm = {
   warrantyUntil: '',
   amcSupport: '',
   depreciationEnd: '',
-  status: 'In Use',
+  status: 'Unassigned',
   lifecycleStage: 'Active',
   condition: 'Good',
   deploymentDate: '',
@@ -118,6 +118,19 @@ const defaultAssetTypeOptions = [
   'Extension Box',
   'Power Cord (Monitor)',
   'Power Adaptor',
+]
+
+const ASSET_STATUS_OPTIONS = [
+  'Assigned',
+  'Unassigned',
+  'In Stock',
+  'Reserved',
+  'Under Maintenance',
+  'Faulty',
+  'Damaged',
+  'Lost',
+  'Retired',
+  'Decommissioned',
 ]
 
 type PaginationMeta = {
@@ -419,16 +432,13 @@ export default function AssetsView({
   }, [assets, assetQueueFilter, filters, panelRules])
   const assetVisuals = useMemo(() => {
     const totalCount = assets.length
-    const inUse = assets.filter((a) => String(a.status || '').toLowerCase() === 'in use').length
-    const available = assets.filter((a) => String(a.status || '').toLowerCase() === 'available').length
-    const retired = assets.filter((a) => String(a.status || '').toLowerCase() === 'retired').length
     const byCategory = assets.reduce<Record<string, number>>((acc, a) => {
       const key = a.category || 'Unknown'
       acc[key] = (acc[key] || 0) + 1
       return acc
     }, {})
     const topCategories = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4)
-    return { totalCount, inUse, available, retired, topCategories }
+    return { totalCount, topCategories }
   }, [assets])
 
   const buildDonutSegments = (parts: { value: number; color: string }[]) => {
@@ -1004,10 +1014,9 @@ export default function AssetsView({
                       <div className="form-section">
                         <label className="form-label">Status</label>
                         <select className="form-select" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                          <option>Available</option>
-                          <option>In Use</option>
-                          <option>Maintenance</option>
-                          <option>Retired</option>
+                          {ASSET_STATUS_OPTIONS.map((status) => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="form-section">

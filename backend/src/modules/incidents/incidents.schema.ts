@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 const IncidentSeverity = z.enum(['P1', 'P2', 'P3', 'P4'])
-const IncidentStatus = z.enum(['new', 'investigating', 'mitigated', 'resolved', 'closed'])
+const IncidentStatus = z.enum(['new', 'investigating', 'mitigated', 'closed'])
 
 const uuid = () => z.string().uuid()
 
@@ -49,8 +49,8 @@ export const updateIncidentSchema = z
     metadata: z.record(z.any()).optional(),
   })
   .superRefine((val, ctx) => {
-    if (val.status === 'resolved' && (!val.mitigation || val.mitigation.trim().length === 0)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Resolved incidents should include mitigation notes' })
+    if (val.status === 'closed' && (!val.mitigation || val.mitigation.trim().length === 0)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Closed incidents should include mitigation notes' })
     }
   })
 

@@ -390,18 +390,16 @@ const WORKFLOW_BLUEPRINTS: WorkflowBlueprint[] = [
   },
   {
     name: 'HR Request',
-    states: ['New', 'HR Review', 'In Progress', 'Resolved', 'Closed', 'Rejected'],
+    states: ['New', 'HR Review', 'In Progress', 'Closed', 'Rejected'],
     transitions: [
       'New -> HR Review',
       'HR Review -> In Progress',
       'HR Review -> Rejected',
-      'In Progress -> Resolved',
-      'Resolved -> Closed',
+      'In Progress -> Closed',
     ],
     buttonFlow: [
       'Send to HR -> HR Review',
       'Start Review -> In Progress',
-      'Resolve -> Resolved',
       'Close -> Closed',
     ],
   },
@@ -3663,7 +3661,7 @@ export default function AdminView(_props: AdminViewProps) {
                         </button>
                       </div>
                       <div className="sla-escalation-section">
-                        <div className="sla-escalation-title">Set Escalation Hierarchy when a ticket is not resolved on time</div>
+                        <div className="sla-escalation-title">Set Escalation Hierarchy when a ticket is not closed on time</div>
                         {policyResolutionRules.length === 0 ? (
                           <div className="sla-empty">No escalation levels configured.</div>
                         ) : (

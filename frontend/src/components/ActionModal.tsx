@@ -2,14 +2,14 @@ import React, { useState } from 'react'
 import '../styles-ticket.css'
 
 type Props = {
-  mode: 'email' | 'log' | 'resolve'
+  mode: 'email' | 'log' | 'close'
   onClose: () => void
 }
 
 export default function ActionModal({ mode, onClose }: Props) {
-  const title = mode === 'email' ? 'Email User' : mode === 'log' ? 'Log to Supplier' : 'Resolved'
+  const title = mode === 'email' ? 'Email User' : mode === 'log' ? 'Log to Supplier' : 'Close Ticket'
   const [to, setTo] = useState('girikumaran@trustybytes.in')
-  const [message, setMessage] = useState(mode === 'resolve' ? 'Resolved.' : 'Hi Team,\n\nCould you please have a look?\n\nThank you.')
+  const [message, setMessage] = useState(mode === 'close' ? 'Ticket closed.' : 'Hi Team,\n\nCould you please have a look?\n\nThank you.')
 
   const handleSend = () => {
     // dispatch a custom event so TicketsView can react to the action

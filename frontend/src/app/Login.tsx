@@ -80,6 +80,7 @@ export default function Login() {
     if (
       rememberedRoute &&
       rememberedRoute.startsWith('/') &&
+      rememberedRoute !== '/' &&
       rememberedRoute !== '/login' &&
       !rememberedRoute.startsWith('/reset-password') &&
       !rememberedRoute.startsWith('/auth/Account/ConfirmEmail')

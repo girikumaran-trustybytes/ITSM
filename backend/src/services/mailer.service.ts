@@ -145,10 +145,10 @@ export default {
     await sendSmtpMail({ to: email, cc, bcc, subject, text, html, attachments, from: senderFrom })
   },
 
-  async sendTicketResolved(email: string, ticket: any) {
-    const subject = `[ITSM] Ticket resolved: ${ticket?.ticketId || ticket?.id || ''}`.trim()
+  async sendTicketClosed(email: string, ticket: any) {
+    const subject = `[ITSM] Ticket closed: ${ticket?.ticketId || ticket?.id || ''}`.trim()
     const text = [
-      'Your ticket has been resolved.',
+      'Your ticket has been closed.',
       `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
       `Resolution: ${ticket?.resolution || '-'}`,
     ].join('\n')
