@@ -19,7 +19,7 @@ function normalizeApiBase(rawBase: string, fallback = 'http://localhost:5000/api
 function resolveApiBase() {
   const env = (import.meta as any).env || {}
   const isDev = Boolean(env.DEV)
-  const defaultBase = isDev ? 'http://localhost:5000/api' : 'http://localhost:5000/api'
+  const defaultBase = isDev ? '/api' : 'http://localhost:5000/api'
   const envBase = normalizeApiBase(env.VITE_API_BASE || '', defaultBase)
   if (typeof window === 'undefined') return envBase
 
@@ -134,7 +134,8 @@ api.interceptors.request.use((config) => {
   const token = getAccessToken()
   const url = String(config.url || '')
 
-  if (token && config.headers) {
+  if (token) {
+    if (!config.headers) config.headers = {}
     config.headers['Authorization'] = `Bearer ${token}`
     return config
   }

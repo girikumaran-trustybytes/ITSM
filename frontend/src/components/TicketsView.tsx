@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as ticketService from '../modules/tickets/services/ticket.service'
@@ -141,6 +141,8 @@ export default function TicketsView() {
   const [progressFilter, setProgressFilter] = useState<ProgressFilterType>('All Actions')
   const [isEditingSubject, setIsEditingSubject] = useState(false)
   const [subjectDraft, setSubjectDraft] = useState('')
+  const subjectInputRef = useRef<HTMLInputElement | null>(null)
+  const subjectEditWrapRef = useRef<HTMLInputElement | null>(null)
   const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null)
   const [actionDetail, setActionDetail] = useState<any | null>(null)
   const [showProgressFilterMenu, setShowProgressFilterMenu] = useState(false)
@@ -576,6 +578,7 @@ export default function TicketsView() {
           author: resolveHistoryAuthor(h, ticketData),
           text: note || fallback,
           time: formatTimelineTime(h?.createdAt),
+          timeMs: toTimestamp(h?.createdAt),
           action: resolveTimelineAction({ noteRaw, note: note || fallback, fromStatus, toStatus, internal, kind, createdAction }),
           internal,
           changedById: Number(h?.changedById || 0) || null,
@@ -590,6 +593,7 @@ export default function TicketsView() {
         author: initialAuthor,
         text: `Ticket created: ${initialText}`,
         time: initialTime,
+        timeMs: toTimestamp(ticketData?.createdAt),
         action: createdAction,
         internal: false,
         changedById: null,
@@ -607,9 +611,35 @@ export default function TicketsView() {
       return true
     })
 
+    const orderedForIds = deduped
+      .slice()
+      .sort((a: any, b: any) => {
+        const ta = typeof a.timeMs === 'number' ? a.timeMs : Number(a.timeMs || 0)
+        const tb = typeof b.timeMs === 'number' ? b.timeMs : Number(b.timeMs || 0)
+        if (!ta && !tb) return 0
+        if (!ta) return 1
+        if (!tb) return -1
+        return ta - tb
+      })
+
+    const idLookup = new Map<string, string>()
+    orderedForIds.forEach((entry: any, index: number) => {
+      const key = `${entry.author}|${entry.action || ''}|${entry.text}|${entry.time}`
+      idLookup.set(key, String(index + 1))
+    })
+
+    const finalTimeline = deduped.map((entry: any) => {
+      const key = `${entry.author}|${entry.action || ''}|${entry.text}|${entry.time}`
+      const { timeMs, ...rest } = entry
+      return {
+        ...rest,
+        actionId: idLookup.get(key) || String(entry.actionId || ''),
+      }
+    })
+
     setTicketComments((prev) => ({
       ...prev,
-      [ticketKey]: deduped,
+      [ticketKey]: finalTimeline,
     }))
   }
 
@@ -2614,10 +2644,53 @@ Click below to proceed:
     if (!selectedTicket) return
     syncSelectedTicketInList(selectedTicket.id, localPatch)
     try {
-      await ticketService.updateTicket(selectedTicket.id, patch)
+      const updated = await ticketService.updateTicket(selectedTicket.id, patch)
+      if (updated) {
+        const nextPatch: Partial<Incident> = {}
+        if (updated.subject !== undefined) nextPatch.subject = updated.subject
+        if (updated.summary !== undefined && updated.subject === undefined) nextPatch.subject = updated.summary
+        if (updated.category !== undefined) nextPatch.category = updated.category
+        if (updated.subcategory !== undefined) nextPatch.issueDetail = updated.subcategory
+        if (updated.resolution !== undefined) nextPatch.resolution = updated.resolution
+        if (Object.keys(nextPatch).length > 0) {
+          syncSelectedTicketInList(selectedTicket.id, nextPatch)
+        }
+      }
+      return updated
     } catch (error: any) {
       alert(error?.response?.data?.error || error?.message || 'Failed to update ticket details')
     }
+  }
+
+  const commitSubjectEdit = async (valueOverride?: string) => {
+    if (!selectedTicket) return
+    const next = String((valueOverride ?? subjectDraft) || '').trim()
+    if (!next || next === selectedTicket.subject) {
+      setIsEditingSubject(false)
+      setSubjectDraft(selectedTicket.subject || '')
+      return
+    }
+    setIsEditingSubject(false)
+    setSubjectDraft(next)
+    syncSelectedTicketInList(selectedTicket.id, { subject: next })
+    const updated = await updateTicketPatch({ subject: next, summary: next }, { subject: next })
+    if (updated?.subject) {
+      setSubjectDraft(updated.subject)
+      syncSelectedTicketInList(selectedTicket.id, { subject: updated.subject })
+    }
+    setTicketComments((prev) => {
+      const ticketId = String(selectedTicket.id || '')
+      const timeline = prev[ticketId]
+      if (!timeline) return prev
+      const updatedTimeline = timeline.map((entry: any) => {
+        const text = String(entry?.text || '')
+        if (text.toLowerCase().startsWith('ticket created:')) {
+          return { ...entry, text: `Ticket created: ${next}` }
+        }
+        return entry
+      })
+      return { ...prev, [ticketId]: updatedTimeline }
+    })
   }
 
   React.useEffect(() => {
@@ -2990,10 +3063,37 @@ Click below to proceed:
     return { name, email, username, avatarUrl }
   }
 
-  const resolveCommentIdentity = (authorRaw: string) => {
+  const resolveCommentIdentity = (authorRaw: string, entry?: TimelineEntry) => {
     const inbound = getInboundDisplayUser()
     const author = String(authorRaw || '').trim()
     const lower = author.toLowerCase()
+    const changedById = Number((entry as any)?.changedById || 0)
+
+    let agent: any = null
+    if (changedById > 0) {
+      agent = agents.find((a: any) => Number(a?.id) === changedById) || null
+    }
+    if (!agent && lower) {
+      agent =
+        agents.find((a: any) => String(a?.email || '').trim().toLowerCase() === lower) ||
+        agents.find((a: any) => String(getAgentDisplayName(a) || '').trim().toLowerCase() === lower) ||
+        null
+    }
+    if (!agent && lower) {
+      const meName = String(user?.name || '').trim().toLowerCase()
+      const meEmail = String(user?.email || '').trim().toLowerCase()
+      if ((meName && meName === lower) || (meEmail && meEmail === lower)) {
+        agent = user
+      }
+    }
+    if (agent) {
+      const displayName = String(getAgentDisplayName(agent) || author || 'User').trim()
+      const isMe = agent && String(agent?.id || '') === String(user?.id || '')
+      const avatarUrl = isMe ? getUserAvatarUrl(user) : getUserAvatarUrl(agent)
+      const initials = getUserInitials(agent, getInitials(displayName))
+      return { name: displayName, avatarUrl, initials }
+    }
+
     if (!author) {
       return { name: inbound.name || 'End User', avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name || 'End User') }
     }
@@ -3218,7 +3318,7 @@ Click below to proceed:
     addTicketComment(selectedTicket.id, note)
     // try to persist to backend as a private note
     ticketService.privateNote(selectedTicket.id, { note }).catch(() => {
-      // ignore errors — kept in UI as demo
+      // ignore errors � kept in UI as demo
     })
   }
 
@@ -4211,6 +4311,28 @@ Click below to proceed:
     }
   }, [])
 
+  React.useEffect(() => {
+    if (!isEditingSubject) return
+    const handleClickOutside = (event: Event) => {
+      const target = event.target as Node
+        if (subjectInputRef.current && target && !subjectInputRef.current.contains(target)) {
+          commitSubjectEdit(subjectInputRef.current.value)
+          setIsEditingSubject(false)
+          subjectInputRef.current.blur()
+        }
+    }
+    document.addEventListener('pointerdown', handleClickOutside, true)
+    window.addEventListener('pointerdown', handleClickOutside, true)
+    document.addEventListener('click', handleClickOutside, true)
+    window.addEventListener('click', handleClickOutside, true)
+    return () => {
+      document.removeEventListener('pointerdown', handleClickOutside, true)
+      window.removeEventListener('pointerdown', handleClickOutside, true)
+      document.removeEventListener('click', handleClickOutside, true)
+      window.removeEventListener('click', handleClickOutside, true)
+    }
+  }, [isEditingSubject, subjectDraft, selectedTicket?.id])
+
   const mainContent = showDetailView && selectedTicket ? (
     <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
       <div className="work-main">
@@ -4267,50 +4389,53 @@ Click below to proceed:
           <div className="ticket-detail-header ticket-detail-header-inline">
             <div className="ticket-detail-id">
               <div className={`ticket-detail-icon status-badge ${statusClass(selectedTicket.status || '')}`}>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 7a2 2 0 0 1 2-2h7l3 3v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
-                  <path d="M13 5v3h3" />
-                  <path d="M8 11h6" />
-                  <path d="M8 14h5" />
+                <svg className="ticket-detail-icon-svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z" />
+                  <path d="M9 9h.01M12 9h.01M15 9h.01" />
                 </svg>
               </div>
               <div className="ticket-detail-meta">
                 <div className="ticket-detail-code ticket-detail-code-lg">[{selectedTicket.id}]</div>
-                <div className="ticket-detail-subject">
-                  {isEditingSubject ? (
-                    <input
-                      className="ticket-detail-subject-input"
-                      value={subjectDraft}
-                      autoFocus
-                      onChange={(e) => setSubjectDraft(e.target.value)}
-                      onBlur={commitSubjectEdit}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitSubjectEdit()
-                        if (e.key === 'Escape') {
-                          setIsEditingSubject(false)
-                          setSubjectDraft(selectedTicket.subject || '')
-                        }
-                      }}
-                    />
-                  ) : (
+              </div>
+              <div className="ticket-detail-subject ticket-detail-subject-row">
+                {isEditingSubject ? (
+                  <input
+                    ref={(el) => {
+                      subjectInputRef.current = el
+                      subjectEditWrapRef.current = el
+                    }}
+                    className="ticket-detail-subject-input"
+                    value={subjectDraft}
+                    autoFocus
+                    onChange={(e) => setSubjectDraft(e.target.value)}
+                    onBlur={(e) => commitSubjectEdit(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        commitSubjectEdit()
+                      }
+                      if (e.key === 'Escape') {
+                        setIsEditingSubject(false)
+                        setSubjectDraft(selectedTicket.subject || '')
+                      }
+                    }}
+                  />
+                ) : (
                     <button
                       type="button"
                       className="ticket-detail-subject-btn"
                       onClick={() => {
                         setSubjectDraft(selectedTicket.subject || '')
                         setIsEditingSubject(true)
+                        setTimeout(() => subjectInputRef.current?.focus(), 0)
                       }}
                     >
-                      {selectedTicket.subject || 'Not set'}
-                    </button>
-                  )}
-                </div>
+                    {selectedTicket.subject || 'Not set'}
+                  </button>
+                )}
               </div>
             </div>
-          </div>
-          <div className="progress-card-header">
-            <span className="progress-title">Progress</span>
-            <div className="progress-header-right">
+            <div className="ticket-detail-header-actions">
               {!isPortalUser && (
                 <div className="filter-dropdown progress-filter-dropdown" ref={progressFilterMenuRef}>
                   <button
@@ -4539,7 +4664,7 @@ Click below to proceed:
                     <button type="button" onClick={() => setShowEmojiPicker((v) => !v)} aria-label="Emoticons">{toolbarIcon('emoji')}</button>
                     {showEmojiPicker && (
                       <div className="compose-toolbar-menu emoji">
-                        {['😀','😁','😂','😅','😊','😍','😎','😇','😢','😡','👍','🙏','🎉','✅','⚠️','❗','💡','📌'].map((e) => (
+                        {['??','??','??','??','??','??','??','??','??','??','??','??','??','?','??','?','??','??'].map((e) => (
                           <button key={e} type="button" onClick={() => { applyComposerCommand('insertText', e); setShowEmojiPicker(false) }}>{e}</button>
                         ))}
                       </div>
@@ -4794,7 +4919,7 @@ Click below to proceed:
               })
               .map((c, idx) => {
                 const authorName = String((c as any)?.author ?? '')
-                const identity = resolveCommentIdentity(authorName)
+                const identity = resolveCommentIdentity(authorName, c)
                 const actionLabel = String((c as any)?.action || '').trim()
                 return (
               <div key={`${c.time}-${idx}`} className={`progress-item${!progressExpanded ? ' is-collapsed' : ''}`}>
@@ -4817,7 +4942,6 @@ Click below to proceed:
                     </div>
                     <div className="progress-meta-right">
                       <div className="progress-time">{c.time}</div>
-                      <div className="progress-action-id">ID: {String((c as any)?.actionId || '-')}</div>
                       <div className="progress-action-buttons">
                         <button
                           type="button"
@@ -4880,11 +5004,12 @@ Click below to proceed:
                 aria-label="Move to Top"
                 onClick={jumpProgressList}
               >
-                ↑
+                ?
               </button>
             )}
           </div>
         </div>
+        )}
         {actionDetail && (
           <div className="modal-overlay" onClick={() => setActionDetail(null)}>
             <div className="modal-content action-detail-modal" onClick={(e) => e.stopPropagation()}>
@@ -4925,7 +5050,6 @@ Click below to proceed:
               </div>
             </div>
           </div>
-        )}
         )}
         {(!isCompactDetailLayout || activeDetailTab === 'Details') && (
         <div className="detail-sidebar-wrap">
@@ -5180,7 +5304,7 @@ Click below to proceed:
                   <div className="sla-row">
                     <span>Response Target</span>
                     <span>{responseSla.targetLabel}</span>
-                    <span className={`sla-x${responseSla.met ? ' sla-check' : ''}`}>{responseSla.met ? '✓' : responseSla.breached ? 'x' : ''}</span>
+                    <span className={`sla-x${responseSla.met ? ' sla-check' : ''}`}>{responseSla.met ? '?' : responseSla.breached ? 'x' : ''}</span>
                   </div>
                   {!responseSla.done ? (
                     <div className="sla-progress-track" role="progressbar" aria-label="Response SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(responseSla.percent)}>
@@ -5201,7 +5325,7 @@ Click below to proceed:
                   <div className="sla-row">
                     <span>Resolution Target</span>
                     <span>{resolutionSla.targetLabel}</span>
-                    <span className={`sla-x${resolutionSla.met ? ' sla-check' : ''}`}>{resolutionSla.met ? '✓' : resolutionSla.breached ? 'x' : ''}</span>
+                    <span className={`sla-x${resolutionSla.met ? ' sla-check' : ''}`}>{resolutionSla.met ? '?' : resolutionSla.breached ? 'x' : ''}</span>
                   </div>
                   {!resolutionSla.done ? (
                     <div className="sla-progress-track" role="progressbar" aria-label="Resolution SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(resolutionSla.percent)}>
@@ -5508,7 +5632,17 @@ Click below to proceed:
   )
 
   return (
-    <div className="tickets-view">
+    <div
+      className="tickets-view"
+      onPointerDownCapture={(event) => {
+        if (!isEditingSubject) return
+        const target = event.target as Node
+        if (subjectInputRef.current && target && !subjectInputRef.current.contains(target)) {
+          commitSubjectEdit()
+          subjectInputRef.current.blur()
+        }
+      }}
+    >
       {queueSidebar}
       {mainContent}
 
@@ -5670,7 +5804,7 @@ Click below to proceed:
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Ticket details</h2>
-              <button className="modal-close" onClick={() => setShowNewIncidentModal(false)}>✕</button>
+              <button className="modal-close" onClick={() => setShowNewIncidentModal(false)}>?</button>
             </div>
 
             <div className="modal-body">
@@ -5833,18 +5967,3 @@ Click below to proceed:
     </div>
   )
 }
-
-
-
-
-  const commitSubjectEdit = async () => {
-    if (!selectedTicket) return
-    const next = String(subjectDraft || '').trim()
-    if (!next || next === selectedTicket.subject) {
-      setIsEditingSubject(false)
-      setSubjectDraft(selectedTicket.subject || '')
-      return
-    }
-    setIsEditingSubject(false)
-    updateTicketPatch({ subject: next }, { subject: next })
-  }

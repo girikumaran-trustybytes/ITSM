@@ -1023,6 +1023,12 @@ const updateTicket = async (ticketId, payload, user) => {
             data.priority = payload.priority;
         if (payload.category !== undefined)
             data.category = payload.category;
+        if (payload.subcategory !== undefined)
+            data.subcategory = payload.subcategory;
+        if (payload.resolutionCategory !== undefined)
+            data.resolutionCategory = payload.resolutionCategory;
+        if (payload.resolution !== undefined)
+            data.resolution = payload.resolution;
         if (payload.createdFrom !== undefined)
             data.createdFrom = payload.createdFrom;
         if (payload.assigneeId !== undefined)

@@ -7783,18 +7783,28 @@ body.tickets-queue-expanded .detail-view-container {
 }
 
 .ticket-detail-header-inline {
-  padding: 8px 16px 0 16px;
+  padding: 8px 12px 20px 12px;
+}
+
+.ticket-detail-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .ticket-detail-id {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  row-gap: 6px;
+  align-items: center;
+  width: 100%;
 }
 
 .ticket-detail-icon {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -7802,6 +7812,12 @@ body.tickets-queue-expanded .detail-view-container {
   padding: 0;
   color: #ffffff;
   flex-shrink: 0;
+}
+
+.ticket-detail-subject-btn,
+.ticket-detail-subject-input {
+  margin-top: 6px;
+  margin-left: 0;
 }
 
 .ticket-detail-icon.status-badge {
@@ -7813,10 +7829,30 @@ body.tickets-queue-expanded .detail-view-container {
   display: block;
 }
 
+.ticket-detail-icon-svg {
+  transform: rotate(-35deg);
+  transform-origin: center;
+}
+
 .ticket-detail-meta {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  align-items: flex-start;
+}
+
+.ticket-detail-subject-row {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.ticket-detail-subject-row .ticket-detail-subject-btn,
+.ticket-detail-subject-row .ticket-detail-subject-input {
+  width: auto;
+  min-width: 100%;
+  max-width: none;
+  text-align: left;
 }
 
 .ticket-detail-code {
@@ -7826,18 +7862,23 @@ body.tickets-queue-expanded .detail-view-container {
 }
 
 .ticket-detail-code-lg {
-  font-size: 18px;
+  font-size: 24px !important;
+  line-height: 1.1;
 }
 
 .ticket-detail-subject-btn {
   padding: 0;
   border: none;
   background: transparent;
-  font-size: 16px;
+  font-size: 24px;
   font-weight: 600;
   color: #111827;
   text-align: left;
   cursor: pointer;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  max-width: none;
 }
 
 .ticket-detail-subject-btn:hover {
@@ -7845,12 +7886,18 @@ body.tickets-queue-expanded .detail-view-container {
 }
 
 .ticket-detail-subject-input {
-  width: min(680px, 100%);
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
   padding: 6px 10px;
   border: 1px solid #111827;
   border-radius: 6px;
-  font-size: 15px;
+  font-size: 24px;
   font-weight: 600;
+  background: #ffffff;
+  outline: none;
+  resize: none;
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {
