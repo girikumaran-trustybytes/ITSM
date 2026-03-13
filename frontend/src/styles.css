@@ -13602,6 +13602,60 @@ body.admin-queue-collapsed .ticket-left-panel {
   font-size: 12px;
   color: #6b7280;
 }
+.announcement-editor {
+  min-height: 140px;
+  resize: vertical;
+}
+.admin-announcement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.admin-announcement-row {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+  display: grid;
+  gap: 10px;
+}
+.admin-announcement-title {
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 4px;
+}
+.admin-announcement-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+.admin-announcement-body {
+  font-size: 13px;
+  color: #334155;
+  white-space: pre-wrap;
+}
+.admin-announcement-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.admin-pill {
+  background: #eef2ff;
+  color: #1e3a8a;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.sidebar-version {
+  margin-top: auto;
+  padding: 16px 18px;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.7);
+}
 .mail-provider-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

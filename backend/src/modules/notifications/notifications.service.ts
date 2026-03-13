@@ -1,4 +1,5 @@
 import { query } from '../../db'
+import { listActiveAnnouncements } from '../announcements/announcements.service'
 
 type Viewer = { id?: string | number; role?: string } | null | undefined
 export type NotificationState = {
@@ -63,6 +64,8 @@ export async function listNotifications(viewer: Viewer, opts: { limit?: number }
   const params: any[] = []
   const conditions: string[] = []
 
+  conditions.push(`a."action" = 'create_ticket'`)
+
   if (role === 'ADMIN') {
     conditions.push('1=1')
   } else if (role === 'AGENT') {
@@ -97,7 +100,32 @@ export async function listNotifications(viewer: Viewer, opts: { limit?: number }
     params
   )
 
-  return rows
+  const announcementRows = await listActiveAnnouncements('maintenance')
+  const announcementNotifications = (announcementRows as any[]).map((row) => ({
+    id: 2000000000 + Number(row.id),
+    action: 'maintenance_announcement',
+    entity: 'announcement',
+    entityId: Number(row.id),
+    userId: null,
+    ticketId: null,
+    meta: {
+      title: row.title,
+      body: row.body,
+      type: row.type,
+      publishAt: row.publishAt,
+      expireAt: row.expireAt,
+    },
+    createdAt: row.publishAt || row.createdAt,
+  }))
+
+  const merged = [...rows, ...announcementNotifications]
+  merged.sort((a: any, b: any) => {
+    const aTime = new Date(a.createdAt || 0).getTime()
+    const bTime = new Date(b.createdAt || 0).getTime()
+    return bTime - aTime
+  })
+
+  return merged.slice(0, limit)
 }
 
 export async function getNotificationState(viewer: Viewer): Promise<NotificationState> {

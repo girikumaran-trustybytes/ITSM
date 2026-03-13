@@ -2,6 +2,7 @@
 import { Link } from 'react-router-dom'
 
 import { getVisibleItsmNav } from '../security/policy'
+import { APP_VERSION } from '../utils/appVersion'
 
 type NavItem = {
   id: string
@@ -157,6 +158,7 @@ export default function PrimarySidebar({
           </Link>
         ))}
       </nav>
+      <div className="sidebar-version">Version {APP_VERSION}</div>
     </aside>
   )
 }

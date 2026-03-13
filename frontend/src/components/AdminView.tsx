@@ -8,14 +8,17 @@ import {
   type LeftPanelConfig,
   type QueueRule,
   type TicketQueueConfig,
-  type AssetCategoryConfig,
 } from '../utils/leftPanelConfig'
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
 import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, updateMailConfig, type MailProvider } from '../services/config.service'
 import { getSecuritySettings, updateSecuritySettings, type SecuritySettings } from '../services/security-settings.service'
 import { cancelAccount, exportAccountData, getAccountSettings, updateAccountSettings, type AccountSettings } from '../services/account-settings.service'
+import { createAnnouncement, deleteAnnouncement, listAnnouncements, repostAnnouncement, updateAnnouncement, type Announcement } from '../services/announcements.service'
+import { getAssetTypesSettings, updateAssetTypesSettings, type AssetTypesSettings, type AssetTypeConfig, type AssetFieldConfig } from '../services/asset-types.service'
 import * as userService from '../modules/users/services/user.service'
+import { APP_VERSION } from '../utils/appVersion'
+import { renderAssetTypeIcon } from '../utils/assetTypeIcons'
 
 type PaginationMeta = {
   page: number
@@ -69,9 +72,10 @@ const settingsMenu: MenuSection[] = [
   },
   {
     id: 'queue-management',
-    label: 'Queue & Panel management',
+    label: 'Queue management',
     items: [
-      { id: 'queue-management', label: 'Queue & Panel management', requiresAdmin: true },
+      { id: 'queue-management', label: 'Queue management', requiresAdmin: true },
+      { id: 'asset-types-fields', label: 'Assets Types & Fields', requiresAdmin: true },
     ],
   },
   {
@@ -95,6 +99,7 @@ const settingsMenu: MenuSection[] = [
     items: [
       { id: 'mail-configuration', label: 'Mail Configuration', requiresAdmin: true },
       { id: 'email-signature-templates', label: 'Email & Signature Templates', requiresAdmin: true },
+      { id: 'announcements', label: 'Announcements', requiresAdmin: true },
       { id: 'database-configuration', label: 'Database Configuration', requiresAdmin: true },
     ],
   },
@@ -123,9 +128,7 @@ type WorkflowBlueprint = {
 }
 type WorkflowListKey = 'states' | 'transitions' | 'buttonFlow'
 
-type QueueSettingsView = 'ticket' | 'asset'
 type TicketQueueModalMode = 'add' | 'edit' | 'delete'
-type AssetCategoryModalMode = 'add' | 'edit' | 'delete'
 
 const SLA_PRIORITIES = ['Critical', 'High', 'Medium', 'Low'] as const
 
@@ -1316,20 +1319,31 @@ export default function AdminView(_props: AdminViewProps) {
   const inboundTicketTypeOptions = useMemo(() => ['Incident', 'Service request', 'HR request', 'Task', 'New starter'], [])
   const inboundPriorityOptions = useMemo(() => ['Low', 'Medium', 'High', 'Critical'], [])
   const [queuePanelKey, setQueuePanelKey] = useState<'ticketsMyLists' | 'users' | 'assets' | 'suppliers'>('ticketsMyLists')
-  const [queueSettingsView, setQueueSettingsView] = useState<QueueSettingsView>('ticket')
   const [ticketQueueModalMode, setTicketQueueModalMode] = useState<TicketQueueModalMode | null>(null)
   const [ticketQueueModalOpen, setTicketQueueModalOpen] = useState(false)
   const [ticketQueueTargetId, setTicketQueueTargetId] = useState('')
   const [ticketQueueLabelInput, setTicketQueueLabelInput] = useState('')
   const [ticketQueueVisibilityInput, setTicketQueueVisibilityInput] = useState('ADMIN,AGENT')
   const [ticketQueueModalError, setTicketQueueModalError] = useState('')
-  const [assetCategoryModalMode, setAssetCategoryModalMode] = useState<AssetCategoryModalMode | null>(null)
-  const [assetCategoryModalOpen, setAssetCategoryModalOpen] = useState(false)
-  const [assetCategoryTargetId, setAssetCategoryTargetId] = useState('')
-  const [assetCategoryLabelInput, setAssetCategoryLabelInput] = useState('')
-  const [assetCategorySubcategoriesInput, setAssetCategorySubcategoriesInput] = useState('')
-  const [assetCategoryVisibilityInput, setAssetCategoryVisibilityInput] = useState('ADMIN,AGENT')
-  const [assetCategoryModalError, setAssetCategoryModalError] = useState('')
+  const [assetTypesSettings, setAssetTypesSettings] = useState<AssetTypesSettings>({ types: [] })
+  const [assetTypesLoading, setAssetTypesLoading] = useState(false)
+  const [assetTypesError, setAssetTypesError] = useState('')
+  const [assetTypeModalOpen, setAssetTypeModalOpen] = useState(false)
+  const [assetTypeModalMode, setAssetTypeModalMode] = useState<'add' | 'edit' | 'delete' | null>(null)
+  const [assetTypeTargetId, setAssetTypeTargetId] = useState('')
+  const [assetTypeNameInput, setAssetTypeNameInput] = useState('')
+  const [assetTypeDescriptionInput, setAssetTypeDescriptionInput] = useState('')
+  const [assetTypeParentIdInput, setAssetTypeParentIdInput] = useState('')
+  const [assetTypeIconInput, setAssetTypeIconInput] = useState('')
+  const [assetFieldModalOpen, setAssetFieldModalOpen] = useState(false)
+  const [assetFieldModalMode, setAssetFieldModalMode] = useState<'add' | 'edit' | 'delete' | null>(null)
+  const [assetFieldTargetId, setAssetFieldTargetId] = useState('')
+  const [assetFieldTypeTargetId, setAssetFieldTypeTargetId] = useState('')
+  const [assetFieldLabelInput, setAssetFieldLabelInput] = useState('')
+  const [assetFieldTypeInput, setAssetFieldTypeInput] = useState('text')
+  const [assetFieldOptionsInput, setAssetFieldOptionsInput] = useState('')
+  const [assetFieldRequiredInput, setAssetFieldRequiredInput] = useState(false)
+  const [expandedAssetTypeIds, setExpandedAssetTypeIds] = useState<string[]>([])
   const [slaLoading, setSlaLoading] = useState(false)
   const [slaBusy, setSlaBusy] = useState(false)
   const [slaRows, setSlaRows] = useState<any[]>([])
@@ -1459,6 +1473,20 @@ export default function AdminView(_props: AdminViewProps) {
   const [dbLoading, setDbLoading] = useState(false)
   const [dbBusy, setDbBusy] = useState(false)
   const [dbResult, setDbResult] = useState('')
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [announcementLoading, setAnnouncementLoading] = useState(false)
+  const [announcementBusy, setAnnouncementBusy] = useState(false)
+  const [announcementError, setAnnouncementError] = useState('')
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState<number | null>(null)
+  const [announcementForm, setAnnouncementForm] = useState({
+    title: '',
+    body: '',
+    type: 'maintenance',
+    status: 'published',
+    repeatInterval: 'none',
+    publishAt: '',
+    expireAt: '',
+  })
   const [workflowDrafts, setWorkflowDrafts] = useState<WorkflowBlueprint[]>(() => {
     if (typeof window === 'undefined') return cloneWorkflowBlueprints(WORKFLOW_BLUEPRINTS)
     try {
@@ -1640,6 +1668,11 @@ export default function AdminView(_props: AdminViewProps) {
     }
   }, [activeItem, role])
   useEffect(() => {
+    if (activeItem === 'announcements' && role === 'ADMIN') {
+      loadAnnouncements()
+    }
+  }, [activeItem, role])
+  useEffect(() => {
     if (typeof window === 'undefined') return
     try {
       window.localStorage.setItem(WORKFLOW_STORAGE_KEY, JSON.stringify(workflowDrafts))
@@ -1676,12 +1709,13 @@ export default function AdminView(_props: AdminViewProps) {
   const isRestrictedRole = role !== 'ADMIN'
 
   const title = selectedItem?.label || 'Settings'
-  const isQueueManagement = activeItem === 'queue-management'
+  const isQueueManagement = activeItem === 'queue-management' || activeItem === 'asset-types-fields'
   const isRolesPermissionsView = activeItem === 'roles-permissions'
   const isSlaPoliciesView = activeItem === 'sla-policies'
   const isMailConfigurationView = activeItem === 'mail-configuration'
   const isEmailSignatureTemplatesView = activeItem === 'email-signature-templates'
   const isDatabaseConfigurationView = activeItem === 'database-configuration'
+  const isAnnouncementsView = activeItem === 'announcements'
   const isWorkflowAutomationView = activeItem === 'workflow-automation'
   const isAccountSection = activeSection === 'account'
   const isSecuritySection = activeSection === 'security'
@@ -2445,6 +2479,130 @@ export default function AdminView(_props: AdminViewProps) {
     setMailResult('Email signature deleted')
   }
 
+  const toLocalDateTimeInput = (value?: string | null) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  }
+
+  const toIsoFromInput = (value: string) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    return date.toISOString()
+  }
+
+  const resetAnnouncementForm = () => {
+    setEditingAnnouncementId(null)
+    setAnnouncementForm({
+      title: '',
+      body: '',
+      type: 'maintenance',
+      status: 'published',
+      repeatInterval: 'none',
+      publishAt: '',
+      expireAt: '',
+    })
+    setAnnouncementError('')
+  }
+
+  const loadAnnouncements = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      setAnnouncementLoading(true)
+      setAnnouncementError('')
+      const rows = await listAnnouncements()
+      setAnnouncements(Array.isArray(rows) ? rows : [])
+    } catch (error: any) {
+      setAnnouncementError(error?.response?.data?.error || 'Failed to load announcements')
+    } finally {
+      setAnnouncementLoading(false)
+    }
+  }
+
+  const saveAnnouncement = async () => {
+    if (role !== 'ADMIN') return
+    const title = announcementForm.title.trim()
+    const body = announcementForm.body.trim()
+    if (!title || !body) {
+      setAnnouncementError('Title and message are required.')
+      return
+    }
+    setAnnouncementError('')
+    const payload: any = {
+      title,
+      body,
+      type: announcementForm.type,
+      status: announcementForm.status,
+      repeatInterval: announcementForm.repeatInterval,
+      publishAt: announcementForm.publishAt ? toIsoFromInput(announcementForm.publishAt) : undefined,
+      expireAt: announcementForm.expireAt ? toIsoFromInput(announcementForm.expireAt) : undefined,
+    }
+    if (payload.status === 'scheduled' && !payload.publishAt) {
+      setAnnouncementError('Publish time is required for scheduled announcements.')
+      return
+    }
+    if (payload.status === 'published' && !payload.publishAt) {
+      payload.publishAt = new Date().toISOString()
+    }
+    try {
+      setAnnouncementBusy(true)
+      if (editingAnnouncementId) {
+        await updateAnnouncement(editingAnnouncementId, payload)
+      } else {
+        await createAnnouncement(payload)
+      }
+      await loadAnnouncements()
+      resetAnnouncementForm()
+    } catch (error: any) {
+      setAnnouncementError(error?.response?.data?.error || 'Failed to save announcement')
+    } finally {
+      setAnnouncementBusy(false)
+    }
+  }
+
+  const editAnnouncement = (row: Announcement) => {
+    setEditingAnnouncementId(Number(row.id))
+    setAnnouncementForm({
+      title: String(row.title || ''),
+      body: String(row.body || ''),
+      type: row.type || 'maintenance',
+      status: row.status && ['scheduled', 'published'].includes(String(row.status)) ? row.status : 'published',
+      repeatInterval: (row as any)?.repeatInterval || 'none',
+      publishAt: toLocalDateTimeInput(row.publishAt || ''),
+      expireAt: toLocalDateTimeInput(row.expireAt || ''),
+    })
+    setAnnouncementError('')
+  }
+
+  const repostAnnouncementNow = async (id: number) => {
+    try {
+      setAnnouncementBusy(true)
+      await repostAnnouncement(id)
+      await loadAnnouncements()
+    } catch (error: any) {
+      setAnnouncementError(error?.response?.data?.error || 'Failed to repost announcement')
+    } finally {
+      setAnnouncementBusy(false)
+    }
+  }
+
+  const deleteAnnouncementRow = async (id: number) => {
+    const ok = window.confirm('Delete this announcement?')
+    if (!ok) return
+    try {
+      setAnnouncementBusy(true)
+      await deleteAnnouncement(id)
+      await loadAnnouncements()
+    } catch (error: any) {
+      setAnnouncementError(error?.response?.data?.error || 'Failed to delete announcement')
+    } finally {
+      setAnnouncementBusy(false)
+    }
+  }
+
   const openCreatePolicyForm = () => {
     setPolicyFormMode('create')
     setEditingPolicyName(null)
@@ -2862,55 +3020,6 @@ export default function AdminView(_props: AdminViewProps) {
     await refreshTicketQueues(nextConfig.ticketQueues)
     closeTicketQueueModal()
   }
-  const closeAssetCategoryModal = () => {
-    setAssetCategoryModalOpen(false)
-    setAssetCategoryModalMode(null)
-    setAssetCategoryTargetId('')
-    setAssetCategoryLabelInput('')
-    setAssetCategorySubcategoriesInput('')
-    setAssetCategoryVisibilityInput('ADMIN,AGENT')
-    setAssetCategoryModalError('')
-  }
-  const hydrateAssetCategoryForm = (id: string) => {
-    const target = leftPanelConfig.assetCategories.find((c) => c.id === id)
-    if (!target) return
-    setAssetCategoryLabelInput(target.label)
-    setAssetCategorySubcategoriesInput((target.subcategories || []).join(', '))
-    setAssetCategoryVisibilityInput((target.visibilityRoles || []).join(',') || 'ADMIN,AGENT')
-  }
-  const handleAssetCategoryAdd = () => {
-    setAssetCategoryModalMode('add')
-    setAssetCategoryModalOpen(true)
-    setAssetCategoryModalError('')
-    setAssetCategoryTargetId('')
-    setAssetCategoryLabelInput('')
-    setAssetCategorySubcategoriesInput('')
-    setAssetCategoryVisibilityInput('ADMIN,AGENT')
-  }
-  const handleAssetCategoryEdit = () => {
-    setAssetCategoryModalMode('edit')
-    setAssetCategoryModalOpen(true)
-    setAssetCategoryModalError('')
-    if (!leftPanelConfig.assetCategories.length) {
-      setAssetCategoryTargetId('')
-      setAssetCategoryModalError('No asset category available.')
-      return
-    }
-    const first = leftPanelConfig.assetCategories[0]
-    setAssetCategoryTargetId(first.id)
-    hydrateAssetCategoryForm(first.id)
-  }
-  const handleAssetCategoryDelete = () => {
-    setAssetCategoryModalMode('delete')
-    setAssetCategoryModalOpen(true)
-    setAssetCategoryModalError('')
-    if (!leftPanelConfig.assetCategories.length) {
-      setAssetCategoryTargetId('')
-      setAssetCategoryModalError('No asset category available.')
-      return
-    }
-    setAssetCategoryTargetId(leftPanelConfig.assetCategories[0].id)
-  }
 
   const normalizeListInput = (value: string) =>
     value
@@ -2992,49 +3101,315 @@ export default function AdminView(_props: AdminViewProps) {
     setAccountDraft(baseline)
     setAccountError('')
   }
-  const submitAssetCategoryModal = () => {
-    if (!assetCategoryModalMode) return
-    setAssetCategoryModalError('')
-    if (assetCategoryModalMode === 'add') {
-      const label = assetCategoryLabelInput.trim()
-      if (!label) return setAssetCategoryModalError('Category name is required.')
-      const exists = leftPanelConfig.assetCategories.some((c) => c.label.trim().toLowerCase() === label.toLowerCase())
-      if (exists) return setAssetCategoryModalError(`Category "${label}" already exists.`)
-      const subcategories = assetCategorySubcategoriesInput.split(',').map((v) => v.trim()).filter(Boolean)
-      const visibilityRoles = parseVisibilityRoles(assetCategoryVisibilityInput)
-      persistQueueConfig({
-        ...leftPanelConfig,
-        assetCategories: [...leftPanelConfig.assetCategories, { id: `ac-${Date.now()}`, label, subcategories, visibilityRoles }],
-      })
-      closeAssetCategoryModal()
+
+  const closeAssetTypeModal = () => {
+    setAssetTypeModalOpen(false)
+    setAssetTypeModalMode(null)
+    setAssetTypeTargetId('')
+    setAssetTypeNameInput('')
+    setAssetTypeDescriptionInput('')
+    setAssetTypeParentIdInput('')
+    setAssetTypeIconInput('')
+    setAssetTypesError('')
+  }
+
+  const hydrateAssetTypeForm = (id: string) => {
+    const target = assetTypesSettings.types.find((t) => t.id === id)
+    if (!target) return
+    setAssetTypeNameInput(target.label)
+    setAssetTypeDescriptionInput(target.description || '')
+    setAssetTypeParentIdInput(target.parentId || '')
+    setAssetTypeIconInput(target.icon || '')
+  }
+
+  const handleAssetTypeAdd = () => {
+    setAssetTypeModalMode('add')
+    setAssetTypeModalOpen(true)
+    setAssetTypesError('')
+    setAssetTypeTargetId('')
+    setAssetTypeNameInput('')
+    setAssetTypeDescriptionInput('')
+    setAssetTypeParentIdInput('')
+    setAssetTypeIconInput('')
+  }
+
+  const handleAssetTypeEdit = () => {
+    setAssetTypeModalMode('edit')
+    setAssetTypeModalOpen(true)
+    setAssetTypesError('')
+    if (!assetTypesSettings.types.length) {
+      setAssetTypesError('No asset types configured.')
       return
     }
-    if (assetCategoryModalMode === 'edit') {
-      if (!assetCategoryTargetId) return setAssetCategoryModalError('Select a category to edit.')
-      const target = leftPanelConfig.assetCategories.find((c) => c.id === assetCategoryTargetId)
-      if (!target) return setAssetCategoryModalError('Category not found.')
-      const label = assetCategoryLabelInput.trim()
-      if (!label) return setAssetCategoryModalError('Category name is required.')
-      const duplicate = leftPanelConfig.assetCategories.some((c) => c.id !== target.id && c.label.trim().toLowerCase() === label.toLowerCase())
-      if (duplicate) return setAssetCategoryModalError(`Category "${label}" already exists.`)
-      const subcategories = assetCategorySubcategoriesInput.split(',').map((v) => v.trim()).filter(Boolean)
-      const visibilityRoles = parseVisibilityRoles(assetCategoryVisibilityInput)
-      persistQueueConfig({
-        ...leftPanelConfig,
-        assetCategories: leftPanelConfig.assetCategories.map((c) =>
-          c.id === target.id ? { ...c, label, subcategories, visibilityRoles } : c),
-      })
-      closeAssetCategoryModal()
+    const first = assetTypesSettings.types[0]
+    setAssetTypeTargetId(first.id)
+    hydrateAssetTypeForm(first.id)
+  }
+
+  const handleAssetTypeDelete = () => {
+    setAssetTypeModalMode('delete')
+    setAssetTypeModalOpen(true)
+    setAssetTypesError('')
+    if (!assetTypesSettings.types.length) {
+      setAssetTypesError('No asset types configured.')
       return
     }
-    if (!assetCategoryTargetId) return setAssetCategoryModalError('Select a category to delete.')
-    const target = leftPanelConfig.assetCategories.find((c) => c.id === assetCategoryTargetId)
-    if (!target) return setAssetCategoryModalError('Category not found.')
-    persistQueueConfig({
-      ...leftPanelConfig,
-      assetCategories: leftPanelConfig.assetCategories.filter((c) => c.id !== target.id),
+    setAssetTypeTargetId(assetTypesSettings.types[0].id)
+  }
+
+  const submitAssetTypeModal = async () => {
+    if (!assetTypeModalMode) return
+    setAssetTypesError('')
+    if (assetTypeModalMode === 'add') {
+      const label = assetTypeNameInput.trim()
+      if (!label) return setAssetTypesError('Asset type name is required.')
+      const exists = assetTypesSettings.types.some((t) => t.label.toLowerCase() === label.toLowerCase())
+      if (exists) return setAssetTypesError(`Asset type "${label}" already exists.`)
+      const nextType: AssetTypeConfig = {
+        id: `at-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        label,
+        description: assetTypeDescriptionInput.trim(),
+        parentId: assetTypeParentIdInput || null,
+        icon: assetTypeIconInput.trim(),
+        fields: [],
+      }
+      await saveAssetTypes({ types: [...assetTypesSettings.types, nextType] })
+      closeAssetTypeModal()
+      return
+    }
+    if (assetTypeModalMode === 'edit') {
+      if (!assetTypeTargetId) return setAssetTypesError('Select a type to edit.')
+      const target = assetTypesSettings.types.find((t) => t.id === assetTypeTargetId)
+      if (!target) return setAssetTypesError('Asset type not found.')
+      const label = assetTypeNameInput.trim()
+      if (!label) return setAssetTypesError('Asset type name is required.')
+      const duplicate = assetTypesSettings.types.some((t) => t.id !== target.id && t.label.toLowerCase() === label.toLowerCase())
+      if (duplicate) return setAssetTypesError(`Asset type "${label}" already exists.`)
+      const nextTypes = assetTypesSettings.types.map((t) =>
+        t.id === target.id
+          ? { ...t, label, description: assetTypeDescriptionInput.trim(), parentId: assetTypeParentIdInput || null, icon: assetTypeIconInput.trim() }
+          : t
+      )
+      await saveAssetTypes({ types: nextTypes })
+      closeAssetTypeModal()
+      return
+    }
+    if (!assetTypeTargetId) return setAssetTypesError('Select a type to delete.')
+    const target = assetTypesSettings.types.find((t) => t.id === assetTypeTargetId)
+    if (!target) return setAssetTypesError('Asset type not found.')
+    const hasChildren = assetTypesSettings.types.some((t) => t.parentId === target.id)
+    if (hasChildren) return setAssetTypesError('Delete child types before removing this parent.')
+    const nextTypes = assetTypesSettings.types.filter((t) => t.id !== target.id)
+    await saveAssetTypes({ types: nextTypes })
+    closeAssetTypeModal()
+  }
+
+  const closeAssetFieldModal = () => {
+    setAssetFieldModalOpen(false)
+    setAssetFieldModalMode(null)
+    setAssetFieldTargetId('')
+    setAssetFieldTypeTargetId('')
+    setAssetFieldLabelInput('')
+    setAssetFieldTypeInput('text')
+    setAssetFieldOptionsInput('')
+    setAssetFieldRequiredInput(false)
+    setAssetTypesError('')
+  }
+
+  const handleAddAssetField = (typeId: string) => {
+    setAssetFieldModalMode('add')
+    setAssetFieldModalOpen(true)
+    setAssetFieldTypeTargetId(typeId)
+    setAssetFieldTargetId('')
+    setAssetFieldLabelInput('')
+    setAssetFieldTypeInput('text')
+    setAssetFieldOptionsInput('')
+    setAssetFieldRequiredInput(false)
+  }
+
+  const handleEditAssetField = (typeId: string, fieldId: string) => {
+    const type = assetTypesSettings.types.find((t) => t.id === typeId)
+    const field = type?.fields.find((f) => f.id === fieldId)
+    if (!field) return
+    setAssetFieldModalMode('edit')
+    setAssetFieldModalOpen(true)
+    setAssetFieldTypeTargetId(typeId)
+    setAssetFieldTargetId(fieldId)
+    setAssetFieldLabelInput(field.label)
+    setAssetFieldTypeInput(field.type)
+    setAssetFieldOptionsInput((field.options || []).join(', '))
+    setAssetFieldRequiredInput(Boolean(field.required))
+  }
+
+  const handleDeleteAssetField = (typeId: string, fieldId: string) => {
+    setAssetFieldModalMode('delete')
+    setAssetFieldModalOpen(true)
+    setAssetFieldTypeTargetId(typeId)
+    setAssetFieldTargetId(fieldId)
+  }
+
+  const submitAssetFieldModal = async () => {
+    if (!assetFieldModalMode) return
+    const type = assetTypesSettings.types.find((t) => t.id === assetFieldTypeTargetId)
+    if (!type) return setAssetTypesError('Select a valid asset type.')
+    if (assetFieldModalMode === 'add') {
+      const label = assetFieldLabelInput.trim()
+      if (!label) return setAssetTypesError('Field name is required.')
+      const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `field_${Date.now()}`
+      const exists = type.fields.some((f) => f.key === key || f.label.toLowerCase() === label.toLowerCase())
+      if (exists) return setAssetTypesError('Field already exists for this type.')
+      const nextField: AssetFieldConfig = {
+        id: `af-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        label,
+        key,
+        type: assetFieldTypeInput as AssetFieldConfig['type'],
+        required: assetFieldRequiredInput,
+        options: assetFieldTypeInput === 'select'
+          ? assetFieldOptionsInput.split(',').map((v) => v.trim()).filter(Boolean)
+          : [],
+      }
+      const nextTypes = assetTypesSettings.types.map((t) =>
+        t.id === type.id ? { ...t, fields: [...t.fields, nextField] } : t
+      )
+      await saveAssetTypes({ types: nextTypes })
+      closeAssetFieldModal()
+      return
+    }
+    if (assetFieldModalMode === 'edit') {
+      const label = assetFieldLabelInput.trim()
+      if (!label) return setAssetTypesError('Field name is required.')
+      const key = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `field_${Date.now()}`
+      const duplicate = type.fields.some((f) =>
+        f.id !== assetFieldTargetId &&
+        (f.key === key || f.label.toLowerCase() === label.toLowerCase())
+      )
+      if (duplicate) return setAssetTypesError('Field already exists for this type.')
+      const nextTypes = assetTypesSettings.types.map((t) =>
+        t.id === type.id
+          ? {
+              ...t,
+              fields: t.fields.map((f) =>
+                f.id === assetFieldTargetId
+                  ? {
+                      ...f,
+                      label,
+                      key,
+                      type: assetFieldTypeInput as AssetFieldConfig['type'],
+                      required: assetFieldRequiredInput,
+                      options: assetFieldTypeInput === 'select'
+                        ? assetFieldOptionsInput.split(',').map((v) => v.trim()).filter(Boolean)
+                        : [],
+                    }
+                  : f
+              ),
+            }
+          : t
+      )
+      await saveAssetTypes({ types: nextTypes })
+      closeAssetFieldModal()
+      return
+    }
+    if (assetFieldModalMode === 'delete') {
+      const nextTypes = assetTypesSettings.types.map((t) =>
+        t.id === type.id ? { ...t, fields: t.fields.filter((f) => f.id !== assetFieldTargetId) } : t
+      )
+      await saveAssetTypes({ types: nextTypes })
+      closeAssetFieldModal()
+    }
+  }
+
+  const toggleAssetTypeExpand = (id: string) => {
+    setExpandedAssetTypeIds((prev) => prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id])
+  }
+
+  const renderAssetTypeTree = (parentId: string | null, depth = 0): React.ReactNode[] => {
+    const nodes = assetTypeTree.get(parentId || null) || []
+    return nodes.map((type) => {
+      const children = assetTypeTree.get(type.id) || []
+      const isExpanded = expandedAssetTypeIds.includes(type.id) || depth === 0
+      return (
+        <div key={type.id} style={{ marginLeft: depth * 18, marginTop: 8 }}>
+          <div className="admin-queue-rule-row" style={{ alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              className="admin-settings-ghost"
+              style={{ padding: '2px 6px', minWidth: 26 }}
+              onClick={() => toggleAssetTypeExpand(type.id)}
+              disabled={children.length === 0}
+            >
+              {children.length === 0 ? '•' : (isExpanded ? '−' : '+')}
+            </button>
+            <span style={{ display: 'inline-flex', width: 20, height: 20, alignItems: 'center', justifyContent: 'center', color: '#2563eb' }}>
+              {renderAssetTypeIcon({ label: type.label, icon: type.icon, size: 'sm' })}
+            </span>
+            <span style={{ fontWeight: 600 }}>{type.label}</span>
+            {type.description ? <small style={{ color: '#64748b' }}>{type.description}</small> : null}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <button className="admin-settings-ghost" type="button" onClick={() => handleAddAssetField(type.id)}>Add Field</button>
+              <button className="admin-settings-ghost" type="button" onClick={() => {
+                setAssetTypeTargetId(type.id)
+                setAssetTypeModalMode('edit')
+                setAssetTypeModalOpen(true)
+                hydrateAssetTypeForm(type.id)
+              }}>Edit</button>
+              <button className="admin-settings-ghost" type="button" onClick={() => {
+                setAssetTypeTargetId(type.id)
+                setAssetTypeModalMode('delete')
+                setAssetTypeModalOpen(true)
+              }}>Delete</button>
+            </div>
+          </div>
+          {type.fields.length > 0 && (
+            <div style={{ marginLeft: 36, marginTop: 6 }}>
+              {type.fields.map((field) => (
+                <div key={field.id} className="admin-queue-rule-row" style={{ paddingLeft: 0 }}>
+                  <span>{field.label}</span>
+                  <small>
+                    {field.type}{field.required ? ' • required' : ''}{field.options?.length ? ` • ${field.options.join(', ')}` : ''}
+                  </small>
+                  <button className="admin-settings-ghost" type="button" onClick={() => handleEditAssetField(type.id, field.id)}>Edit</button>
+                  <button className="admin-settings-ghost" type="button" onClick={() => handleDeleteAssetField(type.id, field.id)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {children.length > 0 && isExpanded ? (
+            <div style={{ marginTop: 6 }}>
+              {renderAssetTypeTree(type.id, depth + 1)}
+            </div>
+          ) : null}
+        </div>
+      )
     })
-    closeAssetCategoryModal()
+  }
+
+  const loadAssetTypes = async () => {
+    try {
+      setAssetTypesLoading(true)
+      const data = await getAssetTypesSettings()
+      setAssetTypesSettings(data)
+      if (!assetTypeTargetId && data.types.length > 0) {
+        setAssetTypeTargetId(data.types[0].id)
+      }
+    } catch (error: any) {
+      setAssetTypesError(error?.response?.data?.error || error?.message || 'Failed to load asset types')
+    } finally {
+      setAssetTypesLoading(false)
+    }
+  }
+
+  const saveAssetTypes = async (next: AssetTypesSettings) => {
+    try {
+      setAssetTypesLoading(true)
+      const saved = await updateAssetTypesSettings(next)
+      setAssetTypesSettings(saved)
+      setAssetTypesError('')
+      window.dispatchEvent(new CustomEvent('asset-types-updated'))
+    } catch (error: any) {
+      setAssetTypesError(error?.response?.data?.error || error?.message || 'Failed to save asset types')
+    } finally {
+      setAssetTypesLoading(false)
+    }
   }
 
   const addActivity = (message: string) => {
@@ -3094,6 +3469,39 @@ export default function AdminView(_props: AdminViewProps) {
     assets: 'Asset Left Panel',
     suppliers: 'Supplier Left Panel',
   }
+  const assetFieldTypeOptions = ['text', 'number', 'date', 'select', 'textarea', 'boolean']
+  const assetTypeIconOptions = [
+    { value: '', label: 'Auto' },
+    { value: 'laptop', label: 'Laptop' },
+    { value: 'server', label: 'Server' },
+    { value: 'cloud', label: 'Cloud' },
+    { value: 'network', label: 'Network' },
+    { value: 'database', label: 'Database' },
+    { value: 'document', label: 'Document' },
+    { value: 'service', label: 'Service' },
+    { value: 'device', label: 'Device' },
+  ]
+  const assetTypesById = useMemo(() => {
+    const map = new Map<string, AssetTypeConfig>()
+    assetTypesSettings.types.forEach((type) => map.set(type.id, type))
+    return map
+  }, [assetTypesSettings.types])
+  const getAssetTypePath = (type: AssetTypeConfig): string => {
+    const parent = type.parentId ? assetTypesById.get(type.parentId) : null
+    return parent ? `${getAssetTypePath(parent)} / ${type.label}` : type.label
+  }
+  const assetTypeTree = useMemo(() => {
+    const byParent = new Map<string | null, AssetTypeConfig[]>()
+    assetTypesSettings.types.forEach((type) => {
+      const key = type.parentId || null
+      if (!byParent.has(key)) byParent.set(key, [])
+      byParent.get(key)!.push(type)
+    })
+    for (const list of byParent.values()) {
+      list.sort((a, b) => a.label.localeCompare(b.label))
+    }
+    return byParent
+  }, [assetTypesSettings.types])
   const normalizePanelInput = (input: string): QueuePanelKey | null => {
     const key = String(input || '').trim().toLowerCase()
     if (!key) return null
@@ -3216,6 +3624,10 @@ export default function AdminView(_props: AdminViewProps) {
   }, [hasChanges])
 
   useEffect(() => {
+    loadAssetTypes()
+  }, [])
+
+  useEffect(() => {
     const expandedCls = 'admin-queue-expanded'
     const collapsedCls = 'admin-queue-collapsed'
     if (!sidebarCollapsed) {
@@ -3313,6 +3725,33 @@ export default function AdminView(_props: AdminViewProps) {
       </svg>
     )
   }
+  const renderAdminSectionToolbar = (titleText: string, actions?: React.ReactNode) => (
+    <div className="admin-tool-bar">
+      <div className="tool-bar-left">
+        {sidebarCollapsed && (
+          <button
+            className="table-icon-btn"
+            onClick={() => setSidebarCollapsed(false)}
+            title="Show Menu"
+            aria-label="Show menu"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="4" y1="7" x2="20" y2="7" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="17" x2="20" y2="17" />
+            </svg>
+          </button>
+        )}
+        <div className="tool-bar-title">
+          <div className="tool-bar-title-text">{titleText}</div>
+        </div>
+      </div>
+      <div className="tool-bar-right">
+        {actions}
+      </div>
+    </div>
+  )
+
   const adminLeftPanel = (!sidebarCollapsed && queueRoot) ? createPortal(
     <aside className="admin-left-panel">
       <div className="queue-header">
@@ -3329,7 +3768,8 @@ export default function AdminView(_props: AdminViewProps) {
         </div>
         <button className="queue-collapse-btn" title="Hide Menu" onClick={() => setSidebarCollapsed(true)}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="15 18 9 12 15 6" />
+            <polyline points="17 6 12 12 17 18" />
+            <polyline points="11 6 6 12 11 18" />
           </svg>
         </button>
       </div>
@@ -3381,31 +3821,9 @@ export default function AdminView(_props: AdminViewProps) {
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div style={{ padding: 16 }}>
-            <div className="rbac-top-action-row">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  className="table-icon-btn"
-                  onClick={() => setSidebarCollapsed((v) => !v)}
-                  title={sidebarCollapsed ? 'Show Menu' : 'Hide Menu'}
-                  aria-label={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                    {sidebarCollapsed ? (
-                      <>
-                        <polyline points="13 18 7 12 13 6" />
-                        <polyline points="19 18 13 12 19 6" />
-                      </>
-                    ) : (
-                      <>
-                        <polyline points="11 18 17 12 11 6" />
-                        <polyline points="5 18 11 12 5 6" />
-                      </>
-                    )}
-                  </svg>
-                </button>
-                <div className="rbac-top-action-title">SLA Policies</div>
-              </div>
-              <div className="rbac-top-action-actions">
+            {renderAdminSectionToolbar(
+              'SLA Policies',
+              <>
                 {!showPolicyForm && (
                   <button className="admin-settings-ghost" onClick={loadSlaRows} disabled={slaBusy}>
                     {slaBusy ? 'Loading...' : 'Reload'}
@@ -3417,8 +3835,8 @@ export default function AdminView(_props: AdminViewProps) {
                     <span>Add Policy</span>
                   </button>
                 ) : <span />}
-              </div>
-            </div>
+              </>
+            )}
             {role !== 'ADMIN' ? (
               <p>Only administrators can manage SLA policies.</p>
             ) : (
@@ -3594,7 +4012,7 @@ export default function AdminView(_props: AdminViewProps) {
                     <div className="sla-policy-card">
                       <div className="sla-policy-card-head">
                         <div>
-                          <h4>Apply this to:</h4>
+                          <h4>Apply policy when</h4>
                           <p>Choose when this SLA policy must be enforced</p>
                         </div>
                       </div>
@@ -3624,6 +4042,7 @@ export default function AdminView(_props: AdminViewProps) {
                         ) : (
                           policyConditions.map((condition, index) => (
                             <div key={`sla-cond-${index}`} className="sla-condition-row">
+                              <span className="sla-chip">Condition {index + 1}</span>
                               <select
                                 value={condition.field}
                                 onChange={(e) => updateConditionRow(index, 'field', e.target.value)}
@@ -3663,17 +4082,18 @@ export default function AdminView(_props: AdminViewProps) {
                     <div className="sla-policy-card">
                       <div className="sla-policy-card-head">
                         <div>
-                          <h4>What happens when the due date approaches / this SLA is violated?</h4>
+                          <h4>Escalations</h4>
                         </div>
                       </div>
                       <div className="sla-escalation-section">
-                        <div className="sla-escalation-title">Set Escalation Rule when a ticket is not responded to on time</div>
+                        <div className="sla-escalation-title">Response breach actions</div>
                         {policyResponseRules.length === 0 ? (
                           <div className="sla-empty">No escalation rules added.</div>
                         ) : (
                           policyResponseRules.map((rule, index) => (
                             <div key={`sla-response-${index}`} className="sla-rule-row">
                               <span className="sla-rule-badge">Rule {rule.level}</span>
+                              <span className="sla-chip sla-chip-muted">After</span>
                               <div className="sla-time-input">
                                 <input
                                   type="number"
@@ -3692,6 +4112,7 @@ export default function AdminView(_props: AdminViewProps) {
                                   ))}
                                 </select>
                               </div>
+                              <span className="sla-chip sla-chip-muted">Notify</span>
                               <select
                                 value={rule.notify}
                                 onChange={(e) => updateResponseRule(index, 'notify', e.target.value)}
@@ -3701,6 +4122,7 @@ export default function AdminView(_props: AdminViewProps) {
                                   <option key={channel} value={channel}>{channel}</option>
                                 ))}
                               </select>
+                              <span className="sla-chip sla-chip-muted">Recipients</span>
                               <input
                                 value={rule.recipients}
                                 onChange={(e) => updateResponseRule(index, 'recipients', e.target.value)}
@@ -3718,13 +4140,14 @@ export default function AdminView(_props: AdminViewProps) {
                         </button>
                       </div>
                       <div className="sla-escalation-section">
-                        <div className="sla-escalation-title">Set Escalation Hierarchy when a ticket is not closed on time</div>
+                        <div className="sla-escalation-title">Resolution breach actions</div>
                         {policyResolutionRules.length === 0 ? (
                           <div className="sla-empty">No escalation levels configured.</div>
                         ) : (
                           policyResolutionRules.map((rule, index) => (
                             <div key={`sla-resolution-${index}`} className="sla-rule-row">
                               <span className="sla-rule-badge">Level {rule.level}</span>
+                              <span className="sla-chip sla-chip-muted">After</span>
                               <div className="sla-time-input">
                                 <input
                                   type="number"
@@ -3743,6 +4166,7 @@ export default function AdminView(_props: AdminViewProps) {
                                   ))}
                                 </select>
                               </div>
+                              <span className="sla-chip sla-chip-muted">Notify</span>
                               <select
                                 value={rule.notify}
                                 onChange={(e) => updateResolutionRule(index, 'notify', e.target.value)}
@@ -3752,6 +4176,7 @@ export default function AdminView(_props: AdminViewProps) {
                                   <option key={channel} value={channel}>{channel}</option>
                                 ))}
                               </select>
+                              <span className="sla-chip sla-chip-muted">Recipients</span>
                               <input
                                 value={rule.recipients}
                                 onChange={(e) => updateResolutionRule(index, 'recipients', e.target.value)}
@@ -3931,48 +4356,46 @@ export default function AdminView(_props: AdminViewProps) {
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div className="admin-config-page">
-            <div className="admin-config-head">
-              <h3>Mail Provider, Routing & Automation</h3>
-              <div className="admin-config-actions">
-                {!mailEditing ? (
+            {renderAdminSectionToolbar(
+              'Mail Provider, Routing & Automation',
+              !mailEditing ? (
+                <button
+                  className="admin-settings-primary"
+                  onClick={() => {
+                    mailDraftRef.current = mailForm
+                    mailCompanyDraftRef.current = mailCompanyLink
+                    setMailEditing(true)
+                  }}
+                  disabled={mailBusy || mailLoading}
+                >
+                  Edit
+                </button>
+              ) : (
+                <>
                   <button
-                    className="admin-settings-primary"
+                    className="admin-settings-ghost"
                     onClick={() => {
-                      mailDraftRef.current = mailForm
-                      mailCompanyDraftRef.current = mailCompanyLink
-                      setMailEditing(true)
+                      if (mailDraftRef.current) setMailForm(mailDraftRef.current)
+                      setMailCompanyLink(mailCompanyDraftRef.current || '')
+                      setMailEditing(false)
                     }}
                     disabled={mailBusy || mailLoading}
                   >
-                    Edit
+                    X
                   </button>
-                ) : (
-                  <>
-                    <button
-                      className="admin-settings-ghost"
-                      onClick={() => {
-                        if (mailDraftRef.current) setMailForm(mailDraftRef.current)
-                        setMailCompanyLink(mailCompanyDraftRef.current || '')
-                        setMailEditing(false)
-                      }}
-                      disabled={mailBusy || mailLoading}
-                    >
-                      X
-                    </button>
-                    <button
-                      className="admin-settings-primary"
-                      onClick={async () => {
-                        await saveMailConfiguration()
-                        setMailEditing(false)
-                      }}
-                      disabled={mailBusy || mailLoading}
-                    >
-                      {mailBusy ? 'Working...' : 'Save'}
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
+                  <button
+                    className="admin-settings-primary"
+                    onClick={async () => {
+                      await saveMailConfiguration()
+                      setMailEditing(false)
+                    }}
+                    disabled={mailBusy || mailLoading}
+                  >
+                    {mailBusy ? 'Working...' : 'Save'}
+                  </button>
+                </>
+              )
+            )}
             {role !== 'ADMIN' ? (
               <p>Only administrators can manage mail configuration.</p>
             ) : (
@@ -4233,14 +4656,12 @@ export default function AdminView(_props: AdminViewProps) {
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div className="admin-config-page admin-mail-template-page">
-            <div className="admin-config-head">
-              <h3>Email & Signature Templates</h3>
-              <div className="admin-config-actions">
-                <button className="admin-settings-ghost" onClick={loadMailConfiguration} disabled={mailBusy || mailLoading}>
-                  {mailLoading ? 'Loading...' : 'Reload'}
-                </button>
-              </div>
-            </div>
+            {renderAdminSectionToolbar(
+              'Email & Signature Templates',
+              <button className="admin-settings-ghost" onClick={loadMailConfiguration} disabled={mailBusy || mailLoading}>
+                {mailLoading ? 'Loading...' : 'Reload'}
+              </button>
+            )}
             {role !== 'ADMIN' ? (
               <p>Only administrators can manage email templates and signatures.</p>
             ) : (
@@ -4406,17 +4827,17 @@ export default function AdminView(_props: AdminViewProps) {
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div className="admin-config-page">
-            <div className="admin-config-head">
-              <h3>Database Configuration</h3>
-              <div className="admin-config-actions">
+            {renderAdminSectionToolbar(
+              'Database Configuration',
+              <>
                 <button className="admin-settings-ghost" onClick={loadDatabaseConfiguration} disabled={dbBusy || dbLoading}>
                   {dbLoading ? 'Loading...' : 'Reload'}
                 </button>
                 <button className="admin-settings-primary" onClick={runDatabaseTest} disabled={dbBusy || dbLoading}>
                   {dbBusy ? 'Testing...' : 'Test Connection'}
                 </button>
-              </div>
-            </div>
+              </>
+            )}
             {role !== 'ADMIN' ? (
               <p>Only administrators can manage database configuration.</p>
             ) : (
@@ -4479,9 +4900,9 @@ export default function AdminView(_props: AdminViewProps) {
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
           <div className="admin-config-page">
-            <div className="admin-config-head">
-              <h3>Types and Workflow</h3>
-              <div className="admin-config-actions">
+            {renderAdminSectionToolbar(
+              'Types and Workflow',
+              <>
                 {!workflowEditMode && selectedWorkflow ? (
                   <button className="admin-settings-primary" onClick={() => setWorkflowEditMode(true)}>Edit</button>
                 ) : null}
@@ -4491,8 +4912,8 @@ export default function AdminView(_props: AdminViewProps) {
                     <button className="admin-settings-primary" onClick={() => { saveWorkflowBlueprints(); setWorkflowEditMode(false) }}>Save</button>
                   </>
                 ) : null}
-              </div>
-            </div>
+              </>
+            )}
             {workflowSavedAt ? <div className="admin-config-result">Saved at {workflowSavedAt}</div> : null}
             {role !== 'ADMIN' ? (
               <p>Only administrators can manage workflow automation.</p>
@@ -4663,51 +5084,31 @@ export default function AdminView(_props: AdminViewProps) {
     <>
       {adminLeftPanel}
       <div style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-        <div className={isQueueManagement ? '' : 'admin-settings-page'}>
-          <section className={isQueueManagement ? '' : 'admin-settings-main'}>
-            {isQueueManagement && (
-              <div className="queue-panel-toolbar">
-                <div className="queue-panel-toolbar-left">
-                  <h3 style={{ margin: 0 }}>Queue & Panel management</h3>
-                </div>
-                <div className="queue-panel-toolbar-actions">
+        <div className="admin-settings-page">
+          <section className="admin-settings-main">
+            <div className="admin-tool-bar">
+              <div className="tool-bar-left">
+                {sidebarCollapsed && (
                   <button
                     className="table-icon-btn"
-                    onClick={() => setSidebarCollapsed((v) => !v)}
-                    title={sidebarCollapsed ? 'Show Menu' : 'Hide Menu'}
-                    aria-label={sidebarCollapsed ? 'Show menu' : 'Hide menu'}
+                    onClick={() => setSidebarCollapsed(false)}
+                    title="Show Menu"
+                    aria-label="Show menu"
                   >
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                      {sidebarCollapsed ? (
-                        <>
-                          <polyline points="13 18 7 12 13 6" />
-                          <polyline points="19 18 13 12 19 6" />
-                        </>
-                      ) : (
-                        <>
-                          <polyline points="11 18 17 12 11 6" />
-                          <polyline points="5 18 11 12 5 6" />
-                        </>
-                      )}
+                      <line x1="4" y1="7" x2="20" y2="7" />
+                      <line x1="4" y1="12" x2="20" y2="12" />
+                      <line x1="4" y1="17" x2="20" y2="17" />
                     </svg>
                   </button>
+                )}
+                <div className="tool-bar-title">
+                  <div className="tool-bar-title-text">{isAccountSection ? 'Accounts' : isSecuritySection ? 'Security' : title}</div>
                 </div>
               </div>
-            )}
-            {!isQueueManagement && (
-              <div className="admin-settings-main-head">
-                <div>
-                  <h2>{isAccountSection ? 'Accounts' : isSecuritySection ? 'Security' : title}</h2>
-                  {isAccountSection ? (
-                    <p>Account profile, ownership, and export controls.</p>
-                  ) : isSecuritySection ? (
-                    <p>Security and access controls for your workspace.</p>
-                  ) : (
-                    <p>{selectedSection?.label || 'Configuration'} configuration workspace</p>
-                  )}
-                </div>
+              <div className="tool-bar-right">
                 {isAccountSection && (
-                  <div className="admin-settings-footer-actions">
+                  <>
                     <button
                       className="admin-settings-ghost"
                       onClick={handleAccountCancel}
@@ -4722,10 +5123,10 @@ export default function AdminView(_props: AdminViewProps) {
                     >
                       Update
                     </button>
-                  </div>
+                  </>
                 )}
                 {isSecuritySection && (
-                  <div className="admin-settings-footer-actions">
+                  <>
                     <button
                       className="admin-settings-ghost"
                       onClick={handleSecurityCancel}
@@ -4740,58 +5141,14 @@ export default function AdminView(_props: AdminViewProps) {
                     >
                       Save
                     </button>
-                  </div>
+                  </>
                 )}
+                {/* collapse/expand moved to secondary panel header */}
               </div>
-            )}
-            {!isQueueManagement && !isAccountSection && !isSecuritySection && (
-              <div className="admin-settings-toolbar">
-                <div className="admin-settings-inline-search">
-                  <input
-                    placeholder="Search fields..."
-                    value={settingsQuery}
-                    onChange={(e) => setSettingsQuery(e.target.value)}
-                  />
-                </div>
-                <div className="admin-settings-toolbar-actions">
-                  <button className={`admin-settings-ghost${recentOnly ? ' active' : ''}`} onClick={() => setRecentOnly((v) => !v)}>
-                    {recentOnly ? 'Recent Changes: ON' : 'Recent Changes'}
-                  </button>
-                  <button className="admin-settings-ghost" onClick={handleImport}>Import</button>
-                  <button className="admin-settings-ghost" onClick={handleExport}>Export</button>
-                  <button className="admin-settings-ghost" onClick={() => setShowConfirmReset(true)}>Reset</button>
-                  <button className="admin-settings-danger" onClick={() => setShowConfirmRevoke(true)}>Revoke Keys</button>
-                </div>
-              </div>
-            )}
+            </div>
+            {/* removed admin settings action toolbar */}
             {isAccountSection && (
-              <div className="admin-settings-grid" style={{ gridTemplateColumns: '320px minmax(0, 1fr)' }}>
-                <article className="admin-settings-card" style={{ alignSelf: 'start' }}>
-                  <h3>Account Name</h3>
-                  <label className="admin-field-row">
-                    <input
-                      value={accountDraft.accountName}
-                      onChange={(e) => updateAccountDraft({ accountName: e.target.value })}
-                      placeholder="Account name"
-                    />
-                  </label>
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Active Since</div>
-                    <div style={{ color: '#475569' }}>{accountDraft.activeSince || '-'}</div>
-                  </div>
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Assets</div>
-                    <div style={{ color: '#475569' }}>{accountDraft.assetsCount}</div>
-                  </div>
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Agents</div>
-                    <div style={{ color: '#475569' }}>{accountDraft.agentsCount}</div>
-                  </div>
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>Version</div>
-                    <div style={{ color: '#475569' }}>{accountDraft.version || '-'}</div>
-                  </div>
-                </article>
+              <div className="admin-settings-grid" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
                 <article className="admin-settings-card">
                   {accountError && <div className="error-message">{accountError}</div>}
                   {accountLoading ? (
@@ -4816,6 +5173,14 @@ export default function AdminView(_props: AdminViewProps) {
                         <>
                           <h3 style={{ marginTop: 16 }}>Primary contact details</h3>
                           <p>Used for all account-related communications.</p>
+                          <label className="admin-field-row">
+                            <span>Account Name</span>
+                            <input
+                              value={accountDraft.accountName}
+                              onChange={(e) => updateAccountDraft({ accountName: e.target.value })}
+                              placeholder="Account name"
+                            />
+                          </label>
                           <label className="admin-field-row">
                             <span>First Name</span>
                             <input
@@ -5160,7 +5525,126 @@ export default function AdminView(_props: AdminViewProps) {
               </div>
             )}
             {!isAccountSection && !isSecuritySection && (
-              <div className="admin-settings-grid">
+              isAnnouncementsView ? (
+                <div className="admin-settings-grid">
+                  <article className="admin-settings-card">
+                    <h3>{editingAnnouncementId ? 'Edit Announcement' : 'New Announcement'}</h3>
+                    <p>Post maintenance updates or general announcements with scheduling.</p>
+                    {announcementError ? <div className="error-message">{announcementError}</div> : null}
+                    <label className="admin-field-row">
+                      <span>Title</span>
+                      <input
+                        value={announcementForm.title}
+                        onChange={(e) => setAnnouncementForm((prev) => ({ ...prev, title: e.target.value }))}
+                        placeholder="Maintenance window notification"
+                      />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Type</span>
+                      <select
+                        value={announcementForm.type}
+                        onChange={(e) => setAnnouncementForm((prev) => ({ ...prev, type: e.target.value as any }))}
+                      >
+                        <option value="maintenance">Maintenance</option>
+                        <option value="general">General</option>
+                      </select>
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Status</span>
+                      <select
+                        value={announcementForm.status}
+                        onChange={(e) => setAnnouncementForm((prev) => ({ ...prev, status: e.target.value as any }))}
+                      >
+                        <option value="scheduled">Scheduled</option>
+                        <option value="published">Publish now</option>
+                      </select>
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Repeat</span>
+                      <select
+                        value={announcementForm.repeatInterval}
+                        onChange={(e) => setAnnouncementForm((prev) => ({ ...prev, repeatInterval: e.target.value }))}
+                      >
+                        <option value="none">No repeat</option>
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="on_login">On login</option>
+                      </select>
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Publish at</span>
+                      <input
+                        type="datetime-local"
+                        value={announcementForm.publishAt}
+                        onChange={(e) => setAnnouncementForm((prev) => ({ ...prev, publishAt: e.target.value }))}
+                      />
+                    </label>
+                    <label className="admin-field-row">
+                      <span>Expire at</span>
+                      <input
+                        type="datetime-local"
+                        value={announcementForm.expireAt}
+                        onChange={(e) => setAnnouncementForm((prev) => ({ ...prev, expireAt: e.target.value }))}
+                      />
+                    </label>
+                    <label className="admin-field-row grow">
+                      <span>Message</span>
+                      <textarea
+                        value={announcementForm.body}
+                        onChange={(e) => setAnnouncementForm((prev) => ({ ...prev, body: e.target.value }))}
+                        placeholder="Write announcement details..."
+                        className="announcement-editor"
+                      />
+                    </label>
+                    <div className="admin-config-actions">
+                      <button className="admin-settings-ghost" onClick={resetAnnouncementForm} disabled={announcementBusy}>
+                        Clear
+                      </button>
+                      <button className="admin-settings-primary" onClick={saveAnnouncement} disabled={announcementBusy}>
+                        {announcementBusy ? 'Saving...' : editingAnnouncementId ? 'Update' : 'Publish'}
+                      </button>
+                    </div>
+                  </article>
+                  <article className="admin-settings-card">
+                    <h3>Announcements</h3>
+                    <p>Manage existing announcements and repost if needed.</p>
+                    {announcementLoading ? <div className="panel-empty">Loading announcements...</div> : null}
+                    {!announcementLoading && announcements.length === 0 ? <div className="panel-empty">No announcements yet.</div> : null}
+                    <div className="admin-announcement-list">
+                      {announcements.map((row) => (
+                        <div key={row.id} className="admin-announcement-row">
+                          <div>
+                            <div className="admin-announcement-title">{row.title}</div>
+                            <div className="admin-announcement-meta">
+                              <span className="admin-pill">{row.type}</span>
+                              <span className="admin-pill">{row.status}</span>
+                              {(row as any)?.repeatInterval && (row as any).repeatInterval !== 'none' ? (
+                                <span>Repeat: {String((row as any).repeatInterval).replace('_', ' ')}</span>
+                              ) : null}
+                              {row.publishAt ? <span>Publish: {toLocalDateTimeInput(row.publishAt)}</span> : null}
+                              {row.expireAt ? <span>Expire: {toLocalDateTimeInput(row.expireAt)}</span> : null}
+                            </div>
+                            <div className="admin-announcement-body">{row.body}</div>
+                          </div>
+                          <div className="admin-announcement-actions">
+                            <button className="admin-settings-ghost" onClick={() => editAnnouncement(row)} disabled={announcementBusy}>
+                              Edit
+                            </button>
+                            <button className="admin-settings-ghost" onClick={() => repostAnnouncementNow(Number(row.id))} disabled={announcementBusy}>
+                              Repost
+                            </button>
+                            <button className="admin-settings-danger" onClick={() => deleteAnnouncementRow(Number(row.id))} disabled={announcementBusy}>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                </div>
+              ) : (
+                <div className="admin-settings-grid">
               {topicPanels.length > 0 ? topicPanels.map((panel) => (
                 <article key={panel.id} className="admin-settings-card">
                   <h3>{panel.title}</h3>
@@ -5169,21 +5653,7 @@ export default function AdminView(_props: AdminViewProps) {
                 </article>
               )) : (
                 <article className="admin-settings-card queue-panel-card">
-                  <div className="queue-panel-tabs">
-                    <button
-                      className={`queue-panel-tab${queueSettingsView === 'ticket' ? ' active' : ''}`}
-                      onClick={() => setQueueSettingsView('ticket')}
-                    >
-                      Ticket
-                    </button>
-                    <button
-                      className={`queue-panel-tab${queueSettingsView === 'asset' ? ' active' : ''}`}
-                      onClick={() => setQueueSettingsView('asset')}
-                    >
-                      Asset
-                    </button>
-                  </div>
-                  {queueSettingsView === 'ticket' ? (
+                  {activeItem === 'queue-management' ? (
                     <>
                       <h3 style={{ marginTop: 0 }}>Ticket Team Queues</h3>
                       <p>Create/edit/delete queues and manage visibility scope.</p>
@@ -5284,12 +5754,12 @@ export default function AdminView(_props: AdminViewProps) {
                           })
                           .map((queue) => {
                           const queueId = queue.queueId ?? Number(queue.id)
-                          const queueIdLabel = Number.isFinite(queueId) && queueId > 0 ? ` (ID ${queueId})` : ''
+                          const queueIdLabel = Number.isFinite(queueId) && queueId > 0 ? queueId : '-'
                           return (
                             <div key={`${queue.label}-${queueIdLabel}`} className="admin-queue-rule-row">
-                              <span>{queue.label}{queueIdLabel}</span>
+                              <span>{queue.label}</span>
                               <small>
-                                Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
+                                ID: {queueIdLabel} | Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
                               </small>
                             </div>
                           )
@@ -5298,101 +5768,169 @@ export default function AdminView(_props: AdminViewProps) {
                     </>
                   ) : (
                     <>
-                      <h3 style={{ marginTop: 0 }}>Asset Categories & Subcategories</h3>
-                      <p>Maintain category tree like Hardware &gt; Laptop without hardcoding.</p>
-                      <div className="admin-settings-toolbar-actions">
-                        <button className="admin-settings-ghost" onClick={handleAssetCategoryAdd}>Add Category</button>
-                        <button className="admin-settings-ghost" onClick={handleAssetCategoryEdit}>Edit Category</button>
-                        <button className="admin-settings-ghost" onClick={handleAssetCategoryDelete}>Delete Category</button>
-                      </div>
-                      {assetCategoryModalOpen && assetCategoryModalMode && (
-                        <div style={{ marginTop: 10, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, background: '#fffafa' }}>
+                      {assetTypeModalOpen && assetTypeModalMode && (
+                        <div style={{ marginTop: 16, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, background: '#fffafa' }}>
                           <h4 style={{ margin: 0 }}>
-                            {assetCategoryModalMode === 'add' ? 'Add Asset Category' : assetCategoryModalMode === 'edit' ? 'Edit Asset Category' : 'Delete Asset Category'}
+                            {assetTypeModalMode === 'add' ? 'Add Asset Type' : assetTypeModalMode === 'edit' ? 'Edit Asset Type' : 'Delete Asset Type'}
                           </h4>
-                          {assetCategoryModalMode !== 'add' && (
+                          {assetTypeModalMode !== 'add' && (
                             <label className="admin-field-row" style={{ marginTop: 10 }}>
-                              <span>Category</span>
+                              <span>Asset type</span>
                               <select
-                                value={assetCategoryTargetId}
+                                value={assetTypeTargetId}
                                 onChange={(e) => {
                                   const nextId = e.target.value
-                                  setAssetCategoryTargetId(nextId)
-                                  if (assetCategoryModalMode === 'edit') hydrateAssetCategoryForm(nextId)
+                                  setAssetTypeTargetId(nextId)
+                                  if (assetTypeModalMode === 'edit') hydrateAssetTypeForm(nextId)
                                 }}
                               >
-                                {leftPanelConfig.assetCategories.map((category) => (
-                                  <option key={category.id} value={category.id}>{category.label}</option>
+                                {assetTypesSettings.types.map((type) => (
+                                  <option key={type.id} value={type.id}>{getAssetTypePath(type)}</option>
                                 ))}
                               </select>
                             </label>
                           )}
-                          {assetCategoryModalMode !== 'delete' && (
+                          {assetTypeModalMode !== 'delete' && (
                             <>
                               <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Main category name</span>
+                                <span>Name</span>
                                 <input
-                                  value={assetCategoryLabelInput}
-                                  onChange={(e) => setAssetCategoryLabelInput(e.target.value)}
+                                  value={assetTypeNameInput}
+                                  onChange={(e) => setAssetTypeNameInput(e.target.value)}
                                   placeholder="Hardware"
                                 />
                               </label>
                               <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Subcategories (comma separated)</span>
+                                <span>Description</span>
                                 <input
-                                  value={assetCategorySubcategoriesInput}
-                                  onChange={(e) => setAssetCategorySubcategoriesInput(e.target.value)}
-                                  placeholder="Laptop, Workstation, Mobile"
+                                  value={assetTypeDescriptionInput}
+                                  onChange={(e) => setAssetTypeDescriptionInput(e.target.value)}
+                                  placeholder="Laptop, server, peripherals"
                                 />
                               </label>
                               <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Visibility roles (comma separated)</span>
-                                <input
-                                  value={assetCategoryVisibilityInput}
-                                  onChange={(e) => setAssetCategoryVisibilityInput(e.target.value)}
-                                  placeholder="ADMIN,AGENT"
-                                />
+                                <span>Parent type</span>
+                                <select
+                                  value={assetTypeParentIdInput}
+                                  onChange={(e) => setAssetTypeParentIdInput(e.target.value)}
+                                >
+                                  <option value="">None</option>
+                                  {assetTypesSettings.types.map((type) => (
+                                    <option key={type.id} value={type.id}>{getAssetTypePath(type)}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Icon</span>
+                                <select value={assetTypeIconInput} onChange={(e) => setAssetTypeIconInput(e.target.value)}>
+                                  {assetTypeIconOptions.map((opt) => (
+                                    <option key={opt.value || 'auto'} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </select>
                               </label>
                             </>
                           )}
-                          {assetCategoryModalMode === 'delete' && (
-                            <div
-                              style={{
-                                marginTop: 10,
-                                border: '1px solid #fecaca',
-                                background: '#fef2f2',
-                                borderRadius: 8,
-                                padding: '10px 12px',
-                              }}
-                            >
+                          {assetTypeModalMode === 'delete' && (
+                            <div style={{ marginTop: 10, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '10px 12px' }}>
                               <div style={{ fontWeight: 700, color: '#991b1b', marginBottom: 4 }}>Danger Zone</div>
                               <p style={{ margin: 0, color: '#7f1d1d' }}>
-                                This action permanently deletes the selected asset category and cannot be undone.
+                                This action permanently deletes the selected asset type and cannot be undone.
                               </p>
                             </div>
                           )}
-                          {assetCategoryModalError ? (
-                            <p style={{ marginTop: 10, color: '#b91c1c' }}>{assetCategoryModalError}</p>
+                          {assetTypesError ? (
+                            <p style={{ marginTop: 10, color: '#b91c1c' }}>{assetTypesError}</p>
                           ) : null}
                           <div className="admin-settings-modal-actions" style={{ marginTop: 10 }}>
-                            <button className="admin-settings-ghost" onClick={closeAssetCategoryModal}>Cancel</button>
-                            <button className="admin-settings-primary" onClick={submitAssetCategoryModal}>
-                              {assetCategoryModalMode === 'delete' ? 'Delete' : 'Save'}
+                            <button className="admin-settings-ghost" onClick={closeAssetTypeModal}>Cancel</button>
+                            <button className="admin-settings-primary" onClick={submitAssetTypeModal}>
+                              {assetTypeModalMode === 'delete' ? 'Delete' : 'Save'}
                             </button>
                           </div>
                         </div>
                       )}
-                      <div className="admin-queue-rules-plain">
-                        {leftPanelConfig.assetCategories.length === 0 ? (
-                          <div className="admin-queue-rule-row"><small>No asset categories configured.</small></div>
-                        ) : leftPanelConfig.assetCategories.map((category) => (
-                          <div key={category.id} className="admin-queue-rule-row">
-                            <span>{category.label}</span>
-                            <small>
-                              {(category.subcategories || []).length ? category.subcategories.join(', ') : 'No subcategory'} | Scope: {(category.visibilityRoles || []).join(', ') || 'ALL'}
-                            </small>
+                      {assetFieldModalOpen && assetFieldModalMode && (
+                        <div style={{ marginTop: 16, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, background: '#fffafa' }}>
+                          <h4 style={{ margin: 0 }}>
+                            {assetFieldModalMode === 'add' ? 'Add Asset Field' : assetFieldModalMode === 'edit' ? 'Edit Asset Field' : 'Delete Asset Field'}
+                          </h4>
+                          {(assetFieldModalMode === 'add' || assetFieldModalMode === 'edit') && (
+                            <>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Field label</span>
+                                <input
+                                  value={assetFieldLabelInput}
+                                  onChange={(e) => setAssetFieldLabelInput(e.target.value)}
+                                  placeholder="Serial Number"
+                                />
+                              </label>
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Field type</span>
+                                <select value={assetFieldTypeInput} onChange={(e) => setAssetFieldTypeInput(e.target.value)}>
+                                  {assetFieldTypeOptions.map((opt) => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              {assetFieldTypeInput === 'select' && (
+                                <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                  <span>Options (comma separated)</span>
+                                  <input
+                                    value={assetFieldOptionsInput}
+                                    onChange={(e) => setAssetFieldOptionsInput(e.target.value)}
+                                    placeholder="Option A, Option B"
+                                  />
+                                </label>
+                              )}
+                              <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                <span>Required</span>
+                                <input
+                                  type="checkbox"
+                                  checked={assetFieldRequiredInput}
+                                  onChange={(e) => setAssetFieldRequiredInput(e.target.checked)}
+                                />
+                              </label>
+                            </>
+                          )}
+                          {assetFieldModalMode === 'delete' && (
+                            <div style={{ marginTop: 10, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 8, padding: '10px 12px' }}>
+                              <div style={{ fontWeight: 700, color: '#991b1b', marginBottom: 4 }}>Danger Zone</div>
+                              <p style={{ margin: 0, color: '#7f1d1d' }}>
+                                This action permanently deletes the selected field.
+                              </p>
+                            </div>
+                          )}
+                          {assetTypesError ? (
+                            <p style={{ marginTop: 10, color: '#b91c1c' }}>{assetTypesError}</p>
+                          ) : null}
+                          <div className="admin-settings-modal-actions" style={{ marginTop: 10 }}>
+                            <button className="admin-settings-ghost" onClick={closeAssetFieldModal}>Cancel</button>
+                            <button className="admin-settings-primary" onClick={submitAssetFieldModal}>
+                              {assetFieldModalMode === 'delete' ? 'Delete' : 'Save'}
+                            </button>
                           </div>
-                        ))}
+                        </div>
+                      )}
+                      <div style={{ marginTop: 24 }}>
+                        <h3 style={{ marginTop: 0 }}>Asset Types & Custom Fields</h3>
+                        <p>Create asset type hierarchy and custom fields without hardcoding.</p>
+                        <div className="admin-settings-toolbar-actions">
+                          <button className="admin-settings-ghost" onClick={handleAssetTypeAdd}>New Asset Type</button>
+                          <button className="admin-settings-ghost" onClick={handleAssetTypeEdit}>Edit Asset Type</button>
+                          <button className="admin-settings-ghost" onClick={handleAssetTypeDelete}>Delete Asset Type</button>
+                        </div>
+                        {assetTypesLoading ? (
+                          <div className="admin-queue-rule-row"><small>Loading asset types...</small></div>
+                        ) : assetTypesSettings.types.length === 0 ? (
+                          <div className="admin-queue-rule-row"><small>No asset types configured.</small></div>
+                        ) : (
+                          <div className="admin-queue-rules-plain">
+                            {renderAssetTypeTree(null, 0)}
+                          </div>
+                        )}
+                        {assetTypesError ? (
+                          <p style={{ marginTop: 10, color: '#b91c1c' }}>{assetTypesError}</p>
+                        ) : null}
                       </div>
                     </>
                   )}
@@ -5422,6 +5960,7 @@ export default function AdminView(_props: AdminViewProps) {
                 </article>
               ) : null}
             </div>
+            )
             )}
           </section>
         </div>
@@ -5468,6 +6007,7 @@ export default function AdminView(_props: AdminViewProps) {
     </>
   )
 }
+
 
 
 

@@ -1,5 +1,7 @@
 import { Request, Response } from 'express'
 import { Pool } from 'pg'
+import fs from 'fs'
+import path from 'path'
 import { query } from '../../db'
 
 type SecuritySettings = {
@@ -76,6 +78,48 @@ type AccountSettings = {
   }
 }
 
+type AssetFieldConfig = {
+  id: string
+  label: string
+  key: string
+  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'boolean'
+  required: boolean
+  options: string[]
+}
+
+type AssetTypeConfig = {
+  id: string
+  label: string
+  description: string
+  parentId: string | null
+  icon: string
+  fields: AssetFieldConfig[]
+}
+
+type AssetTypesSettings = {
+  types: AssetTypeConfig[]
+}
+
+const resolveAppVersion = () => {
+  const envVersion = String(process.env.APP_VERSION || process.env.npm_package_version || '').trim()
+  if (envVersion) return envVersion
+  const tryPaths = [
+    path.resolve(process.cwd(), 'package.json'),
+    path.resolve(process.cwd(), '..', 'package.json'),
+  ]
+  for (const candidate of tryPaths) {
+    try {
+      if (!fs.existsSync(candidate)) continue
+      const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8'))
+      const version = String(parsed?.version || '').trim()
+      if (version) return version
+    } catch {
+      // ignore and continue
+    }
+  }
+  return '1.0.0'
+}
+
 const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   accountName: 'ITSM Workspace',
   currentPlan: 'Standard',
@@ -83,7 +127,7 @@ const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
   assetsCount: 0,
   agentsCount: 0,
   dataCenter: 'US-East',
-  version: '1.0',
+  version: resolveAppVersion(),
   contact: {
     firstName: '',
     lastName: '',
@@ -92,6 +136,10 @@ const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
     invoiceEmail: '',
     invoiceCc: '',
   },
+}
+
+const DEFAULT_ASSET_TYPES_SETTINGS: AssetTypesSettings = {
+  types: [],
 }
 
 function toBool(value: unknown, fallback = false) {
@@ -227,7 +275,7 @@ function normalizeAccountSettings(input: any): AccountSettings {
     assetsCount: Number(raw.assetsCount || 0) || 0,
     agentsCount: Number(raw.agentsCount || 0) || 0,
     dataCenter: String(raw.dataCenter || DEFAULT_ACCOUNT_SETTINGS.dataCenter).trim(),
-    version: String(raw.version || DEFAULT_ACCOUNT_SETTINGS.version).trim(),
+    version: resolveAppVersion(),
     contact: {
       firstName: String(contact.firstName || '').trim(),
       lastName: String(contact.lastName || '').trim(),
@@ -237,6 +285,97 @@ function normalizeAccountSettings(input: any): AccountSettings {
       invoiceCc: String(contact.invoiceCc || '').trim(),
     },
   }
+}
+
+const ASSET_FIELD_TYPES = new Set(['text', 'number', 'date', 'select', 'textarea', 'boolean'])
+
+function slugifyKey(value: string): string {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return normalized || `field_${Date.now()}`
+}
+
+function normalizeAssetField(raw: any, fallbackId?: string): AssetFieldConfig | null {
+  const label = String(raw?.label || raw?.name || '').trim()
+  if (!label) return null
+  const type = ASSET_FIELD_TYPES.has(String(raw?.type || '').toLowerCase())
+    ? String(raw.type).toLowerCase()
+    : 'text'
+  const options = type === 'select'
+    ? normalizeList(raw?.options)
+    : []
+  const key = slugifyKey(raw?.key || label)
+  return {
+    id: String(raw?.id || fallbackId || `af-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    label,
+    key,
+    type: type as AssetFieldConfig['type'],
+    required: toBool(raw?.required, false),
+    options,
+  }
+}
+
+function normalizeAssetType(raw: any): AssetTypeConfig | null {
+  const label = String(raw?.label || raw?.name || '').trim()
+  if (!label) return null
+  const fieldsRaw = Array.isArray(raw?.fields) ? raw.fields : []
+  const fields: AssetFieldConfig[] = []
+  const seenKeys = new Set<string>()
+  for (const field of fieldsRaw) {
+    const normalized = normalizeAssetField(field)
+    if (!normalized) continue
+    let key = normalized.key
+    if (seenKeys.has(key)) {
+      key = `${key}_${fields.length + 1}`
+    }
+    seenKeys.add(key)
+    fields.push({ ...normalized, key })
+  }
+  return {
+    id: String(raw?.id || `at-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+    label,
+    description: String(raw?.description || '').trim(),
+    parentId: raw?.parentId ? String(raw.parentId).trim() : null,
+    icon: String(raw?.icon || '').trim(),
+    fields,
+  }
+}
+
+function normalizeAssetTypesSettings(input: any): AssetTypesSettings {
+  const rawTypes = Array.isArray(input?.types) ? input.types : []
+  const normalized: AssetTypeConfig[] = []
+  const seenLabels = new Set<string>()
+  for (const raw of rawTypes) {
+    const type = normalizeAssetType(raw)
+    if (!type) continue
+    const key = type.label.toLowerCase()
+    if (seenLabels.has(key)) continue
+    seenLabels.add(key)
+    normalized.push(type)
+  }
+  return {
+    types: normalized,
+  }
+}
+
+async function getSystemSetting<T>(key: string): Promise<T | null> {
+  await ensureSystemSettingsTable()
+  const rows = await query<{ value: any }>('SELECT value FROM system_settings WHERE key = $1', [key])
+  return rows[0]?.value ?? null
+}
+
+async function saveSystemSetting(key: string, value: any) {
+  await ensureSystemSettingsTable()
+  await query(
+    `INSERT INTO system_settings (key, value, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (key)
+     DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+    [key, value]
+  )
 }
 
 export async function getDatabaseConfig(_req: Request, res: Response) {
@@ -387,5 +526,25 @@ export async function cancelAccount(_req: Request, res: Response) {
     return res.json({ ok: true })
   } catch (err: any) {
     return res.status(500).json({ error: err.message || 'Failed to request cancellation' })
+  }
+}
+
+export async function getAssetTypesSettings(_req: Request, res: Response) {
+  try {
+    const stored = await getSystemSetting<any>('asset.types')
+    const normalized = stored ? normalizeAssetTypesSettings(stored) : DEFAULT_ASSET_TYPES_SETTINGS
+    return res.json(normalized)
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to load asset types' })
+  }
+}
+
+export async function updateAssetTypesSettings(req: Request, res: Response) {
+  try {
+    const next = normalizeAssetTypesSettings(req.body || {})
+    await saveSystemSetting('asset.types', next)
+    return res.json(next)
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || 'Failed to update asset types' })
   }
 }

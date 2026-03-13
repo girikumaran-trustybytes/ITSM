@@ -1,6 +1,79 @@
 import { query, queryOne } from '../../db'
 
 const DEFAULT_ASSET_CATEGORY = 'Uncategorised'
+let assetSchemaReady = false
+
+async function ensureAssetSchema() {
+  if (assetSchemaReady) return
+  await query(`
+    ALTER TABLE "Asset"
+    ADD COLUMN IF NOT EXISTS "customFields" JSONB NOT NULL DEFAULT '{}'::jsonb
+  `)
+  await query(`
+    ALTER TABLE "Asset"
+    ADD COLUMN IF NOT EXISTS "assetTypeId" TEXT
+  `)
+  await query(`
+    ALTER TABLE "Asset"
+    ADD COLUMN IF NOT EXISTS "displayName" TEXT,
+    ADD COLUMN IF NOT EXISTS "description" TEXT,
+    ADD COLUMN IF NOT EXISTS "impact" TEXT,
+    ADD COLUMN IF NOT EXISTS "usageType" TEXT,
+    ADD COLUMN IF NOT EXISTS "domain" TEXT,
+    ADD COLUMN IF NOT EXISTS "region" TEXT,
+    ADD COLUMN IF NOT EXISTS "availabilityZone" TEXT,
+    ADD COLUMN IF NOT EXISTS "managedByGroup" TEXT,
+    ADD COLUMN IF NOT EXISTS "company" TEXT,
+    ADD COLUMN IF NOT EXISTS "usedBy" TEXT,
+    ADD COLUMN IF NOT EXISTS "managedBy" TEXT,
+    ADD COLUMN IF NOT EXISTS "assignedOn" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "hardwareType" TEXT,
+    ADD COLUMN IF NOT EXISTS "physicalSubtype" TEXT,
+    ADD COLUMN IF NOT EXISTS "virtualSubtype" TEXT,
+    ADD COLUMN IF NOT EXISTS "product" TEXT,
+    ADD COLUMN IF NOT EXISTS "cpuSpeed" TEXT,
+    ADD COLUMN IF NOT EXISTS "cpuCoreCount" TEXT,
+    ADD COLUMN IF NOT EXISTS "osServicePack" TEXT,
+    ADD COLUMN IF NOT EXISTS "uuid" TEXT,
+    ADD COLUMN IF NOT EXISTS "hostname" TEXT,
+    ADD COLUMN IF NOT EXISTS "lastLoginBy" TEXT,
+    ADD COLUMN IF NOT EXISTS "vendor" TEXT,
+    ADD COLUMN IF NOT EXISTS "acquisitionType" TEXT,
+    ADD COLUMN IF NOT EXISTS "rentalProvider" TEXT,
+    ADD COLUMN IF NOT EXISTS "rentalStartDate" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "rentalEndDate" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "rentalMonthlyCost" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "rentalTotalCost" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "maintenanceIncluded" BOOLEAN,
+    ADD COLUMN IF NOT EXISTS "contractNumber" TEXT,
+    ADD COLUMN IF NOT EXISTS "returnCondition" TEXT,
+    ADD COLUMN IF NOT EXISTS "acquisitionDate" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "cost" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "salvageValue" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "depreciationType" TEXT,
+    ADD COLUMN IF NOT EXISTS "warrantyYears" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "warrantyMonths" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "warrantyExpiryAt" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "itemId" TEXT,
+    ADD COLUMN IF NOT EXISTS "itemName" TEXT,
+    ADD COLUMN IF NOT EXISTS "publicAddress" TEXT,
+    ADD COLUMN IF NOT EXISTS "instanceState" TEXT,
+    ADD COLUMN IF NOT EXISTS "instanceType" TEXT,
+    ADD COLUMN IF NOT EXISTS "provider" TEXT,
+    ADD COLUMN IF NOT EXISTS "creationTimestamp" TIMESTAMP
+  `)
+  assetSchemaReady = true
+}
+
+export async function getNextAssetId() {
+  await ensureAssetSchema()
+  const row = await queryOne<{ max: number | null }>(`
+    SELECT COALESCE(MAX(CASE WHEN "assetId" ~ '^[0-9]+$' THEN "assetId"::int END), 0) AS max
+    FROM "Asset"
+  `)
+  const next = (row?.max || 0) + 1
+  return String(next)
+}
 
 function normalizeAssetCategory(value: any) {
   const next = String(value || '').trim()
@@ -85,6 +158,7 @@ export async function listAssets(opts: {
   assignedToId?: number
   assignedUserEmail?: string
 } = {}) {
+  await ensureAssetSchema()
   const page = opts.page ?? 1
   const pageSize = opts.pageSize ?? 20
   const { where, params } = buildAssetWhere(opts)
@@ -111,6 +185,7 @@ export async function listAssets(opts: {
 }
 
 export async function getAssetById(id: number) {
+  await ensureAssetSchema()
   const asset = await queryOne<any>(
     `SELECT a.*, row_to_json(u) AS "assignedTo", row_to_json(p) AS "parentAsset"
      FROM "Asset" a
@@ -157,6 +232,7 @@ export async function getAssetById(id: number) {
 }
 
 export async function createAsset(data: any) {
+  await ensureAssetSchema()
   const normalized = {
     ...data,
     category: normalizeAssetCategory(data?.category),
@@ -167,6 +243,7 @@ export async function createAsset(data: any) {
 }
 
 export async function updateAsset(id: number, data: any) {
+  await ensureAssetSchema()
   const normalized = {
     ...data,
     ...(data?.category !== undefined ? { category: normalizeAssetCategory(data.category) } : {}),

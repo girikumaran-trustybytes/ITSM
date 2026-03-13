@@ -11,6 +11,7 @@ import incidentsRoutes from '../modules/incidents/routes'
 import mailRoutes from '../modules/mail/mail.routes'
 import eventsRoutes from '../modules/events/routes'
 import notificationsRoutes from '../modules/notifications/notifications.routes'
+import announcementsRoutes from '../modules/announcements/announcements.routes'
 import systemRoutes from '../modules/system/system.routes'
 import microservicesRouter from '../microservices'
 import ticketServiceRouter from '../microservices/tickets/router'
@@ -42,6 +43,7 @@ router.use('/incidents', incidentsRoutes)
 router.use('/mail', mailRoutes)
 router.use('/events', eventsRoutes)
 router.use('/notifications', notificationsRoutes)
+router.use('/announcements', announcementsRoutes)
 router.use('/system', systemRoutes)
 
 export default router

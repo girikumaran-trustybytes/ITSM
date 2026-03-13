@@ -40,25 +40,25 @@ function toMessage(item: NotificationRow) {
   const ticketId = String(item.ticketId || item.meta?.ticketId || '')
   const ticketLabel = ticketId ? `Ticket ${ticketId}` : 'Ticket'
 
-  if (entity === 'ticket') {
-    if (action.includes('create')) return { title: `New ticket logged`, sub: ticketLabel }
-    if (action.includes('transition')) return { title: `${ticketLabel} status updated`, sub: `Action: ${item.action}` }
-    if (action.includes('resolve')) return { title: `${ticketLabel} closed`, sub: `Action: ${item.action}` }
-    if (action.includes('delete')) return { title: `${ticketLabel} deleted`, sub: `Action: ${item.action}` }
-    return { title: `${ticketLabel} updated`, sub: `Action: ${item.action}` }
+  if (entity === 'announcement' && action === 'maintenance_announcement') {
+    const title = String(item.meta?.title || 'Maintenance announcement')
+    const body = String(item.meta?.body || '').trim()
+    return { title, sub: body || 'Scheduled maintenance update' }
   }
 
-  return { title: `Maintenance / SLA policy update`, sub: `Action: ${item.action || 'update'}` }
+  if (entity === 'ticket' && action === 'create_ticket') {
+    return { title: `New ticket logged`, sub: ticketLabel }
+  }
+
+  return { title: `Notification`, sub: String(item.action || '').trim() || 'Update' }
 }
 
 function shouldShowNotification(item: NotificationRow) {
   const action = String(item.action || '').toLowerCase()
   const entity = String(item.entity || '').toLowerCase()
-  const isMaintenance = entity === 'sla' || action.includes('maintenance') || action.includes('sla')
-  if (isMaintenance) return true
-  if (entity !== 'ticket') return false
-  if (action.includes('view') || action.includes('list') || action.includes('access_denied') || action.includes('delete')) return false
-  return true
+  if (entity === 'announcement' && action === 'maintenance_announcement') return true
+  if (entity === 'ticket' && action === 'create_ticket') return true
+  return false
 }
 
 export default function NotificationsPanel() {

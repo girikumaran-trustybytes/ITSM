@@ -1,9 +1,10 @@
 import api from './api'
 
 export type AssetPayload = {
-  assetId: string
+  assetId?: string
   name?: string
   assetType: string
+  assetTypeId?: string | null
   category: string
   subcategory?: string | null
   ciType?: string | null
@@ -59,6 +60,7 @@ export type AssetPayload = {
   lastSecurityScan?: string | null
   parentAssetId?: number | null
   notes?: string | null
+  customFields?: Record<string, any>
   linkedTicketIds?: string[]
   changeIds?: number[]
   problemIds?: number[]
@@ -77,6 +79,11 @@ export async function listMyAssets(params: any = {}) {
 
 export async function getAsset(id: number) {
   const res = await api.get(`/assets/${id}`)
+  return res.data
+}
+
+export async function getNextAssetId() {
+  const res = await api.get('/assets/next-id')
   return res.data
 }
 

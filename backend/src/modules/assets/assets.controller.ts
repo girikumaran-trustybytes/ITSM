@@ -16,30 +16,57 @@ function buildAssetData(body: any, req: Request, isUpdate = false) {
   const set = (key: string, value: any) => { if (value !== undefined) data[key] = value }
 
   set('assetId', body.assetId)
-  if (!isUpdate) set('name', body.assetId || body.name || null)
+  if (!isUpdate) {
+    set('name', body.displayName || body.name || body.assetId || null)
+  } else if (body.displayName !== undefined || body.name !== undefined) {
+    set('name', body.displayName || body.name || null)
+  }
+  set('displayName', body.displayName || null)
+  set('description', body.description || null)
   set('assetType', body.assetType)
+  set('assetTypeId', body.assetTypeId || null)
   set('category', String(body.category || '').trim() || DEFAULT_ASSET_CATEGORY)
   set('subcategory', body.subcategory || null)
   set('ciType', body.ciType || null)
+  set('impact', body.impact || null)
+  set('usageType', body.usageType || null)
   set('serial', body.serial || null)
   set('assetTag', body.assetTag || null)
   set('barcode', body.barcode || null)
+  set('domain', body.domain || null)
+  set('region', body.region || null)
+  set('availabilityZone', body.availabilityZone || null)
 
   set('assignedToId', body.assignedToId ? Number(body.assignedToId) : null)
   set('assignedUserEmail', body.assignedUserEmail || null)
   set('department', body.department || null)
   set('location', body.location || null)
   set('site', body.site || null)
+  set('managedByGroup', body.managedByGroup || null)
+  set('company', body.company || null)
+  set('usedBy', body.usedBy || null)
+  set('managedBy', body.managedBy || null)
+  set('assignedOn', parseOptionalDate(body.assignedOn) || null)
   set('costCentre', body.costCentre || null)
   set('manager', body.manager || null)
   set('assetOwner', body.assetOwner || null)
 
   set('manufacturer', body.manufacturer || null)
   set('model', body.model || null)
+  set('hardwareType', body.hardwareType || null)
+  set('physicalSubtype', body.physicalSubtype || null)
+  set('virtualSubtype', body.virtualSubtype || null)
+  set('product', body.product || null)
   set('cpu', body.cpu || null)
   set('ram', body.ram || null)
   set('storage', body.storage || null)
+  set('cpuSpeed', body.cpuSpeed || null)
+  set('cpuCoreCount', body.cpuCoreCount || null)
+  set('osServicePack', body.osServicePack || null)
   set('macAddress', body.macAddress || null)
+  set('uuid', body.uuid || null)
+  set('hostname', body.hostname || null)
+  set('lastLoginBy', body.lastLoginBy || null)
   set('ipAddress', body.ipAddress || null)
   set('biosVersion', body.biosVersion || null)
   set('firmware', body.firmware || null)
@@ -57,12 +84,29 @@ function buildAssetData(body: any, req: Request, isUpdate = false) {
   set('encryption', body.encryption || null)
 
   set('purchaseDate', parseOptionalDate(body.purchaseDate) || null)
-  set('supplier', body.supplier || null)
+  set('supplier', body.supplier || body.vendor || null)
+  set('vendor', body.vendor || null)
+  set('acquisitionType', body.acquisitionType || null)
+  set('rentalProvider', body.rentalProvider || null)
+  set('rentalStartDate', parseOptionalDate(body.rentalStartDate) || null)
+  set('rentalEndDate', parseOptionalDate(body.rentalEndDate) || null)
+  if (body.rentalMonthlyCost !== undefined) data.rentalMonthlyCost = Number(body.rentalMonthlyCost)
+  if (body.rentalTotalCost !== undefined) data.rentalTotalCost = Number(body.rentalTotalCost)
+  if (body.maintenanceIncluded !== undefined) data.maintenanceIncluded = Boolean(body.maintenanceIncluded)
+  set('contractNumber', body.contractNumber || null)
+  set('returnCondition', body.returnCondition || null)
   set('poNumber', body.poNumber || null)
   set('invoiceNumber', body.invoiceNumber || null)
   if (body.purchaseCost !== undefined) data.purchaseCost = Number(body.purchaseCost)
+  if (body.cost !== undefined) data.cost = Number(body.cost)
+  if (body.salvageValue !== undefined) data.salvageValue = Number(body.salvageValue)
+  set('depreciationType', body.depreciationType || null)
+  if (body.warrantyYears !== undefined) data.warrantyYears = Number(body.warrantyYears)
+  if (body.warrantyMonths !== undefined) data.warrantyMonths = Number(body.warrantyMonths)
+  set('acquisitionDate', parseOptionalDate(body.acquisitionDate) || null)
   set('warrantyStart', parseOptionalDate(body.warrantyStart) || null)
   set('warrantyUntil', parseOptionalDate(body.warrantyUntil) || null)
+  set('warrantyExpiryAt', parseOptionalDate(body.warrantyExpiryAt) || null)
   set('amcSupport', body.amcSupport || null)
   set('depreciationEnd', parseOptionalDate(body.depreciationEnd) || null)
 
@@ -81,9 +125,21 @@ function buildAssetData(body: any, req: Request, isUpdate = false) {
   set('complianceStatus', body.complianceStatus || null)
   set('riskLevel', body.riskLevel || null)
   set('lastSecurityScan', parseOptionalDate(body.lastSecurityScan) || null)
+  set('itemId', body.itemId || null)
+  set('itemName', body.itemName || null)
+  set('publicAddress', body.publicAddress || null)
+  set('instanceState', body.instanceState || null)
+  set('instanceType', body.instanceType || null)
+  set('provider', body.provider || null)
+  set('creationTimestamp', parseOptionalDate(body.creationTimestamp) || null)
 
   set('parentAssetId', body.parentAssetId ? Number(body.parentAssetId) : null)
   set('notes', body.notes || null)
+  if (body.customFields !== undefined) {
+    set('customFields', body.customFields || {})
+  } else if (!isUpdate) {
+    set('customFields', {})
+  }
 
   if (!isUpdate) {
     data.createdById = (req as any).user?.id ? Number((req as any).user?.id) : null
@@ -158,6 +214,11 @@ export async function listMine(req: Request, res: Response) {
   res.json({ items: paged, total: filtered.length, page: safePage, pageSize: safeSize })
 }
 
+export async function getNextId(_req: Request, res: Response) {
+  const nextId = await svc.getNextAssetId()
+  res.json({ assetId: nextId })
+}
+
 export async function getOne(req: Request, res: Response) {
   const id = Number(req.params.id)
   if (!id) return res.status(400).json({ error: 'Invalid asset id' })
@@ -181,10 +242,17 @@ export async function create(req: Request, res: Response) {
     assetType,
     status,
   } = body
-  if (!assetId || !assetType || !status) {
-    return res.status(400).json({ error: 'Missing required fields: assetId, assetType, status' })
+  if (!assetType || !status) {
+    return res.status(400).json({ error: 'Missing required fields: assetType, status' })
   }
-  const created = await svc.createAsset(buildAssetData(body, req))
+  if (assetId !== undefined && assetId !== null) {
+    const idText = String(assetId).trim()
+    if (!/^[0-9]+$/.test(idText)) {
+      return res.status(400).json({ error: 'Asset ID must be numeric.' })
+    }
+  }
+  const resolvedId = assetId ? String(assetId).trim() : await svc.getNextAssetId()
+  const created = await svc.createAsset(buildAssetData({ ...body, assetId: resolvedId }, req))
   // link tickets if provided
   if (Array.isArray(body.linkedTicketIds) && body.linkedTicketIds.length > 0) {
     await svc.linkTicketsToAsset(created.id, body.linkedTicketIds)

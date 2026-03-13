@@ -5,6 +5,8 @@ import { deleteAsset, getAsset, updateAsset } from '../modules/assets/services/a
 import { listUsers } from '../modules/users/services/user.service'
 import { createTicket } from '../modules/tickets/services/ticket.service'
 import { useAuth } from '../contexts/AuthContext'
+import { getAssetTypesSettings, type AssetTypesSettings, type AssetTypeConfig } from '../services/asset-types.service'
+import { renderAssetTypeIcon } from '../utils/assetTypeIcons'
 
 export default function AssetDetailView() {
   const { user } = useAuth()
@@ -12,6 +14,7 @@ export default function AssetDetailView() {
   const navigate = useNavigate()
   const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
   const [asset, setAsset] = React.useState<any | null>(null)
+  const [assetTypesSettings, setAssetTypesSettings] = React.useState<AssetTypesSettings>({ types: [] })
   const [loading, setLoading] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [assignBusy, setAssignBusy] = React.useState(false)
@@ -49,6 +52,11 @@ export default function AssetDetailView() {
     return () => document.body.classList.remove('assets-view-active')
   }, [])
 
+  const assetTypesById = React.useMemo(() => {
+    const map = new Map<string, AssetTypeConfig>()
+    assetTypesSettings.types.forEach((type) => map.set(type.id, type))
+    return map
+  }, [assetTypesSettings.types])
   React.useEffect(() => {
     const expandedCls = 'assets-queue-expanded'
     const collapsedCls = 'assets-queue-collapsed'
@@ -102,6 +110,25 @@ export default function AssetDetailView() {
       cancelled = true
     }
   }, [numericId])
+
+  React.useEffect(() => {
+    let cancelled = false
+    const loadTypes = async () => {
+      try {
+        const data = await getAssetTypesSettings()
+        if (!cancelled) setAssetTypesSettings(data)
+      } catch {
+        if (!cancelled) setAssetTypesSettings({ types: [] })
+      }
+    }
+    loadTypes()
+    const handler = () => loadTypes()
+    window.addEventListener('asset-types-updated', handler)
+    return () => {
+      cancelled = true
+      window.removeEventListener('asset-types-updated', handler)
+    }
+  }, [])
 
   React.useEffect(() => {
     if (!showAssignModal) return
@@ -230,6 +257,22 @@ export default function AssetDetailView() {
     const text = String(value).trim()
     return text ? text : '-'
   }
+  const resolveAssetTypeDisplay = () => {
+    const byId = asset?.assetTypeId ? assetTypesById.get(String(asset.assetTypeId)) : null
+    const byLabel = !byId && asset?.assetType
+      ? assetTypesSettings.types.find((t) => t.label.toLowerCase() === String(asset.assetType || '').toLowerCase())
+      : null
+    const type = byId || byLabel
+    if (!type) return formatText(asset?.assetType)
+    let current = type
+    while (current.parentId && assetTypesById.get(current.parentId)) {
+      current = assetTypesById.get(current.parentId) as AssetTypeConfig
+    }
+    const rootLabel = current.label
+    return rootLabel && rootLabel !== type.label ? type.label + ' (' + rootLabel + ')' : type.label
+
+
+  }
   const formatAssignedUser = () => {
     if (asset?.assignedTo) return asset.assignedTo.name || asset.assignedTo.email
     if (asset?.assignedToId) return `User #${asset.assignedToId}`
@@ -240,51 +283,39 @@ export default function AssetDetailView() {
     if (list.length) return list.filter(Boolean).join(', ')
     return formatText(asset?.installedSoftwareText)
   }
-  const formatOwnershipType = () => {
-    const raw = String(asset?.ownershipType || '').trim().toLowerCase()
-    if (raw === 'rental' || raw === 'rent' || raw === 'leased' || raw === 'lease') return 'Rental'
-    if (raw === 'own' || raw === 'owned') return 'Own'
-    const hint = `${asset?.supplier || ''} ${asset?.amcSupport || ''}`.toLowerCase()
-    if (hint.includes('rent') || hint.includes('lease')) return 'Rental'
-    return 'Own'
+  const acquisitionType = String(asset?.acquisitionType || '').trim().toLowerCase()
+  const isRental = acquisitionType === 'rent' || acquisitionType === 'rental' || acquisitionType === 'lease'
+  const acquisitionLabel = acquisitionType ? (isRental ? 'Rent' : 'Purchase') : '-'
+
+  const resolveAssetTypeConfig = (): AssetTypeConfig | null => {
+    const types = assetTypesSettings.types || []
+    if (asset?.assetTypeId) {
+      const match = types.find((t) => t.id === asset.assetTypeId)
+      if (match) return match
+    }
+    const fallback = String(asset?.assetType || asset?.category || '').trim().toLowerCase()
+    return types.find((t) => t.label.toLowerCase() === fallback) || null
   }
 
-  const renderAssetTypeIcon = (type: string) => {
-    const key = String(type || '').trim().toLowerCase()
-    const common = { width: 30, height: 30, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 } as const
-    if (key.includes('server') || key.includes('database')) {
-      return (
-        <svg {...common}>
-          <rect x="4" y="4" width="16" height="6" rx="1.5" />
-          <rect x="4" y="14" width="16" height="6" rx="1.5" />
-          <circle cx="8" cy="7" r="0.8" fill="currentColor" />
-          <circle cx="8" cy="17" r="0.8" fill="currentColor" />
-        </svg>
-      )
-    }
-    if (key.includes('laptop') || key.includes('workstation') || key.includes('hardware')) {
-      return (
-        <svg {...common}>
-          <rect x="5" y="5" width="14" height="10" rx="1.5" />
-          <path d="M3 19h18" />
-        </svg>
-      )
-    }
-    if (key.includes('mobile') || key.includes('tablet')) {
-      return (
-        <svg {...common}>
-          <rect x="8" y="3" width="8" height="18" rx="2" />
-          <circle cx="12" cy="17.5" r="0.8" fill="currentColor" />
-        </svg>
-      )
-    }
-    return (
-      <svg {...common}>
-        <circle cx="12" cy="12" r="8" />
-        <path d="M12 8v8M8 12h8" />
-      </svg>
-    )
+  const resolveAssetIcon = () => {
+    const config = resolveAssetTypeConfig()
+    return renderAssetTypeIcon({ label: asset?.assetType || asset?.category, icon: config?.icon, size: 'lg' })
   }
+
+  const customFieldEntries = React.useMemo(() => {
+    const values = asset?.customFields && typeof asset.customFields === 'object'
+      ? asset.customFields as Record<string, any>
+      : {}
+    const config = resolveAssetTypeConfig()
+    const fields = config?.fields || []
+    if (fields.length === 0) {
+      return Object.entries(values).map(([key, value]) => ({ label: key, value }))
+    }
+    return fields.map((field) => ({
+      label: field.label,
+      value: values[field.id],
+    }))
+  }, [asset, assetTypesSettings.types])
 
   const assetLeftPanel = (!leftPanelCollapsed && queueRoot)
     ? createPortal(
@@ -330,7 +361,7 @@ export default function AssetDetailView() {
         {!loading && asset ? (
           <section className="asset-detail-surface">
           <div className="asset-detail-head">
-            <div className="asset-card-icon">{renderAssetTypeIcon(asset.assetType || asset.category)}</div>
+            <div className="asset-card-icon">{resolveAssetIcon()}</div>
             <div className="asset-detail-head-main">
               <div className="asset-card-title-row">
                 <h3>{asset.assetId || assetId}</h3>
@@ -342,92 +373,127 @@ export default function AssetDetailView() {
           <div className="asset-detail-grid">
             <div className="asset-detail-col">
               <div><span>Asset ID:</span><strong>{formatText(asset.assetId || assetId)}</strong></div>
-              <div><span>Asset Type:</span><strong>{formatText(asset.assetType)}</strong></div>
-              <div><span>Category:</span><strong>{formatText(asset.category)}</strong></div>
-              <div><span>Sub-Category:</span><strong>{formatText(asset.subcategory)}</strong></div>
+              <div><span>Asset Type:</span><strong>{resolveAssetTypeDisplay()}</strong></div>
+              <div><span>Asset Tag:</span><strong>{formatText(asset.assetTag)}</strong></div>
+              <div><span>Brand / Manufacturer:</span><strong>{formatText(asset.manufacturer)}</strong></div>
+              <div><span>Model Number:</span><strong>{formatText(asset.model)}</strong></div>
+              <div><span>Serial Number:</span><strong>{formatText(asset.serial)}</strong></div>
             </div>
             <div className="asset-detail-col">
-              <div><span>CI Type:</span><strong>{formatText(asset.ciType)}</strong></div>
-              <div><span>Serial Number:</span><strong>{formatText(asset.serial)}</strong></div>
-              <div><span>Asset Tag:</span><strong>{formatText(asset.assetTag)}</strong></div>
-              <div><span>Barcode / QR:</span><strong>{formatText(asset.barcode)}</strong></div>
               <div><span>Status:</span><strong>{formatText(asset.status)}</strong></div>
+              <div><span>Asset State:</span><strong>{formatText(asset.status)}</strong></div>
             </div>
           </div>
 
-          <div className="asset-detail-section-title">Assigned</div>
+          <div className="asset-detail-section-title">Information</div>
           <div className="asset-detail-grid">
             <div className="asset-detail-col">
-              <div><span>Assigned User:</span><strong>{formatAssignedUser()}</strong></div>
-              <div><span>User Email:</span><strong>{formatText(asset.assignedUserEmail || asset.assignedTo?.email)}</strong></div>
+              <div><span>Purchase / Rent:</span><strong>{formatText(acquisitionLabel)}</strong></div>
+              {isRental ? (
+                <>
+                  <div><span>Vendor / Rental Provider:</span><strong>{formatText(asset.rentalProvider)}</strong></div>
+                  <div><span>Rental Start Date:</span><strong>{formatDate(asset.rentalStartDate)}</strong></div>
+                  <div><span>Rental End Date:</span><strong>{formatDate(asset.rentalEndDate)}</strong></div>
+                  <div><span>Monthly Rental Cost:</span><strong>{asset.rentalMonthlyCost == null ? '-' : String(asset.rentalMonthlyCost)}</strong></div>
+                  <div><span>Total Rental Cost:</span><strong>{asset.rentalTotalCost == null ? '-' : String(asset.rentalTotalCost)}</strong></div>
+                </>
+              ) : (
+                <>
+                  <div><span>Purchase Date:</span><strong>{formatDate(asset.purchaseDate)}</strong></div>
+                  <div><span>Vendor:</span><strong>{formatText(asset.vendor)}</strong></div>
+                  <div><span>Cost:</span><strong>{asset.cost == null ? '-' : String(asset.cost)}</strong></div>
+                  <div><span>Salvage ($):</span><strong>{asset.salvageValue == null ? '-' : String(asset.salvageValue)}</strong></div>
+                </>
+              )}
+            </div>
+            <div className="asset-detail-col">
+              {isRental ? (
+                <>
+                  <div><span>Maintenance Included:</span><strong>{asset.maintenanceIncluded ? 'Yes' : 'No'}</strong></div>
+                  <div><span>Contract Number:</span><strong>{formatText(asset.contractNumber)}</strong></div>
+                  <div><span>Return Condition:</span><strong>{formatText(asset.returnCondition)}</strong></div>
+                </>
+              ) : (
+                <>
+                  <div><span>Acquisition Date:</span><strong>{formatDate(asset.acquisitionDate)}</strong></div>
+                  <div><span>PO Number:</span><strong>{formatText(asset.poNumber)}</strong></div>
+                  <div><span>Invoice Number:</span><strong>{formatText(asset.invoiceNumber)}</strong></div>
+                  <div><span>Purchase Cost:</span><strong>{asset.purchaseCost == null ? '-' : String(asset.purchaseCost)}</strong></div>
+                  <div><span>Warranty Start:</span><strong>{formatDate(asset.warrantyStart)}</strong></div>
+                  <div><span>Warranty End:</span><strong>{formatDate(asset.warrantyUntil)}</strong></div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="asset-detail-section-title">Assignment</div>
+          <div className="asset-detail-grid">
+            <div className="asset-detail-col">
+              <div><span>Assigned To:</span><strong>{formatAssignedUser()}</strong></div>
               <div><span>Department:</span><strong>{formatText(asset.department)}</strong></div>
               <div><span>Location:</span><strong>{formatText(asset.location)}</strong></div>
-            </div>
-            <div className="asset-detail-col">
               <div><span>Site:</span><strong>{formatText(asset.site)}</strong></div>
-              <div><span>Manager:</span><strong>{formatText(asset.manager)}</strong></div>
+            </div>
+            <div className="asset-detail-col">
+              <div><span>Company:</span><strong>{formatText(asset.company)}</strong></div>
+              <div><span>Managed By:</span><strong>{formatText(asset.managedBy)}</strong></div>
+              <div><span>Assigned On:</span><strong>{formatText(asset.assignedOn ? new Date(asset.assignedOn).toLocaleString('en-GB') : '')}</strong></div>
             </div>
           </div>
 
-          <div className="asset-detail-section-title">Ownership</div>
-          <div className="asset-detail-grid">
-            <div className="asset-detail-col">
-              <div><span>Ownership Type:</span><strong>{formatOwnershipType()}</strong></div>
-              <div><span>Asset Owner:</span><strong>{formatText(asset.assetOwner)}</strong></div>
-            </div>
-            <div className="asset-detail-col">
-              <div><span>Cost Centre:</span><strong>{formatText(asset.costCentre)}</strong></div>
-            </div>
-          </div>
-
-          <div className="asset-detail-section-title">Hardware</div>
-          <div className="asset-detail-grid">
-            <div className="asset-detail-col">
-              <div><span>Manufacturer:</span><strong>{formatText(asset.manufacturer)}</strong></div>
-              <div><span>Model:</span><strong>{formatText(asset.model)}</strong></div>
-              <div><span>CPU:</span><strong>{formatText(asset.cpu)}</strong></div>
-              <div><span>RAM:</span><strong>{formatText(asset.ram)}</strong></div>
-              <div><span>Storage:</span><strong>{formatText(asset.storage)}</strong></div>
-            </div>
-            <div className="asset-detail-col">
-              <div><span>MAC Address:</span><strong>{formatText(asset.macAddress)}</strong></div>
-              <div><span>IP Address:</span><strong>{formatText(asset.ipAddress)}</strong></div>
-              <div><span>BIOS Version:</span><strong>{formatText(asset.biosVersion)}</strong></div>
-              <div><span>Firmware:</span><strong>{formatText(asset.firmware)}</strong></div>
-            </div>
-          </div>
-
-          <div className="asset-detail-section-title">OS & Software</div>
+          <div className="asset-detail-section-title">Details</div>
           <div className="asset-detail-grid">
             <div className="asset-detail-col">
               <div><span>OS:</span><strong>{formatText(asset.os)}</strong></div>
               <div><span>OS Version:</span><strong>{formatText(asset.osVersion)}</strong></div>
-              <div><span>License Key:</span><strong>{formatText(asset.licenseKey)}</strong></div>
-              <div><span>Installed Software:</span><strong>{formatInstalledSoftware()}</strong></div>
+              <div><span>OS Service Pack:</span><strong>{formatText(asset.osServicePack)}</strong></div>
+              <div><span>Memory (GB):</span><strong>{formatText(asset.ram)}</strong></div>
+              <div><span>Disk Space (GB):</span><strong>{formatText(asset.storage)}</strong></div>
+              <div><span>CPU Speed (GHz):</span><strong>{formatText(asset.cpuSpeed)}</strong></div>
+              <div><span>CPU Core Count:</span><strong>{formatText(asset.cpuCoreCount)}</strong></div>
             </div>
             <div className="asset-detail-col">
+              <div><span>License Key:</span><strong>{formatText(asset.licenseKey)}</strong></div>
+              <div><span>Installed Software:</span><strong>{formatInstalledSoftware()}</strong></div>
               <div><span>Antivirus:</span><strong>{formatText(asset.antivirus)}</strong></div>
               <div><span>Patch Status:</span><strong>{formatText(asset.patchStatus)}</strong></div>
               <div><span>Encryption:</span><strong>{formatText(asset.encryption)}</strong></div>
+              <div><span>MAC Address:</span><strong>{formatText(asset.macAddress)}</strong></div>
+              <div><span>IP Address:</span><strong>{formatText(asset.ipAddress)}</strong></div>
+              <div><span>Supplier:</span><strong>{formatText(asset.supplier)}</strong></div>
             </div>
           </div>
 
-          <div className="asset-detail-section-title">Financial</div>
+          <div className="asset-detail-section-title">Relationships</div>
           <div className="asset-detail-grid">
             <div className="asset-detail-col">
-              <div><span>Purchase Date:</span><strong>{formatDate(asset.purchaseDate)}</strong></div>
-              <div><span>Supplier:</span><strong>{formatText(asset.supplier)}</strong></div>
-              <div><span>PO Number:</span><strong>{formatText(asset.poNumber)}</strong></div>
-              <div><span>Invoice Number:</span><strong>{formatText(asset.invoiceNumber)}</strong></div>
-              <div><span>Purchase Cost:</span><strong>{asset.purchaseCost == null ? '-' : String(asset.purchaseCost)}</strong></div>
-            </div>
-            <div className="asset-detail-col">
-              <div><span>Warranty Start:</span><strong>{formatDate(asset.warrantyStart)}</strong></div>
-              <div><span>Warranty End:</span><strong>{formatDate(asset.warrantyUntil)}</strong></div>
-              <div><span>AMC / Support:</span><strong>{formatText(asset.amcSupport)}</strong></div>
-              <div><span>Depreciation End:</span><strong>{formatDate(asset.depreciationEnd)}</strong></div>
+              <div><span>Linked Tickets:</span><strong>{asset?.tickets?.length ? asset.tickets.map((t: any) => t.ticketId || t.id).join(', ') : '-'}</strong></div>
             </div>
           </div>
+
+          <div className="asset-detail-section-title">Notes</div>
+          <div className="asset-detail-grid">
+            <div className="asset-detail-col">
+              <div><span>Notes:</span><strong>{formatText(asset.notes)}</strong></div>
+            </div>
+          </div>
+
+          {customFieldEntries.length > 0 ? (
+            <>
+              <div className="asset-detail-section-title">Custom Fields</div>
+              <div className="asset-detail-grid">
+                <div className="asset-detail-col">
+                  {customFieldEntries.map((field, idx) => (
+                    <div key={`${field.label}-${idx}`}>
+                      <span>{field.label}:</span>
+                      <strong>{formatText(field.value as any)}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : null}
+
           <div className="asset-card-actions detail">
             <button className="asset-btn assign" onClick={openAssignModal} disabled={busy || assignBusy}>
               {asset?.assignedTo || asset?.assignedToId ? 'Reassign' : 'Assign'}
@@ -536,4 +602,8 @@ export default function AssetDetailView() {
     </>
   )
 }
+
+
+
+
 

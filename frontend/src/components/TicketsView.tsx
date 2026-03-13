@@ -125,6 +125,9 @@ export default function TicketsView() {
   const rowsPerPage = getRowsPerPage()
   const [selectAll, setSelectAll] = useState(false)
   const [selectedTickets, setSelectedTickets] = useState<string[]>([])
+  const [bulkStatus, setBulkStatus] = useState('')
+  const [bulkTeam, setBulkTeam] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [globalSearch, setGlobalSearch] = useState('')
   const [showNewIncidentModal, setShowNewIncidentModal] = useState(false)
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
@@ -359,7 +362,14 @@ export default function TicketsView() {
   const toLocalDateTime = (raw: any) => {
     if (!raw) return '-'
     const d = new Date(raw)
-    return Number.isNaN(d.getTime()) ? '-' : d.toLocaleString()
+    if (Number.isNaN(d.getTime())) return '-'
+    return d.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   }
 
   const toTimestamp = (raw: any): number | null => {
@@ -2660,6 +2670,30 @@ Click below to proceed:
     } catch (error: any) {
       alert(error?.response?.data?.error || error?.message || 'Failed to update ticket details')
     }
+  }
+
+  const applyBulkStatus = async () => {
+    if (!bulkStatus || selectedTickets.length === 0) return
+    setBulkBusy(true)
+    const targets = [...selectedTickets]
+    await Promise.allSettled(targets.map((id) => ticketService.transitionTicket(id, bulkStatus)))
+    setIncidents((prev) => prev.map((i) => (targets.includes(i.id) ? { ...i, status: bulkStatus } : i)))
+    setSelectedTicket((prev) => (prev && targets.includes(prev.id) ? { ...prev, status: bulkStatus } : prev))
+    setSelectedTickets([])
+    setBulkStatus('')
+    setBulkBusy(false)
+  }
+
+  const applyBulkTeam = async () => {
+    if (!bulkTeam || selectedTickets.length === 0) return
+    setBulkBusy(true)
+    const targets = [...selectedTickets]
+    await Promise.allSettled(targets.map((id) => ticketService.updateTicket(id, { category: bulkTeam, team: bulkTeam })))
+    setIncidents((prev) => prev.map((i) => (targets.includes(i.id) ? { ...i, category: bulkTeam, team: bulkTeam } : i)))
+    setSelectedTicket((prev) => (prev && targets.includes(prev.id) ? { ...prev, category: bulkTeam, team: bulkTeam } : prev))
+    setSelectedTickets([])
+    setBulkTeam('')
+    setBulkBusy(false)
   }
 
   const commitSubjectEdit = async (valueOverride?: string) => {
@@ -5484,6 +5518,34 @@ Click below to proceed:
             </button>
           </div>
         </div>
+        {selectedTickets.length > 0 && (
+          <div className="tickets-bulk-bar">
+            <div className="tool-bar-left">
+              <span className="bulk-count">{selectedTickets.length} selected</span>
+              <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} disabled={bulkBusy}>
+                <option value="">Change status...</option>
+                {statusOptions.map((option) => (
+                  <option key={`bulk-status-${option}`} value={option}>{option}</option>
+                ))}
+              </select>
+              <button className="table-primary-btn" onClick={applyBulkStatus} disabled={!bulkStatus || bulkBusy}>
+                {bulkBusy ? 'Working...' : 'Update Status'}
+              </button>
+              <select value={bulkTeam} onChange={(e) => setBulkTeam(e.target.value)} disabled={bulkBusy}>
+                <option value="">Change team...</option>
+                {teamOptions.map((option) => (
+                  <option key={`bulk-team-${option}`} value={option}>{option}</option>
+                ))}
+              </select>
+              <button className="table-primary-btn" onClick={applyBulkTeam} disabled={!bulkTeam || bulkBusy}>
+                {bulkBusy ? 'Working...' : 'Update Team'}
+              </button>
+              <button className="admin-settings-ghost" onClick={() => setSelectedTickets([])} disabled={bulkBusy}>
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
         <div className="incidents-table" ref={tableRef}>
           <div className="table-header" style={ticketsGridStyle}>
             <div className="col-checkbox col-header">
