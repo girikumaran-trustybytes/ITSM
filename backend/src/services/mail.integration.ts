@@ -26,6 +26,28 @@ export type MailConfig = {
   imap: ImapConfig
 }
 
+export type MailboxOauth = {
+  provider: 'gmail' | 'outlook' | 'zoho'
+  refreshToken: string
+  accessToken?: string
+  expiresAt?: string
+  tokenType?: string
+  scope?: string
+}
+
+export type MailboxConfig = {
+  id: string
+  email: string
+  queue: string
+  provider: 'gmail' | 'outlook' | 'zoho' | 'custom'
+  connectionMode: 'oauth2' | 'app-password' | 'manual-credentials'
+  smtp: SmtpConfig
+  imap: ImapConfig
+  oauth?: MailboxOauth
+  oauthConnected?: boolean
+  oauthTokenExpiry?: string
+}
+
 type MailInboundRoutingConfig = {
   defaultQueue: string
   inboundRoutes: Array<{ email: string; queue: string }>
@@ -147,19 +169,28 @@ const MAIL_PROVIDER_PRESETS: Record<MailConfig['provider'], { smtp: { host: stri
 }
 
 const DEFAULT_INBOUND_QUEUE = String(process.env.MAIL_TICKET_DEFAULT_QUEUE || 'Support Team').trim() || 'Support Team'
+const DEFAULT_SUPPORT_EMAIL = String(
+  process.env.MAIL_TICKET_INGEST_ADDRESS
+  || process.env.SMTP_FROM
+  || process.env.SMTP_USER
+  || process.env.IMAP_USER
+  || 'support@trustybytes.in'
+).trim().toLowerCase()
 let runtimeInboundRoutingConfig: MailInboundRoutingConfig = {
   defaultQueue: DEFAULT_INBOUND_QUEUE,
   inboundRoutes: [
-    { email: 'support@trustybytes.in', queue: 'Support Team' },
+    { email: DEFAULT_SUPPORT_EMAIL, queue: 'Support Team' },
     { email: 'hr@trustybytes.in', queue: 'HR Team' },
     { email: 'management@trustybytes.in', queue: 'Management Team' },
   ],
   outboundRoutes: [
-    { queue: 'Support Team', from: 'support@trustybytes.in' },
+    { queue: 'Support Team', from: DEFAULT_SUPPORT_EMAIL },
     { queue: 'HR Team', from: 'hr@trustybytes.in' },
     { queue: 'Management Team', from: 'management@trustybytes.in' },
   ],
 }
+
+let runtimeMailboxConfigs: MailboxConfig[] = []
 
 function normalizeMailProvider(value: unknown): MailConfig['provider'] {
   const providerRaw = String(value || '').trim().toLowerCase()
@@ -260,6 +291,25 @@ export function getInboundRoutingConfig(): MailInboundRoutingConfig {
   }
 }
 
+export function setMailboxConfigs(next: MailboxConfig[]) {
+  runtimeMailboxConfigs = Array.isArray(next) ? next : []
+}
+
+export function getMailboxConfigs(): MailboxConfig[] {
+  return runtimeMailboxConfigs.slice()
+}
+
+export function resolveMailboxForQueue(queueName: string | undefined): MailboxConfig | null {
+  const queue = String(queueName || '').trim().toLowerCase()
+  if (!runtimeMailboxConfigs.length) return null
+  if (queue) {
+    const match = runtimeMailboxConfigs.find((mb) => String(mb.queue || '').trim().toLowerCase() === queue)
+    if (match) return match
+  }
+  const support = runtimeMailboxConfigs.find((mb) => String(mb.queue || '').trim().toLowerCase() === 'support team')
+  return support || runtimeMailboxConfigs[0] || null
+}
+
 export function setInboundRoutingConfig(next: Partial<MailInboundRoutingConfig>) {
   const normalizedQueue = String(next?.defaultQueue || '').trim()
   const inboundRoutes = Array.isArray(next?.inboundRoutes)
@@ -309,20 +359,34 @@ function mergeConfig(override?: Partial<MailConfig>): MailConfig {
   const base = loadMailConfigBase()
   const provider = normalizeMailProvider(override?.provider || base.provider)
   const preset = MAIL_PROVIDER_PRESETS[provider]
+  const normalizeSmtpSecure = (port: number, secure: boolean) => {
+    if (port === 465) return true
+    if (port === 587 || port === 25) return false
+    return secure
+  }
+  const normalizeImapSecure = (port: number, secure: boolean) => {
+    if (port === 993) return true
+    if (port === 143) return false
+    return secure
+  }
+  const smtpPort = toInt(override?.smtp?.port, base.smtp.port || preset.smtp.port)
+  const imapPort = toInt(override?.imap?.port, base.imap.port || preset.imap.port)
+  const rawSmtpSecure = toBool(override?.smtp?.secure, base.smtp.secure ?? preset.smtp.secure)
+  const rawImapSecure = toBool(override?.imap?.secure, base.imap.secure ?? preset.imap.secure)
   return {
     provider,
     smtp: {
       host: String(override?.smtp?.host || base.smtp.host || preset.smtp.host).trim(),
-      port: toInt(override?.smtp?.port, base.smtp.port || preset.smtp.port),
-      secure: toBool(override?.smtp?.secure, base.smtp.secure ?? preset.smtp.secure),
+      port: smtpPort,
+      secure: normalizeSmtpSecure(smtpPort, rawSmtpSecure),
       user: String(override?.smtp?.user || base.smtp.user || '').trim(),
       pass: String(override?.smtp?.pass || base.smtp.pass || '').trim(),
       from: String(override?.smtp?.from || base.smtp.from || base.smtp.user || 'no-reply@itsm.local').trim(),
     },
     imap: {
       host: String(override?.imap?.host || base.imap.host || preset.imap.host).trim(),
-      port: toInt(override?.imap?.port, base.imap.port || preset.imap.port),
-      secure: toBool(override?.imap?.secure, base.imap.secure ?? preset.imap.secure),
+      port: imapPort,
+      secure: normalizeImapSecure(imapPort, rawImapSecure),
       user: String(override?.imap?.user || base.imap.user || base.smtp.user || '').trim(),
       pass: String(override?.imap?.pass || base.imap.pass || base.smtp.pass || '').trim(),
       mailbox: String(override?.imap?.mailbox || base.imap.mailbox || 'INBOX').trim() || 'INBOX',
@@ -344,17 +408,35 @@ function assertImapConfigured(cfg: ImapConfig) {
   if (!cfg.pass) throw { status: 400, message: 'IMAP pass/app-password is required' }
 }
 
+function isTlsVersionMismatch(error: any) {
+  const msg = String(error?.message || '').toLowerCase()
+  return msg.includes('wrong version number') || msg.includes('ssl routines') || msg.includes('tls')
+}
+
+function createSmtpTransport(cfg: SmtpConfig, secureOverride?: boolean) {
+  return nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: typeof secureOverride === 'boolean' ? secureOverride : cfg.secure,
+    auth: { user: cfg.user, pass: cfg.pass },
+  })
+}
+
 export async function verifySmtp(override?: Partial<MailConfig>) {
   const cfg = mergeConfig(override).smtp
   assertSmtpConfigured(cfg)
 
-  const transport = nodemailer.createTransport({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.pass },
-  })
-  await transport.verify()
+  try {
+    const transport = createSmtpTransport(cfg)
+    await transport.verify()
+  } catch (error: any) {
+    if (isTlsVersionMismatch(error)) {
+      const transport = createSmtpTransport(cfg, !cfg.secure)
+      await transport.verify()
+    } else {
+      throw error
+    }
+  }
   return {
     ok: true as const,
     host: cfg.host,
@@ -400,23 +482,29 @@ export async function sendSmtpMail(
     ...inlineMedia.attachments,
   ]
 
-  const transport = nodemailer.createTransport({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.secure,
-    auth: { user: cfg.user, pass: cfg.pass },
-  })
-
-  const info = await transport.sendMail({
-    from: payload.from || cfg.from,
-    to,
-    cc: cc.length ? cc : undefined,
-    bcc: bcc.length ? bcc : undefined,
-    subject,
-    text: normalizedText || undefined,
-    html: inlineMedia.html,
-    attachments: outgoingAttachments.length ? outgoingAttachments : undefined,
-  })
+  const sendWithTransport = async (secureOverride?: boolean) => {
+    const transport = createSmtpTransport(cfg, secureOverride)
+    return transport.sendMail({
+      from: payload.from || cfg.from,
+      to,
+      cc: cc.length ? cc : undefined,
+      bcc: bcc.length ? bcc : undefined,
+      subject,
+      text: normalizedText || undefined,
+      html: inlineMedia.html,
+      attachments: outgoingAttachments.length ? outgoingAttachments : undefined,
+    })
+  }
+  let info
+  try {
+    info = await sendWithTransport()
+  } catch (error: any) {
+    if (isTlsVersionMismatch(error)) {
+      info = await sendWithTransport(!cfg.secure)
+    } else {
+      throw error
+    }
+  }
 
   return {
     ok: true as const,

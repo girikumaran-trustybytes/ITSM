@@ -8,7 +8,7 @@ type Props = {
 
 export default function ActionModal({ mode, onClose }: Props) {
   const title = mode === 'email' ? 'Email User' : mode === 'log' ? 'Log to Supplier' : 'Close Ticket'
-  const [to, setTo] = useState('girikumaran@trustybytes.in')
+  const [to, setTo] = useState('')
   const [message, setMessage] = useState(mode === 'close' ? 'Ticket closed.' : 'Hi Team,\n\nCould you please have a look?\n\nThank you.')
 
   const handleSend = () => {

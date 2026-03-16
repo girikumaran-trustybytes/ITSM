@@ -257,6 +257,15 @@ export default function AssetDetailView() {
     const text = String(value).trim()
     return text ? text : '-'
   }
+  const shouldShowDeviceDetails = React.useMemo(() => {
+    const rawLabel = asset?.assetType || asset?.category || ''
+    const tokens = String(rawLabel || '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+    const allowed = new Set(['laptop', 'workstation', 'desktop', 'pc'])
+    return tokens.some((token) => allowed.has(token))
+  }, [asset?.assetType, asset?.category])
   const resolveAssetTypeDisplay = () => {
     const byId = asset?.assetTypeId ? assetTypesById.get(String(asset.assetTypeId)) : null
     const byLabel = !byId && asset?.assetType
@@ -441,28 +450,32 @@ export default function AssetDetailView() {
             </div>
           </div>
 
-          <div className="asset-detail-section-title">Details</div>
-          <div className="asset-detail-grid">
-            <div className="asset-detail-col">
-              <div><span>OS:</span><strong>{formatText(asset.os)}</strong></div>
-              <div><span>OS Version:</span><strong>{formatText(asset.osVersion)}</strong></div>
-              <div><span>OS Service Pack:</span><strong>{formatText(asset.osServicePack)}</strong></div>
-              <div><span>Memory (GB):</span><strong>{formatText(asset.ram)}</strong></div>
-              <div><span>Disk Space (GB):</span><strong>{formatText(asset.storage)}</strong></div>
-              <div><span>CPU Speed (GHz):</span><strong>{formatText(asset.cpuSpeed)}</strong></div>
-              <div><span>CPU Core Count:</span><strong>{formatText(asset.cpuCoreCount)}</strong></div>
-            </div>
-            <div className="asset-detail-col">
-              <div><span>License Key:</span><strong>{formatText(asset.licenseKey)}</strong></div>
-              <div><span>Installed Software:</span><strong>{formatInstalledSoftware()}</strong></div>
-              <div><span>Antivirus:</span><strong>{formatText(asset.antivirus)}</strong></div>
-              <div><span>Patch Status:</span><strong>{formatText(asset.patchStatus)}</strong></div>
-              <div><span>Encryption:</span><strong>{formatText(asset.encryption)}</strong></div>
-              <div><span>MAC Address:</span><strong>{formatText(asset.macAddress)}</strong></div>
-              <div><span>IP Address:</span><strong>{formatText(asset.ipAddress)}</strong></div>
-              <div><span>Supplier:</span><strong>{formatText(asset.supplier)}</strong></div>
-            </div>
-          </div>
+          {shouldShowDeviceDetails ? (
+            <>
+              <div className="asset-detail-section-title">Details</div>
+              <div className="asset-detail-grid">
+                <div className="asset-detail-col">
+                  <div><span>OS:</span><strong>{formatText(asset.os)}</strong></div>
+                  <div><span>OS Version:</span><strong>{formatText(asset.osVersion)}</strong></div>
+                  <div><span>OS Service Pack:</span><strong>{formatText(asset.osServicePack)}</strong></div>
+                  <div><span>Memory (GB):</span><strong>{formatText(asset.ram)}</strong></div>
+                  <div><span>Disk Space (GB):</span><strong>{formatText(asset.storage)}</strong></div>
+                  <div><span>CPU Speed (GHz):</span><strong>{formatText(asset.cpuSpeed)}</strong></div>
+                  <div><span>CPU Core Count:</span><strong>{formatText(asset.cpuCoreCount)}</strong></div>
+                </div>
+                <div className="asset-detail-col">
+                  <div><span>License Key:</span><strong>{formatText(asset.licenseKey)}</strong></div>
+                  <div><span>Installed Software:</span><strong>{formatInstalledSoftware()}</strong></div>
+                  <div><span>Antivirus:</span><strong>{formatText(asset.antivirus)}</strong></div>
+                  <div><span>Patch Status:</span><strong>{formatText(asset.patchStatus)}</strong></div>
+                  <div><span>Encryption:</span><strong>{formatText(asset.encryption)}</strong></div>
+                  <div><span>MAC Address:</span><strong>{formatText(asset.macAddress)}</strong></div>
+                  <div><span>IP Address:</span><strong>{formatText(asset.ipAddress)}</strong></div>
+                  <div><span>Supplier:</span><strong>{formatText(asset.supplier)}</strong></div>
+                </div>
+              </div>
+            </>
+          ) : null}
 
           <div className="asset-detail-section-title">Relationships</div>
           <div className="asset-detail-grid">

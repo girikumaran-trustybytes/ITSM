@@ -1,6 +1,6 @@
 import net from 'net'
 import tls from 'tls'
-import { addResponse, createTicket } from '../modules/tickets/ticket.service'
+import { addResponse, createTicket, transitionTicket } from '../modules/tickets/ticket.service'
 import { getInboundRoutingConfig, loadMailConfigFromEnv, resolveInboundQueueByRecipient } from '../services/mail.integration'
 import { query, queryOne } from '../db'
 import logger from '../common/logger/logger'
@@ -281,8 +281,8 @@ async function findTicketDbIdByMessageThread(mail: ParsedMailHeader): Promise<nu
 }
 
 async function appendInboundReplyToTicket(ticketDbId: number, mailbox: string, mail: ParsedMailHeader) {
-  const ticket = await queryOne<{ id: number; ticketId: string }>(
-    'SELECT "id", "ticketId" FROM "Ticket" WHERE "id" = $1',
+  const ticket = await queryOne<{ id: number; ticketId: string; status: string }>(
+    'SELECT "id", "ticketId", "status" FROM "Ticket" WHERE "id" = $1',
     [ticketDbId]
   )
   if (!ticket?.id) return null
@@ -298,9 +298,14 @@ async function appendInboundReplyToTicket(ticketDbId: number, mailbox: string, m
 
   await addResponse(String(ticket.id), {
     message,
-    user: 'mail_ingest',
+    user: 'system',
     sendEmail: false,
   })
+
+  const statusRaw = String(ticket.status || '').trim().toLowerCase()
+  if (statusRaw && statusRaw !== 'closed' && statusRaw !== 'updated') {
+    await transitionTicket(String(ticket.id), 'Updated', 'system')
+  }
   return ticket
 }
 
@@ -348,7 +353,10 @@ async function createTicketFromMail(mailbox: string, mail: ParsedMailHeader) {
   const requesterId = await findRequesterIdByEmail(mail.fromEmail)
   const safeSubject = (mail.subject || '').trim() || `Email to ${mailbox}`
   const inboundRouting = getInboundRoutingConfig()
-  const inboundQueue = resolveInboundQueueByRecipient(mail.toRaw, inboundRouting.defaultQueue)
+  const mailboxRoute = inboundRouting.inboundRoutes.find(
+    (route) => String(route.email || '').trim().toLowerCase() === String(mailbox || '').trim().toLowerCase()
+  )
+  const inboundQueue = mailboxRoute?.queue || resolveInboundQueueByRecipient(mail.toRaw, inboundRouting.defaultQueue)
   const description = [
     'Auto-created from inbound email.',
     `Mailbox: ${mailbox}`,

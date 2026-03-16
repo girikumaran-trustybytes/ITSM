@@ -9285,6 +9285,9 @@ body.tickets-queue-expanded .detail-view-container {
   right: -1px;
   bottom: -1px;
 }
+.compose-avatar.compose-avatar-with-presence::after {
+  display: none;
+}
 .compose-user {
   font-size: 14px;
   font-weight: 500;
@@ -9787,6 +9790,8 @@ body.tickets-queue-expanded .detail-view-container {
   place-items: center;
   font-weight: 700;
   font-size: 14px;
+  position: relative;
+  overflow: hidden;
 }
 .compose-review-title {
   font-size: 16px;
@@ -13484,6 +13489,22 @@ body.admin-queue-collapsed .ticket-left-panel {
   gap: 12px;
 }
 
+.admin-settings-background {
+  background: #fffafa;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-settings-background .admin-config-page {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
 .admin-mail-template-page {
   background: linear-gradient(180deg, #f7fafc 0%, #f3f7fb 100%);
   border-color: #d7e1ec;
@@ -14103,11 +14124,11 @@ body.admin-queue-collapsed .ticket-left-panel {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 14px;
-  background: #eef3fa;
-  border: 1px solid #d7dfec;
-  border-radius: 12px;
-  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: #f2f4f7;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 6px 8px;
 }
 
 .rbac-top-action-title {
@@ -16713,6 +16734,7 @@ body.admin-queue-collapsed .ticket-left-panel {
 :root[data-theme='dark'] .admin-settings-topic-strip,
 :root[data-theme='dark'] .admin-settings-card,
 :root[data-theme='dark'] .admin-config-page,
+:root[data-theme='dark'] .admin-settings-background,
 :root[data-theme='dark'] .admin-config-card,
 :root[data-theme='dark'] .admin-log-panel,
 :root[data-theme='dark'] .admin-entity-list,

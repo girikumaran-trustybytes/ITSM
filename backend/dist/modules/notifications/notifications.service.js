@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.saveNotificationState = exports.getNotificationState = exports.listNotifications = void 0;
 const db_1 = require("../../db");
+const announcements_service_1 = require("../announcements/announcements.service");
 let ensureStateTablePromise = null;
 async function ensureNotificationStateTable() {
     if (!ensureStateTablePromise) {
@@ -50,6 +51,7 @@ async function listNotifications(viewer, opts = {}) {
     const viewerId = Number(viewer?.id);
     const params = [];
     const conditions = [];
+    conditions.push(`a."action" = 'create_ticket'`);
     if (role === 'ADMIN') {
         conditions.push('1=1');
     }
@@ -82,7 +84,30 @@ async function listNotifications(viewer, opts = {}) {
      WHERE ${conditions.join(' AND ')}
      ORDER BY a."createdAt" DESC
      LIMIT $${params.length}`, params);
-    return rows;
+    const announcementRows = await (0, announcements_service_1.listActiveAnnouncements)('maintenance');
+    const announcementNotifications = announcementRows.map((row) => ({
+        id: 2000000000 + Number(row.id),
+        action: 'maintenance_announcement',
+        entity: 'announcement',
+        entityId: Number(row.id),
+        userId: null,
+        ticketId: null,
+        meta: {
+            title: row.title,
+            body: row.body,
+            type: row.type,
+            publishAt: row.publishAt,
+            expireAt: row.expireAt,
+        },
+        createdAt: row.publishAt || row.createdAt,
+    }));
+    const merged = [...rows, ...announcementNotifications];
+    merged.sort((a, b) => {
+        const aTime = new Date(a.createdAt || 0).getTime();
+        const bTime = new Date(b.createdAt || 0).getTime();
+        return bTime - aTime;
+    });
+    return merged.slice(0, limit);
 }
 exports.listNotifications = listNotifications;
 async function getNotificationState(viewer) {

@@ -1,6 +1,12 @@
 import { z } from 'zod'
 import { zId, zPage, zPageSize, zMaybeString } from '../../schema/common'
 
+const zAssigneeId = z.preprocess((val) => {
+  if (val === '' || val === undefined) return undefined
+  if (val === null) return null
+  return val
+}, z.union([zId, z.literal(null)]).optional())
+
 export const ticketsListQuerySchema = z.object({
   page: zPage.optional(),
   pageSize: zPageSize.optional(),
@@ -25,7 +31,7 @@ export const ticketsCreateBodySchema = z.object({
   requesterId: zId.optional(),
   requesterEmail: z.string().email().optional(),
   createdFrom: z.string().min(1).optional(),
-  assigneeId: zId.optional(),
+  assigneeId: zAssigneeId,
   teamId: z.string().min(1).optional(),
   slaStart: z.string().optional(),
 }).refine((val) => val.subject || val.summary, {
@@ -44,7 +50,7 @@ export const ticketsUpdateBodySchema = z.object({
   resolution: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   createdFrom: z.string().min(1).optional(),
-  assigneeId: zId.optional(),
+  assigneeId: zAssigneeId,
   requesterId: zId.optional(),
   teamId: z.string().min(1).optional(),
 })

@@ -83,6 +83,7 @@ workflowEngine.register({
     { from: 'Awaiting Approval', to: 'In Progress', name: 'approve' },
     { from: 'Awaiting Approval', to: 'Rejected', name: 'reject' },
     { from: 'In Progress', to: 'Fulfilled', name: 'fulfill' },
+    { from: 'In Progress', to: 'Closed', name: 'close_direct' },
     { from: 'Fulfilled', to: 'Closed', name: 'close' },
     { from: 'New', to: 'Closed', name: 'quick_close' },
     { from: 'Closed', to: 'In Progress', name: 'reopen' },

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+﻿import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import * as assetService from '../modules/assets/services/asset.service'
@@ -450,9 +450,11 @@ export default function AssetsView({
     return Array.from(new Set([...fromAssets, ...fromConfig].filter(Boolean))).sort((a, b) => a.localeCompare(b))
   }, [assets, assetTypesConfig.types])
   const assetTypeOptions = useMemo(() => {
-    const types = Array.isArray(assetTypesConfig.types) ? assetTypesConfig.types : []
+    const types = Array.isArray(assetTypesConfig.types)
+      ? assetTypesConfig.types.filter((t) => t.parentId)
+      : []
     const byId = new Map<string, AssetTypeConfig>()
-    types.forEach((t) => {
+    assetTypesConfig.types.forEach((t) => {
       byId.set(t.id, t)
     })
     const pathMemo = new Map<string, string>()
@@ -463,47 +465,19 @@ export default function AssetsView({
       pathMemo.set(type.id, label)
       return label
     }
-    const getRootLabel = (type: AssetTypeConfig): string => {
-      let current = type
-      while (current.parentId && byId.get(current.parentId)) {
-        current = byId.get(current.parentId) as AssetTypeConfig
-      }
-      return current.label
-    }
-    const getGroupForLabel = (label: string) => {
-      const key = String(label || '').toLowerCase()
-      for (const [group, types] of Object.entries(configuredCategoryMap || {})) {
-        if (types.some((t: string) => String(t || '').toLowerCase() === key)) return group
-      }
-      for (const [group, types] of Object.entries(assetGroupMap || {})) {
-        if (types.some((t: string) => String(t || '').toLowerCase() === key)) return group
-      }
-      return ''
-    }
     const options = types.map((type) => {
-      const rootLabel = getRootLabel(type)
-      const fallbackGroup = rootLabel && rootLabel !== type.label ? rootLabel : getGroupForLabel(type.label)
+      const parent = type.parentId ? byId.get(type.parentId) : null
+      const parentLabel = parent?.label || ''
       return {
         id: type.id,
         label: buildPath(type),
         rawLabel: type.label,
-        displayLabel: fallbackGroup && fallbackGroup !== type.label ? type.label + ' (' + fallbackGroup + ')' : type.label,
+        displayLabel: parentLabel ? `${type.label} (${parentLabel})` : type.label,
         icon: type.icon || '',
       }
     })
-    const labelSet = new Set(options.map((opt) => opt.label.toLowerCase()))
-    assetTypes.forEach((label) => {
-      const key = label.toLowerCase()
-      if (!labelSet.has(key)) {
-        options.push({ id: `legacy-${key}`, label, rawLabel: label, displayLabel: (getGroupForLabel(label) ? label + ' (' + getGroupForLabel(label) + ')' : label), icon: '' })
-        labelSet.add(key)
-      }
-    })
-    if (options.length === 0) {
-      options.push({ id: 'legacy-uncategorised', label: 'Uncategorised', rawLabel: 'Uncategorised', displayLabel: 'Uncategorised', icon: '' })
-    }
     return options.sort((a, b) => (a.displayLabel || a.label).localeCompare(b.displayLabel || b.label))
-  }, [assetTypesConfig.types, assetTypes])
+  }, [assetTypesConfig.types])
   const selectedAssetType = useMemo(() => {
     if (form.assetTypeId) {
       return assetTypesConfig.types.find((t) => t.id === form.assetTypeId) || null
@@ -512,6 +486,15 @@ export default function AssetsView({
     return assetTypesConfig.types.find((t) => t.label.toLowerCase() === fallback) || null
   }, [assetTypesConfig.types, form.assetTypeId, form.assetType])
   const selectedAssetFields = selectedAssetType?.fields || []
+  const shouldShowDeviceDetails = useMemo(() => {
+    const rawLabel = selectedAssetType?.label || form.assetType || ''
+    const tokens = String(rawLabel || '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+    const allowed = new Set(['laptop', 'workstation', 'desktop', 'pc'])
+    return tokens.some((token) => allowed.has(token))
+  }, [selectedAssetType?.label, form.assetType])
   const selectedAssetTypeValue = useMemo(() => {
     if (form.assetTypeId) return form.assetTypeId
     const targetLabel = String(form.assetType || '').toLowerCase()
@@ -1109,7 +1092,7 @@ export default function AssetsView({
           <div className="modal-content asset-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{editing ? 'Edit Asset' : 'New Asset'}</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>�</button>
+              <button className="modal-close" onClick={() => setShowModal(false)}>×</button>
             </div>
             <div className="modal-body">
               <div className="asset-tabs">
@@ -1126,7 +1109,7 @@ export default function AssetsView({
                   <div className="form-row">
                     <div className="form-section">
                       <label className="form-label">Asset ID</label>
-                      <input className="form-input" value={form.assetId} placeholder="Auto" readOnly />
+                      <input className="form-input" value={form.assetId} placeholder="Auto" onChange={(e) => setForm((prev) => ({ ...prev, assetId: e.target.value }))} />
                     </div>
                     <div className="form-section">
                       <label className="form-label">Asset Type *</label>
@@ -1365,90 +1348,92 @@ export default function AssetsView({
 
               {activeTab === 'details' && (
                 <>
-                  <article className="asset-modal-card">
-                    <h3 className="asset-modal-card-title">Details</h3>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">OS</label>
-                        <input className="form-input" value={form.os} onChange={(e) => setForm({ ...form, os: e.target.value })} />
+                  {shouldShowDeviceDetails ? (
+                    <article className="asset-modal-card">
+                      <h3 className="asset-modal-card-title">Details</h3>
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">OS</label>
+                          <input className="form-input" value={form.os} onChange={(e) => setForm({ ...form, os: e.target.value })} />
+                        </div>
+                        <div className="form-section">
+                          <label className="form-label">OS Version</label>
+                          <input className="form-input" value={form.osVersion} onChange={(e) => setForm({ ...form, osVersion: e.target.value })} />
+                        </div>
                       </div>
-                      <div className="form-section">
-                        <label className="form-label">OS Version</label>
-                        <input className="form-input" value={form.osVersion} onChange={(e) => setForm({ ...form, osVersion: e.target.value })} />
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">OS Service Pack</label>
+                          <input className="form-input" value={form.osServicePack} onChange={(e) => setForm({ ...form, osServicePack: e.target.value })} />
+                        </div>
+                        <div className="form-section">
+                          <label className="form-label">Memory (GB)</label>
+                          <input className="form-input" value={form.ram} onChange={(e) => setForm({ ...form, ram: e.target.value })} />
+                        </div>
                       </div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">OS Service Pack</label>
-                        <input className="form-input" value={form.osServicePack} onChange={(e) => setForm({ ...form, osServicePack: e.target.value })} />
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">Disk Space (GB)</label>
+                          <input className="form-input" value={form.storage} onChange={(e) => setForm({ ...form, storage: e.target.value })} />
+                        </div>
+                        <div className="form-section">
+                          <label className="form-label">CPU Speed (GHz)</label>
+                          <input className="form-input" value={form.cpuSpeed} onChange={(e) => setForm({ ...form, cpuSpeed: e.target.value })} />
+                        </div>
                       </div>
-                      <div className="form-section">
-                        <label className="form-label">Memory (GB)</label>
-                        <input className="form-input" value={form.ram} onChange={(e) => setForm({ ...form, ram: e.target.value })} />
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">CPU Core Count</label>
+                          <input className="form-input" value={form.cpuCoreCount} onChange={(e) => setForm({ ...form, cpuCoreCount: e.target.value })} />
+                        </div>
+                        <div className="form-section">
+                          <label className="form-label">License Key</label>
+                          <input className="form-input" value={form.licenseKey} onChange={(e) => setForm({ ...form, licenseKey: e.target.value })} />
+                        </div>
                       </div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">Disk Space (GB)</label>
-                        <input className="form-input" value={form.storage} onChange={(e) => setForm({ ...form, storage: e.target.value })} />
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">Installed Software</label>
+                          <input className="form-input" value={form.installedSoftwareText} onChange={(e) => setForm({ ...form, installedSoftwareText: e.target.value })} />
+                        </div>
+                        <div className="form-section">
+                          <label className="form-label">Antivirus</label>
+                          <input className="form-input" value={form.antivirus} onChange={(e) => setForm({ ...form, antivirus: e.target.value })} />
+                        </div>
                       </div>
-                      <div className="form-section">
-                        <label className="form-label">CPU Speed (GHz)</label>
-                        <input className="form-input" value={form.cpuSpeed} onChange={(e) => setForm({ ...form, cpuSpeed: e.target.value })} />
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">Patch Status</label>
+                          <input className="form-input" value={form.patchStatus} onChange={(e) => setForm({ ...form, patchStatus: e.target.value })} />
+                        </div>
+                        <div className="form-section">
+                          <label className="form-label">Encryption</label>
+                          <input className="form-input" value={form.encryption} onChange={(e) => setForm({ ...form, encryption: e.target.value })} />
+                        </div>
                       </div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">CPU Core Count</label>
-                        <input className="form-input" value={form.cpuCoreCount} onChange={(e) => setForm({ ...form, cpuCoreCount: e.target.value })} />
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">MAC Address</label>
+                          <input className="form-input" value={form.macAddress} onChange={(e) => setForm({ ...form, macAddress: e.target.value })} />
+                        </div>
+                        <div className="form-section">
+                          <label className="form-label">IP Address</label>
+                          <input className="form-input" value={form.ipAddress} onChange={(e) => setForm({ ...form, ipAddress: e.target.value })} />
+                        </div>
                       </div>
-                      <div className="form-section">
-                        <label className="form-label">License Key</label>
-                        <input className="form-input" value={form.licenseKey} onChange={(e) => setForm({ ...form, licenseKey: e.target.value })} />
+                      <div className="form-row">
+                        <div className="form-section">
+                          <label className="form-label">Supplier</label>
+                          <select className="form-select" value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })}>
+                            <option value="">Select supplier...</option>
+                            {suppliers.map((s) => (
+                              <option key={s.id} value={s.companyName || s.name || `Supplier ${s.id}`}>{s.companyName || s.name || `Supplier ${s.id}`}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">Installed Software</label>
-                        <input className="form-input" value={form.installedSoftwareText} onChange={(e) => setForm({ ...form, installedSoftwareText: e.target.value })} />
-                      </div>
-                      <div className="form-section">
-                        <label className="form-label">Antivirus</label>
-                        <input className="form-input" value={form.antivirus} onChange={(e) => setForm({ ...form, antivirus: e.target.value })} />
-                      </div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">Patch Status</label>
-                        <input className="form-input" value={form.patchStatus} onChange={(e) => setForm({ ...form, patchStatus: e.target.value })} />
-                      </div>
-                      <div className="form-section">
-                        <label className="form-label">Encryption</label>
-                        <input className="form-input" value={form.encryption} onChange={(e) => setForm({ ...form, encryption: e.target.value })} />
-                      </div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">MAC Address</label>
-                        <input className="form-input" value={form.macAddress} onChange={(e) => setForm({ ...form, macAddress: e.target.value })} />
-                      </div>
-                      <div className="form-section">
-                        <label className="form-label">IP Address</label>
-                        <input className="form-input" value={form.ipAddress} onChange={(e) => setForm({ ...form, ipAddress: e.target.value })} />
-                      </div>
-                    </div>
-                    <div className="form-row">
-                      <div className="form-section">
-                        <label className="form-label">Supplier</label>
-                        <select className="form-select" value={form.supplier} onChange={(e) => setForm({ ...form, supplier: e.target.value })}>
-                          <option value="">Select supplier...</option>
-                          {suppliers.map((s) => (
-                            <option key={s.id} value={s.companyName || s.name || `Supplier ${s.id}`}>{s.companyName || s.name || `Supplier ${s.id}`}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </article>
+                    </article>
+                  ) : null}
                   {selectedAssetFields.length > 0 && (
                     <article className="asset-modal-card">
                       <h3 className="asset-modal-card-title">Custom Fields</h3>
@@ -1512,6 +1497,7 @@ export default function AssetsView({
     </>
   )
 }
+
 
 
 

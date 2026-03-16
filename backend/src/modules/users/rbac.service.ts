@@ -1496,7 +1496,7 @@ async function sendInviteEmail(
   const actorName = String(actor?.name || ctx.senderName).trim()
   const actorEmail = String(actor?.email || ctx.supportEmail).trim()
   const expiresText = formatInviteExpiryIst(expiresAt)
-  const supportEmail = String(ctx.supportEmail || 'girikumaran@trustybytes.in').trim()
+  const supportEmail = String(ctx.supportEmail || '').trim()
   const contactLine = [ctx.supportEmail, ctx.supportPhone].filter(Boolean).join(' | ')
   const signatureContact = contactLine || actorEmail || 'Support Desk'
 

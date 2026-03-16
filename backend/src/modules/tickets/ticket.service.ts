@@ -757,7 +757,9 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
 
   const normalizedToState = normalizeTicketStatus(toState)
   const can = workflowEngine.canTransition(t.type, t.status, normalizedToState)
-  if (!can) throw { status: 400, message: `Invalid transition from ${t.status} to ${normalizedToState}` }
+  const manualOverrideStates = new Set(['Acknowledged', 'With User', 'With Supplier', 'On Hold', 'Updated'])
+  const allowManual = manualOverrideStates.has(t.status) || manualOverrideStates.has(normalizedToState)
+  if (!can && !allowManual) throw { status: 400, message: `Invalid transition from ${t.status} to ${normalizedToState}` }
 
   const from = t.status
   const where = buildTicketWhere(ticketId, 't', 2)
@@ -795,16 +797,8 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
   const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id])
   updated.sla = buildSlaSnapshot(updated, tracking)
   updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla)
-  // notify requester/assignee
-  try {
-    const requester = updated.requesterId ? await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [updated.requesterId]) : null
-    const assignee = updated.assigneeId ? await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [updated.assigneeId]) : null
-    if (requester && requester.email) await mailer.sendStatusUpdated(requester.email, updated)
-    if (assignee && assignee.email) await mailer.sendStatusUpdated(assignee.email, updated)
-  } catch (e) {
-    // swallow notification errors
-    console.warn('Failed sending status update emails', e)
-  }
+  // NOTE: Status update emails are intentionally disabled. End users
+  // should only be notified via explicit ticket mail actions.
 
   return updated
 }

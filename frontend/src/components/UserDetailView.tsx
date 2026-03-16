@@ -87,9 +87,18 @@ export default function UserDetailView({
   const [permissionSaving, setPermissionSaving] = React.useState(false)
   const [editMode, setEditMode] = React.useState(false)
   const [profileDraft, setProfileDraft] = React.useState({
+    name: '',
+    workEmail: '',
+    phone: '',
+    employeeId: '',
+    department: '',
+    reportingManager: '',
+    dateOfJoining: '',
+    employmentType: '',
+    workMode: '',
+    designation: '',
     email: '',
     mobilePhone: '',
-    designation: '',
     location: '',
     company: '',
     signature: '',
@@ -214,9 +223,18 @@ export default function UserDetailView({
   React.useEffect(() => {
     if (!user) return
     setProfileDraft({
-      email: String(user?.email || user?.workEmail || ''),
-      mobilePhone: String(user?.mobilePhone || ''),
+      name: String(user?.name || ''),
+      workEmail: String(user?.workEmail || user?.email || ''),
+      phone: String(user?.phone || user?.mobilePhone || ''),
+      employeeId: String(user?.employeeId || ''),
+      department: String(user?.department || ''),
+      reportingManager: String(user?.reportingManager || user?.manager || ''),
+      dateOfJoining: user?.dateOfJoining ? String(user.dateOfJoining).slice(0, 10) : '',
+      employmentType: String(user?.employmentType || ''),
+      workMode: String(user?.workMode || ''),
       designation: String(user?.designation || ''),
+      email: String(user?.email || user?.workEmail || ''),
+      mobilePhone: String(user?.mobilePhone || user?.phone || ''),
       location: String(user?.location || user?.site || ''),
       company: String(user?.company || user?.client || ''),
       signature: String(user?.signature || ''),
@@ -433,10 +451,19 @@ export default function UserDetailView({
 
   const handleSaveProfile = async () => {
     if (!user?.id) return
+    const workEmail = profileDraft.workEmail.trim() || profileDraft.email.trim()
     const payload = {
-      email: profileDraft.email.trim() || undefined,
-      workEmail: profileDraft.email.trim() || undefined,
-      mobilePhone: profileDraft.mobilePhone.trim() || undefined,
+      name: profileDraft.name.trim() || undefined,
+      email: workEmail || undefined,
+      workEmail: workEmail || undefined,
+      phone: profileDraft.phone.trim() || undefined,
+      mobilePhone: profileDraft.mobilePhone.trim() || profileDraft.phone.trim() || undefined,
+      employeeId: profileDraft.employeeId.trim() || undefined,
+      department: profileDraft.department.trim() || undefined,
+      reportingManager: profileDraft.reportingManager.trim() || undefined,
+      dateOfJoining: profileDraft.dateOfJoining || undefined,
+      employmentType: profileDraft.employmentType || undefined,
+      workMode: profileDraft.workMode || undefined,
       designation: profileDraft.designation.trim() || undefined,
       location: profileDraft.location.trim() || undefined,
       company: profileDraft.company.trim() || undefined,
@@ -468,9 +495,18 @@ export default function UserDetailView({
   const handleCancelEdit = () => {
     if (!user) return
     setProfileDraft({
-      email: String(user?.email || user?.workEmail || ''),
-      mobilePhone: String(user?.mobilePhone || ''),
+      name: String(user?.name || ''),
+      workEmail: String(user?.workEmail || user?.email || ''),
+      phone: String(user?.phone || user?.mobilePhone || ''),
+      employeeId: String(user?.employeeId || ''),
+      department: String(user?.department || ''),
+      reportingManager: String(user?.reportingManager || user?.manager || ''),
+      dateOfJoining: user?.dateOfJoining ? String(user.dateOfJoining).slice(0, 10) : '',
+      employmentType: String(user?.employmentType || ''),
+      workMode: String(user?.workMode || ''),
       designation: String(user?.designation || ''),
+      email: String(user?.email || user?.workEmail || ''),
+      mobilePhone: String(user?.mobilePhone || user?.phone || ''),
       location: String(user?.location || user?.site || ''),
       company: String(user?.company || user?.client || ''),
       signature: String(user?.signature || ''),
@@ -499,7 +535,7 @@ export default function UserDetailView({
         {!loading && user ? (
           <section className="agent-detail-surface">
             <div className="agent-detail-head">
-              <h2>Agent details</h2>
+              <h2>{isAgentsMode ? 'Agent details' : 'User details'}</h2>
               <div className="agent-detail-actions">
                 {embedded && (
                   <button type="button" className="admin-settings-ghost" onClick={onClose}>
@@ -638,6 +674,7 @@ export default function UserDetailView({
             </div>
 
             <div className="agent-status-strip-wrap">
+            {isAgentsMode && (
               <div className="agent-status-strip">
                 <div className="agent-status-item">
                   <span>Agent Name</span>
@@ -659,12 +696,12 @@ export default function UserDetailView({
                   <span>2FA</span>
                   <strong>{user?.mfaEnabled ? 'Enabled' : 'Disabled'}</strong>
                 </div>
-              <div className="agent-status-item">
-                <span>Active Status</span>
-                <strong>{activeStatusLabel}</strong>
+                <div className="agent-status-item">
+                  <span>Active Status</span>
+                  <strong>{activeStatusLabel}</strong>
+                </div>
               </div>
-            </div>
-            </div>
+            )}
 
             <nav className="agent-tab-row" aria-label="Agent detail tabs">
               {profileTabs.map((tab) => (
@@ -682,70 +719,204 @@ export default function UserDetailView({
             <div className="agent-tab-panel">
               {activeTab === 'profile' && (
                 <section className="agent-card">
-                  <div className="agent-kv-grid">
-                    <div>
-                      <span>Email</span>
-                      {editMode ? (
-                        <input
-                          className="agent-edit-input"
-                          value={profileDraft.email}
-                          onChange={(e) => setProfileDraft((prev) => ({ ...prev, email: e.target.value }))}
-                        />
-                      ) : (
-                        <strong>{userEmail}</strong>
-                      )}
+                  {isAgentsMode ? (
+                    <div className="agent-kv-grid">
+                      <div>
+                        <span>Email</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.email}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, email: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{userEmail}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Mobile Phone</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.mobilePhone}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, mobilePhone: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.mobilePhone)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Title</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.designation}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, designation: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.designation)}</strong>
+                        )}
+                      </div>
+                      <div><span>Location</span><strong>{formatText(user?.location || user?.site)}</strong></div>
+                      <div>
+                        <span>Company</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.company}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, company: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.company || user?.client)}</strong>
+                        )}
+                      </div>
+                      <div className="full">
+                        <span>Signature</span>
+                        {editMode ? (
+                          <textarea
+                            className="agent-edit-textarea"
+                            rows={3}
+                            value={profileDraft.signature}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, signature: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.signature)}</strong>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span>Mobile Phone</span>
-                      {editMode ? (
-                        <input
-                          className="agent-edit-input"
-                          value={profileDraft.mobilePhone}
-                          onChange={(e) => setProfileDraft((prev) => ({ ...prev, mobilePhone: e.target.value }))}
-                        />
-                      ) : (
-                        <strong>{formatText(user?.mobilePhone)}</strong>
-                      )}
+                  ) : (
+                    <div className="agent-kv-grid">
+                      <div>
+                        <span>Full Name</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.name}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, name: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.name)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Work Email</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.workEmail}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, workEmail: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.workEmail || user?.email)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Employee ID</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.employeeId}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, employeeId: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.employeeId)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Designation</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.designation}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, designation: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.designation)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Department/Project</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.department}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, department: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.department)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Reporting Manager</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.reportingManager}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, reportingManager: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.reportingManager)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Date of Joining</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            type="date"
+                            value={profileDraft.dateOfJoining}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, dateOfJoining: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.dateOfJoining)}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Employment Type</span>
+                        {editMode ? (
+                          <select
+                            className="agent-edit-input"
+                            value={profileDraft.employmentType || 'Full-time'}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, employmentType: e.target.value }))}
+                          >
+                            <option value="Full-time">Full-time</option>
+                            <option value="Contract">Contract</option>
+                            <option value="Intern">Intern</option>
+                          </select>
+                        ) : (
+                          <strong>{formatText(user?.employmentType || 'Full-time')}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Work Mode</span>
+                        {editMode ? (
+                          <select
+                            className="agent-edit-input"
+                            value={profileDraft.workMode || 'Onsite'}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, workMode: e.target.value }))}
+                          >
+                            <option value="Onsite">Onsite</option>
+                            <option value="Remote">Remote</option>
+                            <option value="Hybrid">Hybrid</option>
+                          </select>
+                        ) : (
+                          <strong>{formatText(user?.workMode || 'Onsite')}</strong>
+                        )}
+                      </div>
+                      <div>
+                        <span>Phone Number</span>
+                        {editMode ? (
+                          <input
+                            className="agent-edit-input"
+                            value={profileDraft.phone}
+                            onChange={(e) => setProfileDraft((prev) => ({ ...prev, phone: e.target.value }))}
+                          />
+                        ) : (
+                          <strong>{formatText(user?.phone || user?.mobilePhone)}</strong>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <span>Title</span>
-                      {editMode ? (
-                        <input
-                          className="agent-edit-input"
-                          value={profileDraft.designation}
-                          onChange={(e) => setProfileDraft((prev) => ({ ...prev, designation: e.target.value }))}
-                        />
-                      ) : (
-                        <strong>{formatText(user?.designation)}</strong>
-                      )}
-                    </div>
-                    <div><span>Location</span><strong>{formatText(user?.location || user?.site)}</strong></div>
-                    <div>
-                      <span>Company</span>
-                      {editMode ? (
-                        <input
-                          className="agent-edit-input"
-                          value={profileDraft.company}
-                          onChange={(e) => setProfileDraft((prev) => ({ ...prev, company: e.target.value }))}
-                        />
-                      ) : (
-                        <strong>{formatText(user?.company || user?.client)}</strong>
-                      )}
-                    </div>
-                    <div className="full">
-                      <span>Signature</span>
-                      {editMode ? (
-                        <textarea
-                          className="agent-edit-textarea"
-                          rows={3}
-                          value={profileDraft.signature}
-                          onChange={(e) => setProfileDraft((prev) => ({ ...prev, signature: e.target.value }))}
-                        />
-                      ) : (
-                        <strong>{formatText(user?.signature)}</strong>
-                      )}
-                    </div>
-                  </div>
+                  )}
                 </section>
               )}
 
@@ -839,6 +1010,7 @@ export default function UserDetailView({
 
               {activeTab === 'documents' && <div className="agent-empty">No documents to show.</div>}
               {activeTab === 'tickets' && <div className="agent-empty">No open and pending tickets for this agent</div>}
+            </div>
             </div>
           </section>
         ) : null}

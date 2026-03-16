@@ -1,8 +1,81 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.setAssetServices = exports.setAssetProblems = exports.setAssetChanges = exports.linkTicketsToAsset = exports.deleteAsset = exports.updateAsset = exports.createAsset = exports.getAssetById = exports.listAssets = void 0;
+exports.setAssetServices = exports.setAssetProblems = exports.setAssetChanges = exports.linkTicketsToAsset = exports.deleteAsset = exports.updateAsset = exports.createAsset = exports.getAssetById = exports.listAssets = exports.getNextAssetId = void 0;
 const db_1 = require("../../db");
 const DEFAULT_ASSET_CATEGORY = 'Uncategorised';
+let assetSchemaReady = false;
+async function ensureAssetSchema() {
+    if (assetSchemaReady)
+        return;
+    await (0, db_1.query)(`
+    ALTER TABLE "Asset"
+    ADD COLUMN IF NOT EXISTS "customFields" JSONB NOT NULL DEFAULT '{}'::jsonb
+  `);
+    await (0, db_1.query)(`
+    ALTER TABLE "Asset"
+    ADD COLUMN IF NOT EXISTS "assetTypeId" TEXT
+  `);
+    await (0, db_1.query)(`
+    ALTER TABLE "Asset"
+    ADD COLUMN IF NOT EXISTS "displayName" TEXT,
+    ADD COLUMN IF NOT EXISTS "description" TEXT,
+    ADD COLUMN IF NOT EXISTS "impact" TEXT,
+    ADD COLUMN IF NOT EXISTS "usageType" TEXT,
+    ADD COLUMN IF NOT EXISTS "domain" TEXT,
+    ADD COLUMN IF NOT EXISTS "region" TEXT,
+    ADD COLUMN IF NOT EXISTS "availabilityZone" TEXT,
+    ADD COLUMN IF NOT EXISTS "managedByGroup" TEXT,
+    ADD COLUMN IF NOT EXISTS "company" TEXT,
+    ADD COLUMN IF NOT EXISTS "usedBy" TEXT,
+    ADD COLUMN IF NOT EXISTS "managedBy" TEXT,
+    ADD COLUMN IF NOT EXISTS "assignedOn" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "hardwareType" TEXT,
+    ADD COLUMN IF NOT EXISTS "physicalSubtype" TEXT,
+    ADD COLUMN IF NOT EXISTS "virtualSubtype" TEXT,
+    ADD COLUMN IF NOT EXISTS "product" TEXT,
+    ADD COLUMN IF NOT EXISTS "cpuSpeed" TEXT,
+    ADD COLUMN IF NOT EXISTS "cpuCoreCount" TEXT,
+    ADD COLUMN IF NOT EXISTS "osServicePack" TEXT,
+    ADD COLUMN IF NOT EXISTS "uuid" TEXT,
+    ADD COLUMN IF NOT EXISTS "hostname" TEXT,
+    ADD COLUMN IF NOT EXISTS "lastLoginBy" TEXT,
+    ADD COLUMN IF NOT EXISTS "vendor" TEXT,
+    ADD COLUMN IF NOT EXISTS "acquisitionType" TEXT,
+    ADD COLUMN IF NOT EXISTS "rentalProvider" TEXT,
+    ADD COLUMN IF NOT EXISTS "rentalStartDate" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "rentalEndDate" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "rentalMonthlyCost" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "rentalTotalCost" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "maintenanceIncluded" BOOLEAN,
+    ADD COLUMN IF NOT EXISTS "contractNumber" TEXT,
+    ADD COLUMN IF NOT EXISTS "returnCondition" TEXT,
+    ADD COLUMN IF NOT EXISTS "acquisitionDate" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "cost" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "salvageValue" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "depreciationType" TEXT,
+    ADD COLUMN IF NOT EXISTS "warrantyYears" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "warrantyMonths" NUMERIC,
+    ADD COLUMN IF NOT EXISTS "warrantyExpiryAt" TIMESTAMP,
+    ADD COLUMN IF NOT EXISTS "itemId" TEXT,
+    ADD COLUMN IF NOT EXISTS "itemName" TEXT,
+    ADD COLUMN IF NOT EXISTS "publicAddress" TEXT,
+    ADD COLUMN IF NOT EXISTS "instanceState" TEXT,
+    ADD COLUMN IF NOT EXISTS "instanceType" TEXT,
+    ADD COLUMN IF NOT EXISTS "provider" TEXT,
+    ADD COLUMN IF NOT EXISTS "creationTimestamp" TIMESTAMP
+  `);
+    assetSchemaReady = true;
+}
+async function getNextAssetId() {
+    await ensureAssetSchema();
+    const row = await (0, db_1.queryOne)(`
+    SELECT COALESCE(MAX(CASE WHEN "assetId" ~ '^[0-9]+$' THEN "assetId"::int END), 0) AS max
+    FROM "Asset"
+  `);
+    const next = (row?.max || 0) + 1;
+    return String(next);
+}
+exports.getNextAssetId = getNextAssetId;
 function normalizeAssetCategory(value) {
     const next = String(value || '').trim();
     return next || DEFAULT_ASSET_CATEGORY;
@@ -71,6 +144,7 @@ function buildUpdate(table, id, data) {
     return { text, params };
 }
 async function listAssets(opts = {}) {
+    await ensureAssetSchema();
     const page = opts.page ?? 1;
     const pageSize = opts.pageSize ?? 20;
     const { where, params } = buildAssetWhere(opts);
@@ -90,6 +164,7 @@ async function listAssets(opts = {}) {
 }
 exports.listAssets = listAssets;
 async function getAssetById(id) {
+    await ensureAssetSchema();
     const asset = await (0, db_1.queryOne)(`SELECT a.*, row_to_json(u) AS "assignedTo", row_to_json(p) AS "parentAsset"
      FROM "Asset" a
      LEFT JOIN "User" u ON u."id" = a."assignedToId"
@@ -123,6 +198,7 @@ async function getAssetById(id) {
 }
 exports.getAssetById = getAssetById;
 async function createAsset(data) {
+    await ensureAssetSchema();
     const normalized = {
         ...data,
         category: normalizeAssetCategory(data?.category),
@@ -133,6 +209,7 @@ async function createAsset(data) {
 }
 exports.createAsset = createAsset;
 async function updateAsset(id, data) {
+    await ensureAssetSchema();
     const normalized = {
         ...data,
         ...(data?.category !== undefined ? { category: normalizeAssetCategory(data.category) } : {}),

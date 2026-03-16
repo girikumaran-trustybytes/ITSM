@@ -119,7 +119,7 @@ export default function UsersView({
   const loadUsers = async () => {
     setLoading(true)
     try {
-      const data = await userService.listUsers({ q: search || undefined })
+      const data = await userService.listUsers({ q: search || undefined, role: 'USER' })
       const list = Array.isArray(data) ? data : []
       setUsers(list)
     } catch (e) {

@@ -299,7 +299,8 @@ async function createTicketFromMail(mailbox, mail) {
     const requesterId = await findRequesterIdByEmail(mail.fromEmail);
     const safeSubject = (mail.subject || '').trim() || `Email to ${mailbox}`;
     const inboundRouting = (0, mail_integration_1.getInboundRoutingConfig)();
-    const inboundQueue = (0, mail_integration_1.resolveInboundQueueByRecipient)(mail.toRaw, inboundRouting.defaultQueue);
+    const mailboxRoute = inboundRouting.inboundRoutes.find((route) => String(route.email || '').trim().toLowerCase() === String(mailbox || '').trim().toLowerCase());
+    const inboundQueue = mailboxRoute?.queue || (0, mail_integration_1.resolveInboundQueueByRecipient)(mail.toRaw, inboundRouting.defaultQueue);
     const description = [
         'Auto-created from inbound email.',
         `Mailbox: ${mailbox}`,

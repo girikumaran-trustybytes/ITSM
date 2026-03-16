@@ -32,6 +32,7 @@ const router = (0, express_1.Router)();
 router.use(auth_middleware_1.authenticateJWT);
 router.get('/', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, permission_middleware_1.requireAnyPermission)(['itsm.assets', 'asset.view']), ctrl.list);
 router.get('/my', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT', 'USER']), (0, permission_middleware_1.requireAnyPermission)(['itsm.assets', 'portal.access']), ctrl.listMine);
+router.get('/next-id', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, permission_middleware_1.requireAnyPermission)(['itsm.assets', 'asset.create']), ctrl.getNextId);
 router.get('/:id', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, permission_middleware_1.requireAnyPermission)(['itsm.assets', 'asset.view']), ctrl.getOne);
 router.post('/', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, permission_middleware_1.requireAnyPermission)(['itsm.assets', 'asset.create']), ctrl.create);
 router.patch('/:id', (0, rbac_middleware_1.permit)(['ADMIN', 'AGENT']), (0, permission_middleware_1.requireAnyPermission)(['itsm.assets', 'asset.edit']), ctrl.update);

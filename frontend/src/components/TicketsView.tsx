@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import * as ticketService from '../modules/tickets/services/ticket.service'
+import * as supplierService from '../modules/suppliers/services/supplier.service'
 import * as ticketSvc from '../modules/tickets/services/ticket.service'
 import * as assetService from '../modules/assets/services/asset.service'
 import * as userService from '../modules/users/services/user.service'
@@ -12,7 +13,7 @@ import { loadLeftPanelConfig, type QueueRule, type TicketQueueConfig } from '../
 import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, toPresenceClass, type PresenceStatus } from '../utils/presence'
 import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../utils/avatar'
 
-const PLATFORM_FROM_MAIL = String((import.meta as any).env?.VITE_PLATFORM_BASE_MAIL || 'girikumaran@trustybytes.in').trim()
+const PLATFORM_FROM_MAIL = String((import.meta as any).env?.VITE_PLATFORM_BASE_MAIL || '').trim()
 const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
 const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
 const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
@@ -49,9 +50,24 @@ type TimelineEntry = {
   text: string
   time: string
   action?: string
+  fromStatus?: string
+  toStatus?: string
   internal?: boolean
   changedById?: number | null
   kind?: 'conversation' | 'internal' | 'private' | 'sla' | 'asset' | 'user' | 'system' | 'public'
+}
+
+type SupplierOption = {
+  id: number
+  companyName?: string | null
+  companyMail?: string | null
+  contactPerson?: string | null
+  contactName?: string | null
+  contactEmail?: string | null
+  contactEmail2?: string | null
+  contactEmail3?: string | null
+  contactEmail4?: string | null
+  contactEmail5?: string | null
 }
 
 type EmailSignatureRecord = {
@@ -141,7 +157,8 @@ export default function TicketsView() {
   const [assetAssignId, setAssetAssignId] = useState<number | ''>('')
   const [slaNowMs, setSlaNowMs] = useState(() => Date.now())
   const [activeDetailTab, setActiveDetailTab] = useState('Progress')
-  const [progressFilter, setProgressFilter] = useState<ProgressFilterType>('All Actions')
+  const [progressFilter, setProgressFilter] = useState<ProgressFilterType>('Conversation & Internal')
+  const progressFilterInitializedRef = React.useRef(false)
   const [isEditingSubject, setIsEditingSubject] = useState(false)
   const [subjectDraft, setSubjectDraft] = useState('')
   const subjectInputRef = useRef<HTMLInputElement | null>(null)
@@ -159,6 +176,7 @@ export default function TicketsView() {
   const [showActionComposer, setShowActionComposer] = useState(false)
   const [showInternalNoteEditor, setShowInternalNoteEditor] = useState(false)
   const [internalNoteVisibility, setInternalNoteVisibility] = useState<'internal' | 'private'>('private')
+  const [internalNoteContext, setInternalNoteContext] = useState<'note' | 'escalate'>('note')
   const [slaPolicies, setSlaPolicies] = useState<any[]>([])
   const [slaApplying, setSlaApplying] = useState(false)
   const [slaPolicyMenuOpen, setSlaPolicyMenuOpen] = useState(false)
@@ -184,6 +202,7 @@ export default function TicketsView() {
   const slaPriorityMenuRef = React.useRef<HTMLDivElement | null>(null)
   const progressFilterMenuRef = React.useRef<HTMLDivElement | null>(null)
   const progressListRef = React.useRef<HTMLDivElement | null>(null)
+  const statusMenuRef = React.useRef<HTMLDivElement | null>(null)
   const [composerMenuOpen, setComposerMenuOpen] = useState(false)
   const [showCcField, setShowCcField] = useState(false)
   const [showBccField, setShowBccField] = useState(false)
@@ -221,11 +240,12 @@ export default function TicketsView() {
     currentAction: '',
     nextAction: '',
     asset: '',
-    supplier: 'Supplier and Contract',
+    supplier: '',
     supplierRef: '',
     approvalTeam: 'Management Team',
-    approvalPriority: 'P2 - Single site outage with remote fix',
+    approvalPriority: 'P2',
   })
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([])
   const [internalNoteForm, setInternalNoteForm] = useState({
     body: '',
     status: 'In Progress',
@@ -234,8 +254,10 @@ export default function TicketsView() {
     timeHours: '00',
     timeMinutes: '01',
   })
+  const [escalateForm, setEscalateForm] = useState({ teamId: '', staffId: '' })
 
   const openInternalNoteEditor = (mode: 'internal' | 'private') => {
+    setInternalNoteContext('note')
     setInternalNoteVisibility(mode)
     setShowInternalNoteEditor(true)
   }
@@ -574,10 +596,17 @@ export default function TicketsView() {
     const historyComments = historyItems
       .map((h: any) => {
         const noteRaw = String(h?.note || '').trim()
-        const note = noteRaw.replace(/^\[EMAIL\]\s*/i, '').trim()
+        let note = noteRaw.replace(/^\[EMAIL\]\s*/i, '').trim()
         const fromStatus = String(h?.fromStatus || '').trim()
         const toStatus = String(h?.toStatus || '').trim()
+        const fromKey = fromStatus.toLowerCase()
+        const toKey = toStatus.toLowerCase()
+        const isAcceptTransition = fromKey === 'new' && (toKey === 'in progress' || toKey === 'assigned')
         const fallback = fromStatus || toStatus ? `Status changed: ${fromStatus || '-'} -> ${toStatus || '-'}` : 'Ticket updated'
+        if (isAcceptTransition) {
+          const acceptedBy = resolveHistoryAuthor(h, ticketData) || getCurrentAgentName() || 'Agent'
+          note = `Accepted by ${acceptedBy}`
+        }
         const internal = Boolean(h?.internal)
         const kind = noteRaw.toLowerCase().startsWith('[email]')
           ? 'conversation'
@@ -589,7 +618,9 @@ export default function TicketsView() {
           text: note || fallback,
           time: formatTimelineTime(h?.createdAt),
           timeMs: toTimestamp(h?.createdAt),
-          action: resolveTimelineAction({ noteRaw, note: note || fallback, fromStatus, toStatus, internal, kind, createdAction }),
+          action: isAcceptTransition ? 'Accept Ticket' : resolveTimelineAction({ noteRaw, note: note || fallback, fromStatus, toStatus, internal, kind, createdAction }),
+          fromStatus,
+          toStatus,
           internal,
           changedById: Number(h?.changedById || 0) || null,
           kind,
@@ -865,7 +896,7 @@ export default function TicketsView() {
         })
       setShowDetailView(true)
     })
-  }, [ticketId, incidents])
+  }, [ticketId])
   React.useEffect(() => {
     const syncPresence = () => setMyPresenceStatus(getStoredPresenceStatus())
     const syncPresenceFromEvent = (event: Event) => {
@@ -897,6 +928,24 @@ export default function TicketsView() {
     window.addEventListener('rbac-permissions-updated', onRbacUpdated)
     return () => window.removeEventListener('rbac-permissions-updated', onRbacUpdated)
   }, [])
+
+  React.useEffect(() => {
+    const loadSuppliers = async () => {
+      try {
+        const data = await supplierService.listSuppliers({})
+        setSupplierOptions(Array.isArray(data) ? data : [])
+      } catch (e) {
+        setSupplierOptions([])
+      }
+    }
+    loadSuppliers()
+  }, [])
+
+  React.useEffect(() => {
+    if (composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') {
+      setComposerForm((prev) => ({ ...prev, actionStatus: 'With Supplier' }))
+    }
+  }, [composerMode])
 
   React.useEffect(() => {
     if (String(user?.role || '').toUpperCase() !== 'ADMIN') {
@@ -1118,7 +1167,7 @@ export default function TicketsView() {
       if (Object.keys(updates).length > 0) setNewIncidentForm((prev) => ({ ...prev, ...updates }))
     }
   }, [isIncidentType, isTaskType, isServiceRequestType, isNewStarterType, isProblemType, isOffboardingType, isNewAssetsType, newIncidentForm.teamId, newIncidentForm.description, supportTeamOption, hrTeamOption])
-  const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'Closed']
+  const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'On Hold', 'Closed']
   const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
   const createdFromOptions = ['User portal', 'ITSM Platform']
 
@@ -1148,7 +1197,6 @@ export default function TicketsView() {
   const [resolutionValue, setResolutionValue] = useState('Not set')
   const [editingTicketField, setEditingTicketField] = useState<string | null>(null)
   const [editingEndUserField, setEditingEndUserField] = useState<null | 'name' | 'email' | 'phone' | 'site' | 'accountManager'>(null)
-  const statusMenuRef = useRef<HTMLDivElement | null>(null)
   const [endUserDraft, setEndUserDraft] = useState({
     name: '',
     email: '',
@@ -1439,6 +1487,13 @@ export default function TicketsView() {
   }
 
   const statusClass = (s: string) => s.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '')
+  const hasInboundUpdate = (incident: Incident) => {
+    const label = String(incident.lastAction || '').toLowerCase()
+    if (!label) return false
+    return label.includes('inbound email reply received')
+      || label.includes('inbound email')
+      || label.includes('email reply received')
+  }
 
   const handleTicketClick = (ticket: Incident) => {
     setSelectedTicket(ticket)
@@ -1638,6 +1693,7 @@ export default function TicketsView() {
       buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
       buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
       if (acceptedDone) buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
+      buttons.push({ label: 'Escalate', onClick: handleEscalate })
       if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
     }
 
@@ -1750,6 +1806,30 @@ export default function TicketsView() {
       buttons.push({ label: 'Reject', onClick: go('Rejected') })
     }
     return buttons
+  }
+
+  const getSupplierDisplayName = (supplier: SupplierOption) => {
+    return String(
+      supplier.companyName ||
+      supplier.contactName ||
+      supplier.contactPerson ||
+      supplier.companyMail ||
+      supplier.contactEmail ||
+      `Supplier #${supplier.id}`
+    ).trim()
+  }
+
+  const resolveSupplierEmail = (supplier?: SupplierOption | null) => {
+    if (!supplier) return ''
+    const candidates = [
+      supplier.companyMail,
+      supplier.contactEmail,
+      supplier.contactEmail2,
+      supplier.contactEmail3,
+      supplier.contactEmail4,
+      supplier.contactEmail5,
+    ]
+    return String(candidates.find((value) => String(value || '').trim()) || '').trim()
   }
 
   const closeDetail = () => {
@@ -1954,12 +2034,18 @@ Click below to proceed:
     const type = String(selectedTicket?.type || '-').trim() || '-'
     const category = String(selectedTicket?.category || '-').trim() || '-'
     const section = String(selectedTicket?.team || '-').trim() || '-'
+    const subject = String(selectedTicket?.subject || selectedTicket?.description || '-').trim() || '-'
     const byKey: Record<string, string> = {
       user_name: requesterName,
+      username: requesterName,
+      user: requesterName,
+      recipient: requesterName,
+      recipientname: requesterName,
       asset_id: assetId,
       ticket_id: ticketId,
       ticketid: ticketId,
       faultid: ticketId,
+      subject,
       status,
       assettag: assetId,
       assetsite: assetSite,
@@ -2004,27 +2090,13 @@ Click below to proceed:
   }
 
   const buildMailPreviewHtml = () => {
-    const bannerList = loadStoredList<MailBannerRecord[]>(MAIL_BANNER_STORAGE_KEY, [])
     const signatureList = loadStoredList<EmailSignatureRecord[]>(EMAIL_SIGNATURE_STORAGE_KEY, [])
-    const activeBanner = bannerList.find((b) => b && b.active)
     const userId = user?.id ? String(user.id) : ''
     const userRole = String(user?.role || '').trim().toUpperCase()
     const activeSignatures = Array.isArray(signatureList) ? signatureList.filter((s) => s && s.active) : []
     const signature = activeSignatures.find((s) => String(s.userId || '').trim() === userId)
       || activeSignatures.find((s) => String(s.userId || '').trim().toUpperCase() === userRole)
       || activeSignatures.find((s) => String(s.userLabel || '').trim().toUpperCase() === userRole)
-    const bannerTone = activeBanner?.tone || 'info'
-    const bannerColor =
-      bannerTone === 'success' ? '#16a34a' :
-      bannerTone === 'warning' ? '#f59e0b' :
-      bannerTone === 'danger' ? '#ef4444' :
-      '#2563eb'
-    const bannerHtml = activeBanner
-      ? `<div style="border:1px solid ${bannerColor};background:${bannerColor}1a;border-radius:10px;padding:10px 12px;margin-bottom:16px">
-          <div style="font-weight:700;margin-bottom:4px;color:#111827">${activeBanner.title}</div>
-          <div style="color:#111827;font-size:13px">${activeBanner.message}</div>
-        </div>`
-      : ''
     const bodyHtml = composerBodyHtml || '<p>(Empty message)</p>'
     const defaultSignature = 'Kind regards,\nTrustyBytes Support Team'
     const rawSignature = String(signature?.signatureHtml || '').trim() || defaultSignature
@@ -2033,7 +2105,6 @@ Click below to proceed:
     const signatureHtml = `<div style="margin-top:18px">${safeSignature}</div>`
 
     return `
-      ${bannerHtml}
       <div>${bodyHtml}</div>
       ${signatureHtml}
     `
@@ -2310,6 +2381,10 @@ Click below to proceed:
   ) => {
     if (!selectedTicket) return
     setComposerMode(mode)
+    const defaultStatus =
+      mode === 'logSupplier' || mode === 'emailSupplier' || mode === 'callbackSupplier'
+        ? 'With Supplier'
+        : String(selectedTicket.status || 'With User')
     const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'close' || mode === 'noteEmail'
       ? getEndUserAutoRecipient()
       : ''
@@ -2327,7 +2402,7 @@ Click below to proceed:
       bcc: '',
       subject: subjectDefault,
       body: defaultBodyText,
-      actionStatus: 'With User',
+      actionStatus: defaultStatus,
       currentAction: '',
       nextAction: '',
       asset: '',
@@ -2398,6 +2473,7 @@ Click below to proceed:
     buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
     buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
     buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
+    buttons.push({ label: 'Escalate', onClick: handleEscalate })
     if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
     buttons.push({ label: 'Close', onClick: () => openComposer('close') })
     return buttons
@@ -2425,6 +2501,7 @@ Click below to proceed:
     'Requesting Approval': 'clipboard-check',
     'Request Approval': 'clipboard-check',
     'Note + Email': 'mail-plus',
+    Escalate: 'arrow-up',
     'Call Back Supplier': 'phone-call',
     'Re-open': 'rotate-ccw',
     Start: 'play',
@@ -2637,7 +2714,7 @@ Click below to proceed:
     [categoryOptions]
   )
   const issueDetailOptions = React.useMemo(() => {
-    if (!issueValue) return []
+    if (!issueValue || issueValue === 'Not set') return []
     const direct = categoryOptions[issueValue as keyof typeof categoryOptions] || []
     const nested = Object.entries(categoryOptions)
       .filter(([key]) => key.startsWith(`${issueValue}>`))
@@ -2662,6 +2739,7 @@ Click below to proceed:
         if (updated.category !== undefined) nextPatch.category = updated.category
         if (updated.subcategory !== undefined) nextPatch.issueDetail = updated.subcategory
         if (updated.resolution !== undefined) nextPatch.resolution = updated.resolution
+        if (updated.workflow !== undefined) nextPatch.workflow = updated.workflow
         if (Object.keys(nextPatch).length > 0) {
           syncSelectedTicketInList(selectedTicket.id, nextPatch)
         }
@@ -2739,10 +2817,16 @@ Click below to proceed:
     setEditingEndUserField(null)
     setCreatedFromValue(String(selectedTicket.createdFrom || inferCreatedFrom(selectedTicket)))
     setTicketWorkflowValue(String(selectedTicket.workflow || 'Incident Management Workflow'))
-    setTicketTeamValue(String(mapTeam(selectedTicket).team || fallbackTeam || ''))
-    setAdditionalStaffValue(String((selectedTicket.additionalAgents || [])[0] || ''))
-    setIssueValue(String(selectedTicket.category || ''))
-    setIssueDetailValue(String(selectedTicket.issueDetail || ''))
+    const mappedTeamLabel = String(mapTeam(selectedTicket).team || fallbackTeam || '').trim()
+    setTicketTeamValue(String(mappedTeamLabel || ''))
+    setAdditionalStaffValue(String((selectedTicket.additionalAgents || [])[0] || 'Not set'))
+    const rawIssue = String(selectedTicket.category || '').trim()
+    const nextIssue = rawIssue && mappedTeamLabel && rawIssue.toLowerCase() === mappedTeamLabel.toLowerCase()
+      ? 'Not set'
+      : (rawIssue || 'Not set')
+    setIssueValue(nextIssue)
+    const rawIssueDetail = String(selectedTicket.issueDetail || selectedTicket.subcategory || '').trim()
+    setIssueDetailValue(nextIssue === 'Not set' ? 'Not set' : (rawIssueDetail || 'Not set'))
     setResolutionValue(String(selectedTicket.resolution || 'Not set'))
     setEndUserDraft({
       name: String(endUser?.name || ''),
@@ -3214,6 +3298,22 @@ Click below to proceed:
     })()
   }
 
+  const handleEscalate = () => {
+    if (!selectedTicket) return
+    const currentTeamLabel = String(mapTeam(selectedTicket).team || '').trim()
+    const fallbackTeam = createTeamOptions[0]
+    const matchedTeam = createTeamOptions.find((team) => team.label.toLowerCase() === currentTeamLabel.toLowerCase())
+    setEscalateForm({
+      teamId: matchedTeam?.key || fallbackTeam?.key || '',
+      staffId: 'unassigned',
+    })
+    setInternalNoteContext('escalate')
+    setInternalNoteVisibility('internal')
+    setInternalNoteForm((prev) => ({ ...prev, body: '' }))
+    if (internalNoteEditorRef.current) internalNoteEditorRef.current.innerHTML = ''
+    setShowInternalNoteEditor(true)
+  }
+
   const renderIconGlyph = (icon: string, className: string) => {
     const glyphMap: Record<string, string> = {
       'arrow-left': '\u2190',
@@ -3255,6 +3355,22 @@ Click below to proceed:
     const icon = actionIconMap[label]
     if (!icon) return null
     return renderIconGlyph(icon, 'action-icon')
+  }
+
+  const renderCurrentUserAvatar = (className = 'compose-avatar') => {
+    const avatarUrl = getUserAvatarUrl(user)
+    const initials = (getUserInitials(user) || getInitials(getCurrentAgentName())).slice(0, 2)
+    const presenceClass = toPresenceClass(myPresenceStatus)
+    return (
+      <div className={`${className} compose-avatar-with-presence unified-user-avatar`}>
+        {avatarUrl ? (
+          <img src={avatarUrl} alt={user?.name || 'User'} className="queue-avatar-image" />
+        ) : (
+          initials
+        )}
+        <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+      </div>
+    )
   }
 
   const formatAttachmentSize = (bytes: number) => {
@@ -3445,8 +3561,10 @@ Click below to proceed:
           await ticketSvc.transitionTicket(selectedTicket.id, 'Awaiting Approval').catch(() => undefined)
           updateTicketStatusLocal(selectedTicket.id, 'Awaiting Approval')
         }
-        if (composerMode === 'logSupplier') {
-          updateTicketStatusLocal(selectedTicket.id, 'With Supplier')
+        if (composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') {
+          const nextStatus = composerForm.actionStatus || 'With Supplier'
+          await ticketSvc.transitionTicket(selectedTicket.id, nextStatus).catch(() => undefined)
+          updateTicketStatusLocal(selectedTicket.id, nextStatus)
           markTicketActionState(selectedTicket.id, { supplierLogged: true })
         }
       }
@@ -3462,6 +3580,10 @@ Click below to proceed:
 
   const handleSaveInternalNote = async () => {
     if (!selectedTicket) return
+    if (internalNoteContext === 'escalate') {
+      await handleSaveEscalate()
+      return
+    }
     const note = internalNoteForm.body.trim()
     const noteTypeLabel = internalNoteVisibility === 'internal' ? 'internal note' : 'private note'
     if (!note && internalNoteAttachments.length === 0) {
@@ -3490,6 +3612,63 @@ Click below to proceed:
       alert(e?.response?.data?.error || e?.message || 'Failed to save internal note')
     }
     setShowInternalNoteEditor(false)
+    setInternalNoteContext('note')
+  }
+
+  async function handleSaveEscalate() {
+    if (!selectedTicket) return
+    const teamId = String(escalateForm.teamId || '').trim()
+    const staffId = String(escalateForm.staffId || '').trim()
+    if (!teamId) {
+      alert('Please select a team to escalate.')
+      return
+    }
+    const shouldAssignStaff = staffId && staffId !== 'unassigned'
+    const teamLabel = createTeamOptions.find((team) => team.key === teamId)?.label || mapTeam(selectedTicket).team || 'Unassigned'
+    const staffLabel = shouldAssignStaff
+      ? (agentOptions.find((agent) => String(agent.id) === staffId)?.label || 'Not set')
+      : 'Unassigned'
+    const note = internalNoteForm.body.trim()
+    const escalationNote = note ? `Escalate: ${note}` : `Escalated to ${teamLabel}${staffLabel ? ` | Staff: ${staffLabel}` : ''}`
+
+    try {
+      const updatePayload: any = {
+        teamId,
+        category: teamLabel,
+        team: teamLabel,
+      }
+      if (shouldAssignStaff) {
+        updatePayload.assigneeId = Number(staffId)
+      }
+      await ticketService.updateTicket(selectedTicket.id, updatePayload)
+      if (escalationNote) {
+        await ticketService.privateNote(selectedTicket.id, { note: escalationNote }).catch(() => undefined)
+      }
+      syncSelectedTicketInList(selectedTicket.id, {
+        team: teamLabel,
+        category: teamLabel,
+        teamId,
+        assignedAgentId: shouldAssignStaff ? staffId : '',
+        assignedAgentName: shouldAssignStaff ? staffLabel : '',
+      })
+      setTicketTeamValue(teamLabel)
+      addTicketComment(selectedTicket.id, escalationNote, {
+        internal: true,
+        kind: 'internal',
+        changedById: Number(user?.id || 0) || null,
+      })
+      setInternalNoteAttachments([])
+      clearInternalNoteMediaPreviewUrls()
+      setInternalNoteForm((prev) => ({ ...prev, body: '' }))
+      setInternalNoteContext('note')
+      setShowInternalNoteEditor(false)
+    } catch (e: any) {
+      const rawError = e?.response?.data?.error ?? e?.response?.data?.message ?? e?.message ?? e
+      const message = typeof rawError === 'string'
+        ? rawError
+        : (rawError ? JSON.stringify(rawError) : 'Failed to escalate ticket')
+      alert(message)
+    }
   }
 
   const loadAssetsForTicket = async (q = '') => {
@@ -4082,6 +4261,11 @@ Click below to proceed:
     if (!selectedTicket) return []
     return ticketComments[selectedTicket.id] || []
   }, [selectedTicket, ticketComments])
+  React.useEffect(() => {
+    if (progressFilterInitializedRef.current) return
+    progressFilterInitializedRef.current = true
+    if (!isPortalUser) setProgressFilter('Conversation & Internal')
+  }, [isPortalUser])
   const filteredProgressTimeline = React.useMemo<TimelineEntry[]>(() => {
     const list = selectedTicketTimeline
     const meId = Number(user?.id || 0)
@@ -4097,11 +4281,77 @@ Click below to proceed:
       const kind = String(entry?.kind || '').toLowerCase()
       return kind === 'sla' || kind === 'user' || kind === 'asset'
     }
+    const isAcceptStatusChange = (entry: TimelineEntry) => {
+      const action = String(entry?.action || '').toLowerCase()
+      if (action.includes('accept ticket')) return true
+      const fromStatus = String((entry as any)?.fromStatus || '').trim().toLowerCase()
+      const toStatus = String((entry as any)?.toStatus || '').trim().toLowerCase()
+      if (fromStatus === 'new' && (toStatus === 'in progress' || toStatus === 'assigned')) return true
+      const text = String(entry?.text || '').toLowerCase()
+      return text.includes('status changed') && text.includes('new') && (text.includes('in progress') || text.includes('assigned'))
+    }
+    const normalizeActionEntry = (entry: TimelineEntry) => {
+      if (!isAcceptStatusChange(entry)) return entry
+      const existing = String(entry?.text || '').trim()
+      if (existing.toLowerCase().startsWith('accepted by')) {
+        return { ...entry, action: 'Accept Ticket', text: existing }
+      }
+      const acceptedBy = getCurrentAgentName() || 'You'
+      return { ...entry, action: 'Accept Ticket', text: `Accepted by ${acceptedBy}` }
+    }
+    const resolveActionLabel = (entry: TimelineEntry) => {
+      const action = String(entry?.action || '').trim()
+      const actionKey = action.toLowerCase()
+      const canonicalMap: Record<string, string> = {
+        'accept ticket': 'Accept Ticket',
+        'mark as responded': 'Mark as responsed',
+        'email user': 'Email User',
+        'log to supplier': 'Log to Supplier',
+        'internal note': 'Internal note',
+        'private note': 'Private note',
+        'note + email': 'Note + Email',
+        'requesting approval': 'Requesting Approval',
+        'request approval': 'Requesting Approval',
+        'close ticket': 'Close',
+        'close': 'Close',
+      }
+      if (canonicalMap[actionKey]) return canonicalMap[actionKey]
+      const text = String(entry?.text || '').trim().toLowerCase()
+      if (!text) return ''
+      if (text.startsWith('ticket created')) return 'New'
+      if (text.includes('accepted by')) return 'Accept Ticket'
+      if (text.includes('response sla marked as responded') || text.includes('mark as responded')) return 'Mark as responsed'
+      if (text.includes('email user')) return 'Email User'
+      if (text.includes('log to supplier') || text.includes('log with supplier')) return 'Log to Supplier'
+      if (text.startsWith('internal:')) return 'Internal note'
+      if (text.startsWith('private:')) return 'Private note'
+      if (text.includes('note + email') || text.includes('email+note')) return 'Note + Email'
+      if (text.includes('requesting approval') || text.includes('request approval')) return 'Requesting Approval'
+      if (text.includes('closed') || text.startsWith('closed:')) return 'Close'
+      if (text.includes('inbound email reply received') || text.includes('[email]')) return 'Conversation'
+      return ''
+    }
+    const allowedConversationActions = new Set([
+      'Accept Ticket',
+      'Mark as responsed',
+      'Email User',
+      'Log to Supplier',
+      'Internal note',
+      'Private note',
+      'Note + Email',
+      'Requesting Approval',
+      'Close',
+      'New',
+    ])
     const isAllActionsOnlyEntry = (entry: TimelineEntry) => {
       if (isSlaOrUserOrAsset(entry)) return true
+      if (isAcceptStatusChange(entry)) return false
       const text = String(entry?.text || '').toLowerCase()
       return (
         text.includes('ticket updated') ||
+        text.includes('status changed') ||
+        text.includes('status updated') ||
+        text.includes('updated to') ||
         text.includes('created from') ||
         text.includes('ticket type') ||
         text.includes('workflow') ||
@@ -4116,6 +4366,39 @@ Click below to proceed:
         text.includes('phone number')
       )
     }
+    const isAllowedActionEntry = (entry: TimelineEntry) => {
+      const action = String(entry?.action || '').trim().toLowerCase()
+      const text = String(entry?.text || '').trim().toLowerCase()
+      if (text.includes('ticket updated')) return false
+      if ((text.includes('status changed') || text.includes('status updated')) && !isAcceptStatusChange(entry)) return false
+      const allowedActions = new Set([
+        'new',
+        'opened',
+        'accept ticket',
+        'mark as responded',
+        'internal note',
+        'private note',
+        'note + email',
+        'requesting approval',
+        'request approval',
+        'email user',
+        'log to supplier',
+        'close ticket',
+        'close',
+      ])
+      if (allowedActions.has(action)) return true
+      if (text.startsWith('ticket created')) return true
+      if (text.includes('mark as responded')) return true
+      if (text.includes('email user')) return true
+      if (text.includes('log to supplier') || text.includes('log with supplier')) return true
+      if (text.includes('requesting approval') || text.includes('request approval')) return true
+      if (text.startsWith('internal:') || text.startsWith('private:')) return true
+      if (text.includes('[email]') || text.includes('inbound email reply received')) return true
+      if (action.includes('close')) return true
+      if (action.includes('accept')) return true
+      if (action.includes('mark as responded')) return true
+      return false
+    }
     const isPublic = (entry: TimelineEntry) => !isPrivate(entry) && !isInternal(entry) && !isSlaOrUserOrAsset(entry)
     const isStaff = (entry: TimelineEntry) => {
       const kind = String(entry?.kind || '').toLowerCase()
@@ -4123,28 +4406,61 @@ Click below to proceed:
       return (kind === 'system' || kind === 'internal' || kind === 'private') && changedById > 0
     }
 
+    const sanitizedList = progressFilter === 'All Actions'
+      ? list
+      : list.filter((entry) => {
+        const text = String(entry?.text || '').toLowerCase()
+        if (isAcceptStatusChange(entry)) return true
+        if (text.includes('ticket updated')) return false
+        if (text.includes('status changed') || text.includes('status updated')) return false
+        return true
+      })
+
     // User portal visibility: show only conversation timeline.
-    if (isPortalUser) return list.filter((entry) => isConversation(entry) && !isAllActionsOnlyEntry(entry))
+    if (isPortalUser) return sanitizedList.filter((entry) => isConversation(entry) && !isAllActionsOnlyEntry(entry))
 
     switch (progressFilter) {
       case 'Conversation & Internal':
-        return list.filter((entry) => (isConversation(entry) || isInternal(entry) || String(entry?.kind || '').toLowerCase() === 'system' || String(entry?.kind || '').toLowerCase() === 'public') && !isAllActionsOnlyEntry(entry))
+        return sanitizedList
+          .map((entry) => {
+            const normalized = normalizeActionEntry(entry)
+            const resolved = resolveActionLabel(normalized)
+            return resolved ? { ...normalized, action: resolved } : normalized
+          })
+          .filter((entry) => {
+            if (isAllActionsOnlyEntry(entry)) return false
+            const action = String(entry?.action || '').trim()
+            if (allowedConversationActions.has(action)) return true
+            return isConversation(entry) || isInternal(entry)
+          })
       case 'Conversation':
-        return list.filter((entry) => isConversation(entry) && !isAllActionsOnlyEntry(entry))
+        return sanitizedList
+          .filter((entry) => isConversation(entry) && isAllowedActionEntry(entry) && !isAllActionsOnlyEntry(entry))
+          .map((entry) => {
+            const normalized = normalizeActionEntry(entry)
+            const resolved = resolveActionLabel(normalized)
+            return resolved ? { ...normalized, action: resolved } : normalized
+          })
       case 'Internal Conversations':
-        return list.filter((entry) => isInternal(entry) && !isAllActionsOnlyEntry(entry))
+        return sanitizedList
+          .filter((entry) => isInternal(entry) && isAllowedActionEntry(entry) && !isAllActionsOnlyEntry(entry))
+          .map((entry) => {
+            const normalized = normalizeActionEntry(entry)
+            const resolved = resolveActionLabel(normalized)
+            return resolved ? { ...normalized, action: resolved } : normalized
+          })
       case 'Staff':
-        return list.filter((entry) => isStaff(entry) && !isAllActionsOnlyEntry(entry))
+        return sanitizedList.filter((entry) => isStaff(entry) && !isAllActionsOnlyEntry(entry)).map(normalizeActionEntry)
       case 'Public ( User View)':
-        return list.filter((entry) => isPublic(entry) && !isAllActionsOnlyEntry(entry))
+        return sanitizedList.filter((entry) => isPublic(entry) && !isAllActionsOnlyEntry(entry)).map(normalizeActionEntry)
       case 'Private':
-        return list.filter((entry) => {
+        return sanitizedList.filter((entry) => {
           if (isAllActionsOnlyEntry(entry)) return false
           if (!isPrivate(entry)) return false
           const byId = meId > 0 && Number(entry?.changedById || 0) === meId
           const byAuthor = !byId && meName && String(entry?.author || '').trim().toLowerCase() === meName
           return byId || byAuthor
-        })
+        }).map(normalizeActionEntry)
       case 'All Actions':
       default:
         return list
@@ -4532,7 +4848,7 @@ Click below to proceed:
               <div className={`action-compose-modal inline-compose-card${composerFullscreen ? ' compose-fullscreen' : ''}`}>
                 <div className="compose-header">
                   <div className="compose-identity">
-                    <div className="compose-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
+                    {renderCurrentUserAvatar()}
                     <div>
                       <div className="compose-user">{getCurrentAgentName()}</div>
                       <div className="compose-mode">| {getComposerHeading()}</div>
@@ -4737,12 +5053,36 @@ Click below to proceed:
                       value={composerForm.actionStatus}
                       onChange={(e) => setComposerForm((prev) => ({ ...prev, actionStatus: e.target.value }))}
                     >
-                      <option>With User</option>
-                      <option>In Progress</option>
-                      <option>Awaiting Approval</option>
-                      <option>On Hold</option>
+                      {defaultStatusOptions.map((status) => (
+                        <option key={status}>{status}</option>
+                      ))}
                     </select>
                   </label>
+                  {(composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') && (
+                    <label className="compose-meta-field">
+                      <span>Supplier</span>
+                      <select
+                        value={composerForm.supplier}
+                        onChange={(e) => {
+                          const supplierId = e.target.value
+                          const match = supplierOptions.find((s) => String(s.id) === String(supplierId))
+                          const email = resolveSupplierEmail(match)
+                          setComposerForm((prev) => ({
+                            ...prev,
+                            supplier: supplierId,
+                            to: email || prev.to,
+                          }))
+                        }}
+                      >
+                        <option value="">Select supplier</option>
+                        {supplierOptions.map((supplier) => (
+                          <option key={supplier.id} value={supplier.id}>
+                            {getSupplierDisplayName(supplier)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                 </div>
                 <input
                   ref={composerFileInputRef}
@@ -4778,23 +5118,6 @@ Click below to proceed:
                         <button type="button" onClick={() => removeAttachment(attachment.key, 'composer')}>x</button>
                       </div>
                     ))}
-                  </div>
-                )}
-
-                {(composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') && (
-                  <div className="compose-grid three">
-                    <label>
-                      Supplier
-                      <input value={composerForm.supplier} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplier: e.target.value }))} />
-                    </label>
-                    <label>
-                      Supplier Ref
-                      <input value={composerForm.supplierRef} onChange={(e) => setComposerForm((prev) => ({ ...prev, supplierRef: e.target.value }))} />
-                    </label>
-                    <label>
-                      Priority
-                      <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
-                    </label>
                   </div>
                 )}
 
@@ -4842,10 +5165,16 @@ Click below to proceed:
               <div className="action-compose-modal inline-compose-card">
                 <div className="compose-header">
                   <div className="compose-identity">
-                    <div className="compose-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
+                    {renderCurrentUserAvatar()}
                     <div>
                     <div className="compose-user">{getCurrentAgentName()}</div>
-                    <div className="compose-mode">{internalNoteVisibility === 'internal' ? 'Internal Note' : 'Private Note'}</div>
+                    <div className="compose-mode">
+                      {internalNoteContext === 'escalate'
+                        ? 'Escalate'
+                        : internalNoteVisibility === 'internal'
+                        ? 'Internal Note'
+                        : 'Private Note'}
+                    </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -4863,6 +5192,7 @@ Click below to proceed:
                         setInternalNoteAttachments([])
                         clearInternalNoteMediaPreviewUrls()
                         setShowInternalNoteEditor(false)
+                        setInternalNoteContext('note')
                       }}
                     >
                       x
@@ -4926,6 +5256,34 @@ Click below to proceed:
                     ))}
                   </div>
                 )}
+                {internalNoteContext === 'escalate' && (
+                  <div className="compose-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                    <label className="compose-required">
+                      Team
+                      <select
+                        value={escalateForm.teamId}
+                        onChange={(e) => setEscalateForm((prev) => ({ ...prev, teamId: e.target.value }))}
+                      >
+                        <option value="">Select team</option>
+                        {createTeamOptions.map((team) => (
+                          <option key={team.key} value={team.key}>{team.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="compose-required">
+                      Staff
+                      <select
+                        value={escalateForm.staffId}
+                        onChange={(e) => setEscalateForm((prev) => ({ ...prev, staffId: e.target.value }))}
+                      >
+                        <option value="unassigned">Unassigned</option>
+                        {agentOptions.map((agent) => (
+                          <option key={agent.id} value={agent.id}>{agent.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
                 <div className="compose-footer-actions">
                   <button className="btn-submit" onClick={handleSaveInternalNote} disabled={isUploadingAttachments}>
                     {isUploadingAttachments ? 'Uploading...' : 'Save'}
@@ -4936,6 +5294,7 @@ Click below to proceed:
                       setInternalNoteAttachments([])
                       clearInternalNoteMediaPreviewUrls()
                       setShowInternalNoteEditor(false)
+                      setInternalNoteContext('note')
                     }}
                   >
                     Discard
@@ -5112,7 +5471,11 @@ Click below to proceed:
                   {renderTicketFieldValue(
                     'type',
                     selectedTicket.type || '',
-                    (value) => updateTicketPatch({ type: value }, { type: value }),
+                    (value) => {
+                      const nextWorkflow = getWorkflowForType(value)
+                      setTicketWorkflowValue(nextWorkflow)
+                      updateTicketPatch({ type: value, workflow: nextWorkflow }, { type: value, workflow: nextWorkflow })
+                    },
                     ticketTypeOptions
                   )}
                 </div>
@@ -5227,7 +5590,12 @@ Click below to proceed:
                     'issue',
                     issueValue,
                     (value) => {
-                      const next = value === 'Not set' ? '' : value
+                      if (value === 'Not set') {
+                        setIssueValue('Not set')
+                        setIssueDetailValue('Not set')
+                        return
+                      }
+                      const next = value
                       setIssueValue(next)
                       updateTicketPatch({ category: next }, { category: next })
                     },
@@ -5240,8 +5608,12 @@ Click below to proceed:
                     'issueDetail',
                     issueDetailValue,
                     (value) => {
+                      if (issueValue === 'Not set') {
+                        setIssueDetailValue('Not set')
+                        return
+                      }
                       const next = value === 'Not set' ? '' : value
-                      setIssueDetailValue(next)
+                      setIssueDetailValue(next || 'Not set')
                       updateTicketPatch({ subcategory: next }, { issueDetail: next })
                     },
                     ['Not set', ...issueDetailOptions]
@@ -5253,8 +5625,9 @@ Click below to proceed:
                     'resolution',
                     resolutionValue,
                     (value) => {
+                      const next = value === 'Not set' ? '' : value
                       setResolutionValue(value)
-                      updateTicketPatch({ resolution: value }, { resolution: value })
+                      updateTicketPatch({ resolution: next }, { resolution: next })
                     },
                     uniqueOptions([...defaultResolutionOptions, selectedTicket.resolution, resolutionValue])
                   )}
@@ -5429,7 +5802,7 @@ Click below to proceed:
                 onClick={() => setShowFilterMenu(!showFilterMenu)}
               >
                 {filterType}
-                <span className="dropdown-icon">?</span>
+                <span className="dropdown-icon">▼</span>
               </button>
               {showFilterMenu && (
                 <div className="filter-menu">
@@ -5623,7 +5996,13 @@ Click below to proceed:
                 />
               </div>
               <div className="col-status">
-                <span className={`status-badge ${statusClass(incident.status)}`}>{incident.status}</span>
+                {(() => {
+                  const isUpdatedStatus = String(incident.status || '').trim().toLowerCase() === 'updated'
+                  const showUpdate = isUpdatedStatus || hasInboundUpdate(incident)
+                  const statusLabel = showUpdate ? 'Update' : incident.status
+                  const statusKey = showUpdate ? 'Updated' : incident.status
+                  return <span className={`status-badge ${statusClass(statusKey)}`}>{statusLabel}</span>
+                })()}
               </div>
               <div className="col-team">{mapTeam(incident).team || '-'}</div>
               <div className="col-id">{incident.id}</div>
@@ -5726,7 +6105,7 @@ Click below to proceed:
               <button className="compose-review-close" onClick={() => setShowSendReview(false)} aria-label="Close">x</button>
             </div>
             <div className="compose-review-header">
-              <div className="compose-review-avatar">{getInitials(getCurrentAgentName()).slice(0, 1)}</div>
+              {renderCurrentUserAvatar('compose-review-avatar')}
               <div>
                 <div className="compose-review-title">{getComposerHeading()}</div>
                 <div className="compose-review-subtitle">Email</div>

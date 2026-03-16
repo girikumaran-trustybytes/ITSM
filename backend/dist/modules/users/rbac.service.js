@@ -168,7 +168,16 @@ function normalizeDisplayStatus(inviteStatus) {
     return String(inviteStatus || '').trim().toLowerCase() === 'accepted' ? 'Active' : 'Invited';
 }
 function normalizeTeamKey(input) {
-    return String(input || '').trim().toLowerCase();
+    const raw = String(input || '').trim().toLowerCase();
+    if (!raw)
+        return '';
+    if (raw === 'support team' || raw === 'support-team' || raw === 'support')
+        return 'support';
+    if (raw === 'hr team' || raw === 'hr-team' || raw === 'hr')
+        return 'hr';
+    if (raw === 'management team' || raw === 'management-team' || raw === 'management')
+        return 'management';
+    return raw.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 async function seedQueueActionsAndPermissions(client, queue) {
     for (const action of defaultQueueActions) {

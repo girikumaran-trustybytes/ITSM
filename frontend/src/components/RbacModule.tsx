@@ -462,16 +462,8 @@ export default function RbacModule({ isAdmin }: Props) {
 
   const loadUsers = async () => {
     try {
-      let data = await listRbacUsers({ q: userSearch, limit: 500 })
-      let list = Array.isArray(data) ? data : []
-      if (!list.length) {
-        data = await listRbacUsers({ q: userSearch || undefined, limit: 500, role: 'AGENT' })
-        list = Array.isArray(data) ? data : []
-      }
-      if (!list.length) {
-        data = await listRbacUsers()
-        list = Array.isArray(data) ? data : []
-      }
+      const data = await listRbacUsers({ q: userSearch || undefined, limit: 500, role: 'AGENT,ADMIN' })
+      const list = Array.isArray(data) ? data : []
       setUsers(list)
     } catch (error: any) {
       notify('error', error?.response?.data?.error || 'Failed to load users')
@@ -1325,9 +1317,13 @@ export default function RbacModule({ isAdmin }: Props) {
 
   return (
     <>
-      <div className="rbac-top-action-row">
-        <div className="rbac-top-action-title">User Management</div>
-        <div className="rbac-top-action-actions">
+      <div className="admin-tool-bar rbac-top-action-row">
+        <div className="tool-bar-left">
+          <div className="tool-bar-title">
+            <div className="tool-bar-title-text">Agent Management</div>
+          </div>
+        </div>
+        <div className="tool-bar-right rbac-top-action-actions">
           {selectedUserId && (
             <>
               <button className="rbac-update-btn" onClick={handleSave} disabled={!isDirty || saving || !selectedUserId}>

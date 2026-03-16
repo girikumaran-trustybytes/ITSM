@@ -37,11 +37,13 @@ async function ensureUserCrudSchema() {
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`)
+      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isEndUser" BOOLEAN DEFAULT FALSE`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE`)
       await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail")`)
       await query(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail")`)
+      await query(`CREATE INDEX IF NOT EXISTS idx_user_is_end_user ON "User"("isEndUser")`)
       await query(`
         CREATE TABLE IF NOT EXISTS "ServiceAccounts" (
           "id" SERIAL PRIMARY KEY,
@@ -62,6 +64,7 @@ async function ensureUserCrudSchema() {
         )
       `)
       await enforceProtectedAdminBaseline()
+      await query(`UPDATE "User" SET "isEndUser" = TRUE WHERE "role" = 'USER' AND COALESCE("isEndUser", FALSE) = FALSE`)
     })()
   }
   await userSchemaReady
@@ -113,8 +116,30 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
   const conditions: string[] = []
   const params: any[] = []
   if (opts.role) {
-    params.push(opts.role)
-    conditions.push(`u."role" = $${params.length}`)
+    const roles = String(opts.role)
+      .split(/[,\|]/)
+      .map((r) => r.trim())
+      .filter(Boolean)
+    if (roles.length === 1 && roles[0] === 'USER') {
+      conditions.push(`(u."role" = 'USER' OR COALESCE(u."isEndUser", FALSE) = TRUE)`)
+    } else if (roles.length === 1) {
+      params.push(roles[0])
+      conditions.push(`u."role" = $${params.length}`)
+    } else if (roles.length > 1) {
+      const includesUser = roles.includes('USER')
+      if (includesUser) {
+        const filtered = roles.filter((r) => r !== 'USER')
+        if (filtered.length > 0) {
+          params.push(filtered)
+          conditions.push(`(u."role" = ANY($${params.length}) OR COALESCE(u."isEndUser", FALSE) = TRUE)`)
+        } else {
+          conditions.push(`(u."role" = 'USER' OR COALESCE(u."isEndUser", FALSE) = TRUE)`)
+        }
+      } else {
+        params.push(roles)
+        conditions.push(`u."role" = ANY($${params.length})`)
+      }
+    }
   }
   if (opts.q) {
     params.push(`%${opts.q}%`)
@@ -303,14 +328,66 @@ export async function createUser(payload: any) {
   await ensureUserCrudSchema()
   const email = String(payload.email || '').trim().toLowerCase()
   if (!email) throw { status: 400, message: 'Email is required' }
+  const requestedRole = normalizeRole(payload.role)
   let password = String(payload.password || '')
   if (password && password.length < 6) throw { status: 400, message: 'Password must be at least 6 characters' }
   if (!password) {
     password = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
   }
 
-  const existing = await queryOne('SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1)', [email])
-  if (existing) throw { status: 409, message: 'Email already exists' }
+  const existing = await queryOne<{ id: number; role: string | null; isEndUser: boolean | null }>(
+    `SELECT "id", "role", COALESCE("isEndUser", FALSE) AS "isEndUser"
+     FROM "User"
+     WHERE LOWER("email") = LOWER($1) OR LOWER("workEmail") = LOWER($1)`,
+    [email]
+  )
+  if (existing) {
+    const role = String(existing.role || '').toUpperCase()
+    if (requestedRole === 'USER' && role !== 'USER' && !existing.isEndUser) {
+      const nextName = payload.name ?? null
+      const nextPhone = payload.phone ?? null
+      const nextWorkEmail = payload.workEmail ?? null
+      const nextEmployeeId = payload.employeeId ?? null
+      const nextDesignation = payload.designation ?? null
+      const nextDepartment = payload.department ?? null
+      const nextReportingManager = payload.reportingManager ?? null
+      const nextDateOfJoining = payload.dateOfJoining ?? null
+      const nextEmploymentType = payload.employmentType ?? null
+      const nextWorkMode = payload.workMode ?? null
+      await query(
+        `UPDATE "User"
+         SET
+           "isEndUser" = TRUE,
+           "name" = COALESCE($2, "name"),
+           "phone" = COALESCE($3, "phone"),
+           "workEmail" = COALESCE($4, "workEmail"),
+           "employeeId" = COALESCE($5, "employeeId"),
+           "designation" = COALESCE($6, "designation"),
+           "department" = COALESCE($7, "department"),
+           "reportingManager" = COALESCE($8, "reportingManager"),
+           "dateOfJoining" = COALESCE($9, "dateOfJoining"),
+           "employmentType" = COALESCE($10, "employmentType"),
+           "workMode" = COALESCE($11, "workMode"),
+           "updatedAt" = NOW()
+         WHERE "id" = $1`,
+        [
+          existing.id,
+          nextName,
+          nextPhone,
+          nextWorkEmail,
+          nextEmployeeId,
+          nextDesignation,
+          nextDepartment,
+          nextReportingManager,
+          nextDateOfJoining,
+          nextEmploymentType,
+          nextWorkMode,
+        ]
+      )
+      return getUserById(Number(existing.id))
+    }
+    throw { status: 409, message: 'Email already exists' }
+  }
 
   const hashed = await bcrypt.hash(password, 12)
   const data = {
@@ -331,7 +408,8 @@ export async function createUser(payload: any) {
     client: payload.client ?? null,
     site: payload.site ?? null,
     accountManager: payload.accountManager ?? null,
-    role: normalizeRole(payload.role),
+    role: requestedRole,
+    isEndUser: requestedRole === 'USER',
     status: 'INVITED',
   }
   const protectedAdmin = isProtectedAdminEmail(email)
@@ -353,15 +431,15 @@ export async function createUser(payload: any) {
     const rows = await query(
       `INSERT INTO "User" (
         "email", "password", "name", "avatarUrl", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department",
-        "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "role", "status", "createdAt", "updatedAt"
+        "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "role", "isEndUser", "status", "createdAt", "updatedAt"
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-        $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW(), NOW()
+        $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), NOW()
       )
-      RETURNING "id", "name", "avatarUrl", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`,
+      RETURNING "id", "name", "avatarUrl", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "isEndUser", "status", "createdAt", "updatedAt"`,
       [
         data.email, data.password, data.name, data.avatarUrl, data.phone, data.personalEmail, data.workEmail, data.employeeId, data.designation, data.department,
-        data.reportingManager, data.dateOfJoining, data.employmentType, data.workMode, data.client, data.site, data.accountManager, data.role, data.status,
+        data.reportingManager, data.dateOfJoining, data.employmentType, data.workMode, data.client, data.site, data.accountManager, data.role, data.isEndUser, data.status,
       ]
     )
     const created = rows[0]
@@ -409,6 +487,21 @@ export async function updateUser(id: number, payload: any) {
   if (payload.accountManager !== undefined) data.accountManager = payload.accountManager
   if (payload.role !== undefined) data.role = normalizeRole(payload.role)
   if (payload.mfaEnabled !== undefined) data.mfaEnabled = Boolean(payload.mfaEnabled)
+
+  const candidateEmails = [data.email, data.workEmail]
+    .map((value) => (value === undefined || value === null ? '' : String(value).trim().toLowerCase()))
+    .filter((value) => value.length > 0)
+  if (candidateEmails.length > 0) {
+    for (const candidate of candidateEmails) {
+      const conflict = await queryOne(
+        `SELECT "id" FROM "User"
+         WHERE "id" <> $2
+           AND (LOWER("email") = LOWER($1) OR LOWER("workEmail") = LOWER($1))`,
+        [candidate, id]
+      )
+      if (conflict) throw { status: 409, message: 'Email already exists' }
+    }
+  }
   if (payload.status !== undefined) data.status = String(payload.status).trim().toUpperCase()
 
   const explicitServiceAccount = payload.isServiceAccount === true || payload.isServiceAccount === false

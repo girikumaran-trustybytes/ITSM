@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyImap = exports.sendSmtpMail = exports.verifySmtp = exports.resolveOutboundFromForQueue = exports.resolveInboundQueueByRecipient = exports.setInboundRoutingConfig = exports.getInboundRoutingConfig = exports.getPublicMailConfig = exports.loadMailConfigFromEnv = exports.getMailConfigOverride = exports.setMailConfigOverride = void 0;
+exports.verifyImap = exports.sendSmtpMail = exports.verifySmtp = exports.resolveOutboundFromForQueue = exports.resolveInboundQueueByRecipient = exports.setInboundRoutingConfig = exports.resolveMailboxForQueue = exports.getMailboxConfigs = exports.setMailboxConfigs = exports.getInboundRoutingConfig = exports.getPublicMailConfig = exports.loadMailConfigFromEnv = exports.getMailConfigOverride = exports.setMailConfigOverride = void 0;
 const net_1 = __importDefault(require("net"));
 const tls_1 = __importDefault(require("tls"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
@@ -107,19 +107,25 @@ const MAIL_PROVIDER_PRESETS = {
     },
 };
 const DEFAULT_INBOUND_QUEUE = String(process.env.MAIL_TICKET_DEFAULT_QUEUE || 'Support Team').trim() || 'Support Team';
+const DEFAULT_SUPPORT_EMAIL = String(process.env.MAIL_TICKET_INGEST_ADDRESS
+    || process.env.SMTP_FROM
+    || process.env.SMTP_USER
+    || process.env.IMAP_USER
+    || 'support@trustybytes.in').trim().toLowerCase();
 let runtimeInboundRoutingConfig = {
     defaultQueue: DEFAULT_INBOUND_QUEUE,
     inboundRoutes: [
-        { email: 'support@trustybytes.in', queue: 'Support Team' },
+        { email: DEFAULT_SUPPORT_EMAIL, queue: 'Support Team' },
         { email: 'hr@trustybytes.in', queue: 'HR Team' },
         { email: 'management@trustybytes.in', queue: 'Management Team' },
     ],
     outboundRoutes: [
-        { queue: 'Support Team', from: 'support@trustybytes.in' },
+        { queue: 'Support Team', from: DEFAULT_SUPPORT_EMAIL },
         { queue: 'HR Team', from: 'hr@trustybytes.in' },
         { queue: 'Management Team', from: 'management@trustybytes.in' },
     ],
 };
+let runtimeMailboxConfigs = [];
 function normalizeMailProvider(value) {
     const providerRaw = String(value || '').trim().toLowerCase();
     if (providerRaw === 'google-workspace')
@@ -222,6 +228,27 @@ function getInboundRoutingConfig() {
     };
 }
 exports.getInboundRoutingConfig = getInboundRoutingConfig;
+function setMailboxConfigs(next) {
+    runtimeMailboxConfigs = Array.isArray(next) ? next : [];
+}
+exports.setMailboxConfigs = setMailboxConfigs;
+function getMailboxConfigs() {
+    return runtimeMailboxConfigs.slice();
+}
+exports.getMailboxConfigs = getMailboxConfigs;
+function resolveMailboxForQueue(queueName) {
+    const queue = String(queueName || '').trim().toLowerCase();
+    if (!runtimeMailboxConfigs.length)
+        return null;
+    if (queue) {
+        const match = runtimeMailboxConfigs.find((mb) => String(mb.queue || '').trim().toLowerCase() === queue);
+        if (match)
+            return match;
+    }
+    const support = runtimeMailboxConfigs.find((mb) => String(mb.queue || '').trim().toLowerCase() === 'support team');
+    return support || runtimeMailboxConfigs[0] || null;
+}
+exports.resolveMailboxForQueue = resolveMailboxForQueue;
 function setInboundRoutingConfig(next) {
     const normalizedQueue = String(next?.defaultQueue || '').trim();
     const inboundRoutes = Array.isArray(next?.inboundRoutes)

@@ -1,7 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelAccount = exports.exportAccountData = exports.updateAccountSettings = exports.getAccountSettings = exports.updateSecuritySettings = exports.getSecuritySettings = exports.testDatabaseConfig = exports.getDatabaseConfig = void 0;
+exports.updateAssetTypesSettings = exports.getAssetTypesSettings = exports.cancelAccount = exports.exportAccountData = exports.updateAccountSettings = exports.getAccountSettings = exports.updateSecuritySettings = exports.getSecuritySettings = exports.testDatabaseConfig = exports.getDatabaseConfig = void 0;
 const pg_1 = require("pg");
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 const db_1 = require("../../db");
 const DEFAULT_SECURITY_SETTINGS = {
     loginMethods: {
@@ -30,6 +35,29 @@ const DEFAULT_SECURITY_SETTINGS = {
         types: [],
     },
 };
+const resolveAppVersion = () => {
+    const envVersion = String(process.env.APP_VERSION || process.env.npm_package_version || '').trim();
+    if (envVersion)
+        return envVersion;
+    const tryPaths = [
+        path_1.default.resolve(process.cwd(), 'package.json'),
+        path_1.default.resolve(process.cwd(), '..', 'package.json'),
+    ];
+    for (const candidate of tryPaths) {
+        try {
+            if (!fs_1.default.existsSync(candidate))
+                continue;
+            const parsed = JSON.parse(fs_1.default.readFileSync(candidate, 'utf8'));
+            const version = String(parsed?.version || '').trim();
+            if (version)
+                return version;
+        }
+        catch {
+            // ignore and continue
+        }
+    }
+    return '1.0.0';
+};
 const DEFAULT_ACCOUNT_SETTINGS = {
     accountName: 'ITSM Workspace',
     currentPlan: 'Standard',
@@ -37,7 +65,7 @@ const DEFAULT_ACCOUNT_SETTINGS = {
     assetsCount: 0,
     agentsCount: 0,
     dataCenter: 'US-East',
-    version: '1.0',
+    version: resolveAppVersion(),
     contact: {
         firstName: '',
         lastName: '',
@@ -46,6 +74,9 @@ const DEFAULT_ACCOUNT_SETTINGS = {
         invoiceEmail: '',
         invoiceCc: '',
     },
+};
+const DEFAULT_ASSET_TYPES_SETTINGS = {
+    types: [],
 };
 function toBool(value, fallback = false) {
     if (value === undefined || value === null || value === '')
@@ -179,7 +210,7 @@ function normalizeAccountSettings(input) {
         assetsCount: Number(raw.assetsCount || 0) || 0,
         agentsCount: Number(raw.agentsCount || 0) || 0,
         dataCenter: String(raw.dataCenter || DEFAULT_ACCOUNT_SETTINGS.dataCenter).trim(),
-        version: String(raw.version || DEFAULT_ACCOUNT_SETTINGS.version).trim(),
+        version: resolveAppVersion(),
         contact: {
             firstName: String(contact.firstName || '').trim(),
             lastName: String(contact.lastName || '').trim(),
@@ -189,6 +220,92 @@ function normalizeAccountSettings(input) {
             invoiceCc: String(contact.invoiceCc || '').trim(),
         },
     };
+}
+const ASSET_FIELD_TYPES = new Set(['text', 'number', 'date', 'select', 'textarea', 'boolean']);
+function slugifyKey(value) {
+    const normalized = String(value || '')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return normalized || `field_${Date.now()}`;
+}
+function normalizeAssetField(raw, fallbackId) {
+    const label = String(raw?.label || raw?.name || '').trim();
+    if (!label)
+        return null;
+    const type = ASSET_FIELD_TYPES.has(String(raw?.type || '').toLowerCase())
+        ? String(raw.type).toLowerCase()
+        : 'text';
+    const options = type === 'select'
+        ? normalizeList(raw?.options)
+        : [];
+    const key = slugifyKey(raw?.key || label);
+    return {
+        id: String(raw?.id || fallbackId || `af-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+        label,
+        key,
+        type: type,
+        required: toBool(raw?.required, false),
+        options,
+    };
+}
+function normalizeAssetType(raw) {
+    const label = String(raw?.label || raw?.name || '').trim();
+    if (!label)
+        return null;
+    const fieldsRaw = Array.isArray(raw?.fields) ? raw.fields : [];
+    const fields = [];
+    const seenKeys = new Set();
+    for (const field of fieldsRaw) {
+        const normalized = normalizeAssetField(field);
+        if (!normalized)
+            continue;
+        let key = normalized.key;
+        if (seenKeys.has(key)) {
+            key = `${key}_${fields.length + 1}`;
+        }
+        seenKeys.add(key);
+        fields.push({ ...normalized, key });
+    }
+    return {
+        id: String(raw?.id || `at-${Date.now()}-${Math.random().toString(16).slice(2)}`),
+        label,
+        description: String(raw?.description || '').trim(),
+        parentId: raw?.parentId ? String(raw.parentId).trim() : null,
+        icon: String(raw?.icon || '').trim(),
+        fields,
+    };
+}
+function normalizeAssetTypesSettings(input) {
+    const rawTypes = Array.isArray(input?.types) ? input.types : [];
+    const normalized = [];
+    const seenLabels = new Set();
+    for (const raw of rawTypes) {
+        const type = normalizeAssetType(raw);
+        if (!type)
+            continue;
+        const key = type.label.toLowerCase();
+        if (seenLabels.has(key))
+            continue;
+        seenLabels.add(key);
+        normalized.push(type);
+    }
+    return {
+        types: normalized,
+    };
+}
+async function getSystemSetting(key) {
+    await ensureSystemSettingsTable();
+    const rows = await (0, db_1.query)('SELECT value FROM system_settings WHERE key = $1', [key]);
+    return rows[0]?.value ?? null;
+}
+async function saveSystemSetting(key, value) {
+    await ensureSystemSettingsTable();
+    await (0, db_1.query)(`INSERT INTO system_settings (key, value, updated_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (key)
+     DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`, [key, value]);
 }
 async function getDatabaseConfig(_req, res) {
     const fromEnv = String(process.env.DATABASE_URL || '').trim();
@@ -340,3 +457,25 @@ async function cancelAccount(_req, res) {
     }
 }
 exports.cancelAccount = cancelAccount;
+async function getAssetTypesSettings(_req, res) {
+    try {
+        const stored = await getSystemSetting('asset.types');
+        const normalized = stored ? normalizeAssetTypesSettings(stored) : DEFAULT_ASSET_TYPES_SETTINGS;
+        return res.json(normalized);
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message || 'Failed to load asset types' });
+    }
+}
+exports.getAssetTypesSettings = getAssetTypesSettings;
+async function updateAssetTypesSettings(req, res) {
+    try {
+        const next = normalizeAssetTypesSettings(req.body || {});
+        await saveSystemSetting('asset.types', next);
+        return res.json(next);
+    }
+    catch (err) {
+        return res.status(500).json({ error: err.message || 'Failed to update asset types' });
+    }
+}
+exports.updateAssetTypesSettings = updateAssetTypesSettings;

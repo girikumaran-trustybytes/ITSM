@@ -16,6 +16,7 @@ import { getSecuritySettings, updateSecuritySettings, type SecuritySettings } fr
 import { cancelAccount, exportAccountData, getAccountSettings, updateAccountSettings, type AccountSettings } from '../services/account-settings.service'
 import { createAnnouncement, deleteAnnouncement, listAnnouncements, repostAnnouncement, updateAnnouncement, type Announcement } from '../services/announcements.service'
 import { getAssetTypesSettings, updateAssetTypesSettings, type AssetTypesSettings, type AssetTypeConfig, type AssetFieldConfig } from '../services/asset-types.service'
+import api from '../services/api'
 import * as userService from '../modules/users/services/user.service'
 import { APP_VERSION } from '../utils/appVersion'
 import { renderAssetTypeIcon } from '../utils/assetTypeIcons'
@@ -65,9 +66,9 @@ const settingsMenu: MenuSection[] = [
   },
   {
     id: 'user-access',
-    label: 'User Management',
+    label: 'Agent Management',
     items: [
-      { id: 'roles-permissions', label: 'User Management', requiresAdmin: true },
+      { id: 'roles-permissions', label: 'Agent Management', requiresAdmin: true },
     ],
   },
   {
@@ -487,6 +488,32 @@ type PrioritySlaForm = {
   existingId: number | null
 }
 
+type MailboxRoute = {
+  id: string
+  email: string
+  queue: string
+  provider: 'gmail' | 'outlook' | 'zoho' | 'custom'
+  connectionMode: 'oauth2' | 'app-password' | 'manual-credentials'
+  oauthConnected: boolean
+  oauthTokenExpiry: string
+  smtp: {
+    host: string
+    port: string
+    secure: boolean
+    user: string
+    pass: string
+    from: string
+  }
+  imap: {
+    host: string
+    port: string
+    secure: boolean
+    user: string
+    pass: string
+    mailbox: string
+  }
+}
+
 type MailConfigForm = {
   provider: MailProvider
   providerType: 'google-workspace-oauth' | 'microsoft-365-oauth' | 'smtp-imap-custom' | 'api-provider'
@@ -539,6 +566,7 @@ type MailConfigForm = {
   apiBaseUrl: string
   apiKey: string
   apiSecret: string
+  mailboxes: MailboxRoute[]
   smtp: {
     host: string
     port: string
@@ -645,6 +673,189 @@ const loadStoredList = <T,>(key: string, fallback: T[]): T[] => {
   }
 }
 
+const DEFAULT_SMTP_PORT_TLS = '587'
+const DEFAULT_SMTP_PORT_PLAIN = '25'
+const DEFAULT_IMAP_PORT_SSL = '993'
+const DEFAULT_IMAP_PORT_PLAIN = '143'
+
+const MAILBOX_PROVIDER_PRESETS: Record<MailboxRoute['provider'], { smtp: { host: string; port: string; secure: boolean }; imap: { host: string; port: string; secure: boolean } }> = {
+  gmail: {
+    smtp: { host: 'smtp.gmail.com', port: DEFAULT_SMTP_PORT_TLS, secure: false },
+    imap: { host: 'imap.gmail.com', port: DEFAULT_IMAP_PORT_SSL, secure: true },
+  },
+  outlook: {
+    smtp: { host: 'smtp.office365.com', port: DEFAULT_SMTP_PORT_TLS, secure: false },
+    imap: { host: 'outlook.office365.com', port: DEFAULT_IMAP_PORT_SSL, secure: true },
+  },
+  zoho: {
+    smtp: { host: 'smtp.zoho.com', port: '465', secure: true },
+    imap: { host: 'imap.zoho.com', port: DEFAULT_IMAP_PORT_SSL, secure: true },
+  },
+  custom: {
+    smtp: { host: 'smtp.example.com', port: DEFAULT_SMTP_PORT_TLS, secure: true },
+    imap: { host: 'imap.example.com', port: DEFAULT_IMAP_PORT_SSL, secure: true },
+  },
+}
+
+const resolveMailboxPreset = (provider: MailboxRoute['provider'], connectionMode: MailboxRoute['connectionMode']) => {
+  const base = MAILBOX_PROVIDER_PRESETS[provider]
+  if (provider === 'gmail' && connectionMode !== 'oauth2') {
+    return {
+      smtp: { host: base.smtp.host, port: '465', secure: true },
+      imap: base.imap,
+    }
+  }
+  return base
+}
+
+const createMailboxRoute = (seed?: Partial<MailboxRoute>): MailboxRoute => {
+  const provider = (seed?.provider || 'custom') as MailboxRoute['provider']
+  const connectionMode = (seed?.connectionMode
+    || (provider === 'custom' ? 'manual-credentials' : 'oauth2')) as MailboxRoute['connectionMode']
+  const preset = resolveMailboxPreset(provider, connectionMode)
+  const email = String(seed?.email || '').trim()
+  const smtpHost = String(seed?.smtp?.host || '').trim() || preset.smtp.host
+  const smtpPort = String(seed?.smtp?.port || '').trim() || preset.smtp.port
+  const smtpSecure = typeof seed?.smtp?.secure === 'boolean' ? seed.smtp.secure : preset.smtp.secure
+  const imapHost = String(seed?.imap?.host || '').trim() || preset.imap.host
+  const imapPort = String(seed?.imap?.port || '').trim() || preset.imap.port
+  const imapSecure = typeof seed?.imap?.secure === 'boolean' ? seed.imap.secure : preset.imap.secure
+  return {
+    id: `mb-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    email,
+    queue: 'Support Team',
+    provider,
+    connectionMode,
+    oauthConnected: Boolean(seed?.oauthConnected),
+    oauthTokenExpiry: String(seed?.oauthTokenExpiry || ''),
+    smtp: {
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      user: email || String(seed?.smtp?.user || ''),
+      pass: String(seed?.smtp?.pass || ''),
+      from: email || String(seed?.smtp?.from || ''),
+    },
+    imap: {
+      host: imapHost,
+      port: imapPort,
+      secure: imapSecure,
+      user: email || String(seed?.imap?.user || ''),
+      pass: String(seed?.imap?.pass || ''),
+      mailbox: String(seed?.imap?.mailbox || 'INBOX'),
+    },
+  }
+}
+
+const normalizeMailboxRoutes = (routes: MailboxRoute[]) => {
+  const map = new Map<string, { email: string; queue: string }>()
+  for (const route of routes) {
+    const email = String(route.email || '').trim().toLowerCase()
+    const queue = String(route.queue || '').trim()
+    if (!email || !queue) continue
+    map.set(email, { email, queue })
+  }
+  return Array.from(map.values())
+}
+
+const validateMailboxRows = (routes: MailboxRoute[]) => {
+  const cleaned = routes.map((route) => ({
+    email: String(route.email || '').trim().toLowerCase(),
+    queue: String(route.queue || '').trim(),
+  }))
+  const missing = cleaned.find((row) => !row.email || !row.queue)
+  if (missing) {
+    return 'Each mailbox needs an email and a queue before saving.'
+  }
+  const seen = new Set<string>()
+  for (const row of cleaned) {
+    if (seen.has(row.email)) {
+      return `Mailbox email "${row.email}" is duplicated. Each mailbox email must be unique.`
+    }
+    seen.add(row.email)
+  }
+  return ''
+}
+
+const normalizeMailboxConfigs = (routes: MailboxRoute[]) => {
+  const map = new Map<string, {
+    id: string
+    email: string
+    queue: string
+    provider: MailboxRoute['provider']
+    connectionMode: MailboxRoute['connectionMode']
+    smtp: MailboxRoute['smtp']
+    imap: MailboxRoute['imap']
+    oauthConnected: boolean
+    oauthTokenExpiry: string
+  }>()
+  for (const route of routes) {
+    const email = String(route.email || '').trim().toLowerCase()
+    const queue = String(route.queue || '').trim()
+    const provider = (['gmail', 'outlook', 'zoho', 'custom'].includes(String(route.provider))
+      ? route.provider
+      : 'custom') as MailboxRoute['provider']
+    const connectionMode = (['oauth2', 'app-password', 'manual-credentials'].includes(String(route.connectionMode))
+      ? route.connectionMode
+      : (provider === 'custom' ? 'manual-credentials' : 'oauth2')) as MailboxRoute['connectionMode']
+    if (!email || !queue) continue
+    map.set(email, {
+      id: String(route.id || `mb-${Date.now()}`),
+      email,
+      queue,
+      provider,
+      connectionMode,
+      smtp: {
+        host: String(route.smtp?.host || ''),
+        port: String(route.smtp?.port || ''),
+        secure: Boolean(route.smtp?.secure),
+        user: email,
+        pass: String(route.smtp?.pass || ''),
+        from: email,
+      },
+      imap: {
+        host: String(route.imap?.host || ''),
+        port: String(route.imap?.port || ''),
+        secure: Boolean(route.imap?.secure),
+        user: email,
+        pass: String(route.imap?.pass || ''),
+        mailbox: String(route.imap?.mailbox || 'INBOX'),
+      },
+      oauthConnected: Boolean(route.oauthConnected),
+      oauthTokenExpiry: String(route.oauthTokenExpiry || ''),
+    })
+  }
+  return Array.from(map.values())
+}
+
+const ensureSupportMailboxRoute = (routes: MailboxRoute[], supportEmail: string, fallbackQueue = 'Support Team') => {
+  const email = String(supportEmail || '').trim().toLowerCase()
+  if (!email) return routes
+  const hasEmail = routes.some((route) => String(route.email || '').trim().toLowerCase() === email)
+  if (hasEmail) return routes
+  return [...routes, createMailboxRoute({ email, queue: fallbackQueue })]
+}
+
+const resolveDefaultSmtpPort = (encryption: string, current?: string) => {
+  const trimmed = String(current || '').trim()
+  if (trimmed) return trimmed
+  return encryption === 'None' ? DEFAULT_SMTP_PORT_PLAIN : DEFAULT_SMTP_PORT_TLS
+}
+
+const resolveDefaultImapPort = (encryption: string, current?: string) => {
+  const trimmed = String(current || '').trim()
+  if (trimmed) return trimmed
+  return encryption === 'None' ? DEFAULT_IMAP_PORT_PLAIN : DEFAULT_IMAP_PORT_SSL
+}
+
+const resolvePortNumber = (value: string, fallback: string) => {
+  const trimmed = String(value || '').trim()
+  const fallbackNum = Number(fallback)
+  if (!trimmed) return Number.isFinite(fallbackNum) ? fallbackNum : 0
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : (Number.isFinite(fallbackNum) ? fallbackNum : 0)
+}
+
 const defaultMailConfigForm = (): MailConfigForm => ({
   provider: 'gmail',
   providerType: 'google-workspace-oauth',
@@ -655,15 +866,15 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   supportMail: '',
   inboundEmailAddress: '',
   inboundDefaultQueue: 'Support Team',
-  inboundSupportEmail: 'support@trustybytes.in',
-  inboundHrEmail: 'hr@trustybytes.in',
-  inboundManagementEmail: 'management@trustybytes.in',
+  inboundSupportEmail: '',
+  inboundHrEmail: '',
+  inboundManagementEmail: '',
   inboundDefaultTicketType: 'Incident',
   inboundDefaultPriority: 'Medium',
   autoAssignRule: '',
   pollIntervalMs: '60000',
   imapEncryption: 'SSL',
-  smtpEncryption: 'SSL',
+  smtpEncryption: 'TLS',
   enablePush: false,
   ignoreAutoReply: true,
   preventEmailLoop: true,
@@ -673,11 +884,11 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   stripQuotedReplies: true,
   appendToTicketPattern: '[#TICKET-ID]',
   outboundReplyTo: '',
-  outboundSupportFrom: 'support@trustybytes.in',
-  outboundHrFrom: 'hr@trustybytes.in',
-  outboundManagementFrom: 'management@trustybytes.in',
+  outboundSupportFrom: '',
+  outboundHrFrom: '',
+  outboundManagementFrom: '',
   maxAttachmentSizeMb: '20',
-  signatureTemplate: 'Kind regards,\nTrustyBytes Support Team',
+  signatureTemplate: 'Kind regards,\nSupport Team',
   allowExternalEmailCreation: true,
   allowInternalOnly: false,
   allowedDomains: '',
@@ -697,9 +908,10 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   apiBaseUrl: '',
   apiKey: '',
   apiSecret: '',
+  mailboxes: [],
   smtp: {
     host: '',
-    port: '465',
+    port: DEFAULT_SMTP_PORT_TLS,
     secure: true,
     user: '',
     pass: '',
@@ -707,7 +919,7 @@ const defaultMailConfigForm = (): MailConfigForm => ({
   },
   imap: {
     host: '',
-    port: '993',
+    port: DEFAULT_IMAP_PORT_SSL,
     secure: true,
     user: '',
     pass: '',
@@ -1330,6 +1542,7 @@ export default function AdminView(_props: AdminViewProps) {
   const [assetTypesError, setAssetTypesError] = useState('')
   const [assetTypeModalOpen, setAssetTypeModalOpen] = useState(false)
   const [assetTypeModalMode, setAssetTypeModalMode] = useState<'add' | 'edit' | 'delete' | null>(null)
+  const [assetTypeAddKind, setAssetTypeAddKind] = useState<'type' | 'category'>('type')
   const [assetTypeTargetId, setAssetTypeTargetId] = useState('')
   const [assetTypeNameInput, setAssetTypeNameInput] = useState('')
   const [assetTypeDescriptionInput, setAssetTypeDescriptionInput] = useState('')
@@ -1370,19 +1583,8 @@ export default function AdminView(_props: AdminViewProps) {
   const [mailEditing, setMailEditing] = useState(false)
   const mailDraftRef = useRef<MailConfigForm | null>(null)
   const mailCompanyDraftRef = useRef<string>('')
-  const [mailProvider, setMailProvider] = useState<'gmail' | 'outlook' | 'zoho' | 'custom' | null>(null)
-  const [imapHost, setImapHost] = useState('')
-  const [imapPort, setImapPort] = useState('993')
-  const [imapSsl, setImapSsl] = useState(true)
-  const [imapAuthMode, setImapAuthMode] = useState<'plain' | 'login'>('plain')
-  const [imapUser, setImapUser] = useState('')
-  const [imapPass, setImapPass] = useState('')
-  const [smtpHost, setSmtpHost] = useState('')
-  const [smtpPort, setSmtpPort] = useState('587')
-  const [smtpSsl, setSmtpSsl] = useState(true)
-  const [smtpAuthMode, setSmtpAuthMode] = useState<'plain' | 'login'>('plain')
-  const [smtpUser, setSmtpUser] = useState('')
-  const [smtpPass, setSmtpPass] = useState('')
+  const lastSyncedMailboxEmailRef = useRef('')
+  const lastInboundQueueRef = useRef('')
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplateRecord[]>(() =>
     loadStoredList<EmailTemplateRecord>(EMAIL_TEMPLATE_STORAGE_KEY, [])
   )
@@ -1724,82 +1926,151 @@ export default function AdminView(_props: AdminViewProps) {
   const isOauthMode = mailForm.connectionMode === 'oauth2'
   const isAppPasswordMode = mailForm.connectionMode === 'app-password'
   const mailFieldDisabled = mailBusy || mailLoading || !mailEditing
-  const oauthUrls = {
-    gmail: (import.meta.env.VITE_MAIL_OAUTH_GOOGLE_URL as string | undefined) || '',
-    outlook: (import.meta.env.VITE_MAIL_OAUTH_OUTLOOK_URL as string | undefined) || '',
-    zoho: (import.meta.env.VITE_MAIL_OAUTH_ZOHO_URL as string | undefined) || '',
-  }
-  const buildMailOauthUrl = (provider: keyof typeof oauthUrls) => {
-    const overrideUrl = oauthUrls[provider]
-    if (overrideUrl) return overrideUrl
-    if (provider === 'gmail') {
-      const clientId = String(import.meta.env.VITE_MAIL_GOOGLE_CLIENT_ID || '').trim()
-      const redirectUri = String(import.meta.env.VITE_MAIL_GOOGLE_REDIRECT_URI || '').trim()
-      const scope = String(import.meta.env.VITE_MAIL_GOOGLE_SCOPES || 'https://mail.google.com/').trim()
-      if (!clientId || !redirectUri) return ''
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        access_type: 'offline',
-        prompt: 'consent',
-        scope,
-      })
-      return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+  const openMailboxOAuth = async (provider: MailboxRoute['provider'], mailboxId: string) => {
+    if (provider === 'custom') return
+    try {
+      const response = await api.get(`/mail/oauth/${provider}/start`, { params: { mailboxId } })
+      const url = String(response?.data?.url || '')
+      if (!url) {
+        setMailResult('OAuth is not configured. Please set the provider client ID and redirect URI.')
+        return
+      }
+      window.open(url, '_blank', 'noopener')
+    } catch (error: any) {
+      setMailResult(error?.response?.data?.error || 'Failed to start OAuth flow')
     }
-    if (provider === 'outlook') {
-      const tenant = String(import.meta.env.VITE_MAIL_OUTLOOK_TENANT || 'common').trim()
-      const clientId = String(import.meta.env.VITE_MAIL_OUTLOOK_CLIENT_ID || '').trim()
-      const redirectUri = String(import.meta.env.VITE_MAIL_OUTLOOK_REDIRECT_URI || '').trim()
-      const scope = String(
-        import.meta.env.VITE_MAIL_OUTLOOK_SCOPES ||
-        'https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access',
-      ).trim()
-      if (!clientId || !redirectUri) return ''
-      const params = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: 'code',
-        response_mode: 'query',
-        scope,
-      })
-      return `https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/authorize?${params.toString()}`
-    }
-    const clientId = String(import.meta.env.VITE_MAIL_ZOHO_CLIENT_ID || '').trim()
-    const redirectUri = String(import.meta.env.VITE_MAIL_ZOHO_REDIRECT_URI || '').trim()
-    const scope = String(import.meta.env.VITE_MAIL_ZOHO_SCOPES || 'ZohoMail.accounts.READ,ZohoMail.messages.ALL').trim()
-    const accountsBase = String(import.meta.env.VITE_MAIL_ZOHO_ACCOUNTS_BASE || 'https://accounts.zoho.com')
-      .trim()
-      .replace(/\/+$/, '')
-    if (!clientId || !redirectUri) return ''
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: redirectUri,
-      response_type: 'code',
-      access_type: 'offline',
-      prompt: 'consent',
-      scope,
-    })
-    return `${accountsBase}/oauth/v2/auth?${params.toString()}`
-  }
-  const openOAuthProvider = (provider: keyof typeof oauthUrls) => {
-    const url = buildMailOauthUrl(provider)
-    if (!url) {
-      setMailResult('OAuth is not configured. Please set the provider client ID and redirect URI.')
-      return
-    }
-    window.open(url, '_blank', 'noopener')
   }
 
-  useEffect(() => {
-    if (mailProvider !== 'custom') return
-    setImapPort((prev) => prev || '993')
-    setSmtpPort((prev) => prev || '587')
-  }, [mailProvider])
   const isManualCredentialsMode = mailForm.connectionMode === 'manual-credentials'
+  const isCustomMailProvider = mailForm.provider === 'custom' || mailForm.providerType === 'smtp-imap-custom'
   const disableImapSmtpCredentials = isOauthMode
   const disableImapSmtpProtocolConfig = isApiProvider
   const disableMailProtocolTests = isApiProvider
+  const mailboxQueueOptions = inboundQueueOptions.length ? inboundQueueOptions : ['Support Team', 'HR Team', 'Management']
+  const mailboxProviderOptions: Array<{ value: MailboxRoute['provider']; label: string }> = [
+    { value: 'gmail', label: 'Gmail' },
+    { value: 'outlook', label: 'Microsoft Outlook' },
+    { value: 'zoho', label: 'Zoho Mail' },
+    { value: 'custom', label: 'Custom SMTP/IMAP' },
+  ]
+
+  useEffect(() => {
+    if (mailForm.mailboxes.length > 0) return
+    const seedEmail = String(
+      mailForm.supportMail
+      || mailForm.inboundEmailAddress
+      || mailForm.smtp.user
+      || mailForm.imap.user
+      || ''
+    ).trim()
+    const seedQueue = String(mailForm.inboundDefaultQueue || 'Support Team').trim() || 'Support Team'
+    const seedProvider = (['gmail', 'outlook', 'zoho', 'custom'].includes(String(mailForm.provider))
+      ? String(mailForm.provider)
+      : 'custom') as MailboxRoute['provider']
+    const seedConnectionMode = seedProvider === 'custom' ? 'manual-credentials' : 'oauth2'
+    setMailForm((prev) => ({
+      ...prev,
+      mailboxes: [createMailboxRoute({
+        email: seedEmail,
+        queue: seedQueue,
+        provider: seedProvider,
+        connectionMode: seedConnectionMode,
+        smtp: { user: seedEmail, from: seedEmail },
+        imap: { user: seedEmail },
+      })],
+    }))
+    lastInboundQueueRef.current = seedQueue
+  }, [
+    mailForm.mailboxes.length,
+    mailForm.supportMail,
+    mailForm.inboundEmailAddress,
+    mailForm.smtp.user,
+    mailForm.imap.user,
+    mailForm.inboundDefaultQueue,
+  ])
+
+  useEffect(() => {
+    if (!isCustomMailProvider) return
+    if (!lastSyncedMailboxEmailRef.current) {
+      const seeded = String(
+        mailForm.supportMail
+        || mailForm.inboundEmailAddress
+        || mailForm.smtp.from
+        || mailForm.smtp.user
+        || mailForm.imap.user
+        || ''
+      ).trim()
+      if (seeded) lastSyncedMailboxEmailRef.current = seeded
+    }
+    const nextEmail = String(mailForm.smtp.user || mailForm.imap.user || '').trim()
+    if (!nextEmail) return
+    const prevEmail = lastSyncedMailboxEmailRef.current
+    if (nextEmail === prevEmail) return
+    setMailForm((prev) => {
+      const shouldUpdate = (value: string) => !String(value || '').trim() || String(value).trim() === prevEmail
+      const supportQueue = 'support team'
+      const nextMailboxes = prev.mailboxes.map((route) => {
+        const isSupportEmail = String(route.email || '').trim() === prevEmail || !String(route.email || '').trim()
+        if (isSupportEmail) {
+          return {
+            ...route,
+            email: nextEmail,
+            smtp: {
+              ...route.smtp,
+              user: route.smtp.user && route.smtp.user !== prevEmail ? route.smtp.user : nextEmail,
+              from: route.smtp.from && route.smtp.from !== prevEmail ? route.smtp.from : nextEmail,
+            },
+            imap: {
+              ...route.imap,
+              user: route.imap.user && route.imap.user !== prevEmail ? route.imap.user : nextEmail,
+            },
+          }
+        }
+        return route
+      })
+      const hasSupportMailbox = nextMailboxes.some((route) => String(route.email || '').trim().toLowerCase() === nextEmail.toLowerCase())
+      const fallbackQueue = String(prev.inboundDefaultQueue || 'Support Team').trim() || 'Support Team'
+      return {
+        ...prev,
+        supportMail: shouldUpdate(prev.supportMail) ? nextEmail : prev.supportMail,
+        inboundEmailAddress: shouldUpdate(prev.inboundEmailAddress) ? nextEmail : prev.inboundEmailAddress,
+        inboundSupportEmail: shouldUpdate(prev.inboundSupportEmail) ? nextEmail : prev.inboundSupportEmail,
+        outboundSupportFrom: shouldUpdate(prev.outboundSupportFrom) ? nextEmail : prev.outboundSupportFrom,
+        mailboxes: hasSupportMailbox
+          ? nextMailboxes
+          : [...nextMailboxes, createMailboxRoute({ email: nextEmail, queue: fallbackQueue })],
+        smtp: {
+          ...prev.smtp,
+          from: shouldUpdate(prev.smtp.from) ? nextEmail : prev.smtp.from,
+        },
+      }
+    })
+    lastSyncedMailboxEmailRef.current = nextEmail
+  }, [isCustomMailProvider, mailForm.smtp.user, mailForm.imap.user])
+
+  useEffect(() => {
+    const nextQueue = String(mailForm.inboundDefaultQueue || '').trim()
+    if (!nextQueue) return
+    const prevQueue = lastInboundQueueRef.current
+    if (nextQueue === prevQueue) return
+    const supportEmail = String(mailForm.supportMail || mailForm.inboundEmailAddress || '').trim().toLowerCase()
+    if (!supportEmail) {
+      lastInboundQueueRef.current = nextQueue
+      return
+    }
+    setMailForm((prev) => {
+      const updated = prev.mailboxes.map((route) => {
+        const email = String(route.email || '').trim().toLowerCase()
+        if (email !== supportEmail) return route
+        if (!prevQueue || String(route.queue || '').trim() === prevQueue) {
+          return { ...route, queue: nextQueue }
+        }
+        return route
+      })
+      return { ...prev, mailboxes: updated }
+    })
+    lastInboundQueueRef.current = nextQueue
+  }, [mailForm.inboundDefaultQueue, mailForm.supportMail, mailForm.inboundEmailAddress])
   const selectedWorkflowIndex = useMemo(
     () => workflowDrafts.findIndex((wf) => wf.name === selectedWorkflowName),
     [workflowDrafts, selectedWorkflowName]
@@ -2025,13 +2296,54 @@ export default function AdminView(_props: AdminViewProps) {
       const smtp = data?.smtp || {}
       const imap = data?.imap || {}
       const settings = data?.settings || {}
+      const rootMailboxes = Array.isArray((data as any)?.mailboxes) ? (data as any).mailboxes : []
       const inboundRoutes: any[] = Array.isArray((data as any)?.inbound?.inboundRoutes) ? (data as any).inbound.inboundRoutes : []
       const outboundRoutes: any[] = Array.isArray((data as any)?.inbound?.outboundRoutes) ? (data as any).inbound.outboundRoutes : []
       const findInboundEmail = (queue: string, fallback: string) =>
         String(inboundRoutes.find((row: any) => String(row?.queue || '').trim().toLowerCase() === queue.toLowerCase())?.email || fallback)
       const findOutboundFrom = (queue: string, fallback: string) =>
         String(outboundRoutes.find((row: any) => String(row?.queue || '').trim().toLowerCase() === queue.toLowerCase())?.from || fallback)
+      const resolvedImapEncryption = Boolean(imap?.secure) ? 'SSL' : 'None'
+      const resolvedSmtpEncryption = Boolean(smtp?.secure) ? 'SSL' : 'None'
+      const fallbackSupport = String(settings?.supportMail || smtp?.from || '')
       const nowStamp = new Date().toLocaleString()
+      const mailboxesFromConfig = (() => {
+        const settingsMailboxes = Array.isArray((settings as any)?.mailboxes)
+          ? (settings as any).mailboxes
+          : rootMailboxes
+        const mailboxesSource = settingsMailboxes.length ? settingsMailboxes : rootMailboxes
+        const normalizedSource = Array.isArray(mailboxesSource) ? mailboxesSource : []
+        const normalizedSettings = normalizedSource
+          .map((row: any) => ({
+            id: String(row?.id || ''),
+            email: String(row?.email || '').trim(),
+            queue: String(row?.queue || '').trim(),
+            provider: (['gmail', 'outlook', 'zoho', 'custom'].includes(String(row?.provider)) ? String(row?.provider) : 'custom') as MailboxRoute['provider'],
+            connectionMode: (['oauth2', 'app-password', 'manual-credentials'].includes(String(row?.connectionMode))
+              ? String(row?.connectionMode)
+              : undefined) as MailboxRoute['connectionMode'] | undefined,
+            oauthConnected: Boolean(row?.oauthConnected),
+            oauthTokenExpiry: String(row?.oauthTokenExpiry || ''),
+            smtp: row?.smtp,
+            imap: row?.imap,
+          }))
+          .filter((row: any) => row.email && row.queue)
+        const routes = Array.isArray(inboundRoutes)
+          ? inboundRoutes.map((row) => ({
+            email: String(row?.email || '').trim(),
+            queue: String(row?.queue || '').trim(),
+          })).filter((row) => row.email && row.queue)
+          : []
+        const base = normalizedSettings.length
+          ? normalizedSettings.map((row: any) => createMailboxRoute(row))
+          : routes.map((row) => createMailboxRoute(row))
+        const withSupport = fallbackSupport
+          ? ensureSupportMailboxRoute(base, fallbackSupport, String(data?.inbound?.defaultQueue || 'Support Team'))
+          : base
+        return withSupport.length
+          ? withSupport
+          : (fallbackSupport ? [createMailboxRoute({ email: fallbackSupport, queue: String(data?.inbound?.defaultQueue || 'Support Team') })] : [])
+      })()
       setMailForm({
         provider,
         providerType:
@@ -2047,15 +2359,15 @@ export default function AdminView(_props: AdminViewProps) {
         supportMail: String(settings?.supportMail || smtp?.from || ''),
         inboundEmailAddress: String(settings?.inboundEmailAddress || smtp?.from || ''),
         inboundDefaultQueue: String(data?.inbound?.defaultQueue || 'Support Team'),
-        inboundSupportEmail: findInboundEmail('Support Team', 'support@trustybytes.in'),
-        inboundHrEmail: findInboundEmail('HR Team', 'hr@trustybytes.in'),
-        inboundManagementEmail: findInboundEmail('Management Team', 'management@trustybytes.in'),
+        inboundSupportEmail: findInboundEmail('Support Team', fallbackSupport),
+        inboundHrEmail: findInboundEmail('HR Team', ''),
+        inboundManagementEmail: findInboundEmail('Management Team', ''),
         inboundDefaultTicketType: 'Incident',
         inboundDefaultPriority: 'Medium',
         autoAssignRule: '',
         pollIntervalMs: String((data as any)?.inbound?.pollIntervalMs || 60000),
-        imapEncryption: Boolean(imap?.secure) ? 'SSL' : 'None',
-        smtpEncryption: Boolean(smtp?.secure) ? 'SSL' : 'None',
+        imapEncryption: resolvedImapEncryption,
+        smtpEncryption: resolvedSmtpEncryption,
         enablePush: false,
         ignoreAutoReply: true,
         preventEmailLoop: settings?.preventEmailLoop === undefined ? true : Boolean(settings?.preventEmailLoop),
@@ -2065,11 +2377,11 @@ export default function AdminView(_props: AdminViewProps) {
         stripQuotedReplies: true,
         appendToTicketPattern: '[#TICKET-ID]',
         outboundReplyTo: '',
-        outboundSupportFrom: findOutboundFrom('Support Team', 'support@trustybytes.in'),
-        outboundHrFrom: findOutboundFrom('HR Team', 'hr@trustybytes.in'),
-        outboundManagementFrom: findOutboundFrom('Management Team', 'management@trustybytes.in'),
+        outboundSupportFrom: findOutboundFrom('Support Team', fallbackSupport),
+        outboundHrFrom: findOutboundFrom('HR Team', ''),
+        outboundManagementFrom: findOutboundFrom('Management Team', ''),
         maxAttachmentSizeMb: '20',
-        signatureTemplate: 'Kind regards,\nTrustyBytes Support Team',
+        signatureTemplate: 'Kind regards,\nSupport Team',
         allowExternalEmailCreation: settings?.allowExternalEmailCreation === undefined ? true : Boolean(settings?.allowExternalEmailCreation),
         allowInternalOnly: false,
         allowedDomains: '',
@@ -2089,9 +2401,10 @@ export default function AdminView(_props: AdminViewProps) {
         apiBaseUrl: '',
         apiKey: '',
         apiSecret: '',
+        mailboxes: mailboxesFromConfig,
         smtp: {
           host: String(smtp?.host || ''),
-          port: String(smtp?.port ?? ''),
+          port: String(smtp?.port ?? resolveDefaultSmtpPort(resolvedSmtpEncryption)),
           secure: Boolean(smtp?.secure),
           user: String(smtp?.user || ''),
           pass: '',
@@ -2099,7 +2412,7 @@ export default function AdminView(_props: AdminViewProps) {
         },
         imap: {
           host: String(imap?.host || ''),
-          port: String(imap?.port ?? ''),
+          port: String(imap?.port ?? resolveDefaultImapPort(resolvedImapEncryption)),
           secure: Boolean(imap?.secure),
           user: String(imap?.user || ''),
           pass: '',
@@ -2107,11 +2420,30 @@ export default function AdminView(_props: AdminViewProps) {
         },
       })
     } catch (error: any) {
-      setMailResult(error?.response?.data?.error || 'Failed to load mail configuration')
+      const status = error?.response?.status
+      const detail = error?.response?.data?.error || error?.message || 'Failed to load mail configuration'
+      setMailResult(status ? `${detail} (HTTP ${status})` : detail)
     } finally {
       setMailLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const hash = window.location.hash || ''
+    const queryIndex = hash.indexOf('?')
+    if (queryIndex < 0) return
+    const params = new URLSearchParams(hash.slice(queryIndex + 1))
+    if (params.get('mailOauthSuccess') !== '1') return
+    void loadMailConfiguration()
+    params.delete('mailOauthSuccess')
+    params.delete('mailboxId')
+    params.delete('provider')
+    const base = hash.slice(0, queryIndex)
+    const nextQuery = params.toString()
+    const nextHash = nextQuery ? `${base}?${nextQuery}` : base
+    window.history.replaceState(null, '', `${window.location.pathname}${nextHash}`)
+  }, [role])
 
   const loadDatabaseConfiguration = async () => {
     if (role !== 'ADMIN') return
@@ -2138,12 +2470,11 @@ export default function AdminView(_props: AdminViewProps) {
     setMailForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const updateSmtpField = (key: keyof MailConfigForm['smtp'], value: any) => {
-    setMailForm((prev) => ({ ...prev, smtp: { ...prev.smtp, [key]: value } }))
-  }
-
-  const updateImapField = (key: keyof MailConfigForm['imap'], value: any) => {
-    setMailForm((prev) => ({ ...prev, imap: { ...prev.imap, [key]: value } }))
+  const updateMailbox = (id: string, updater: (mailbox: MailboxRoute) => MailboxRoute) => {
+    setMailForm((prev) => ({
+      ...prev,
+      mailboxes: prev.mailboxes.map((row) => row.id === id ? updater(row) : row),
+    }))
   }
 
   const handleMailProviderChange = (provider: MailProvider) => {
@@ -2201,6 +2532,25 @@ export default function AdminView(_props: AdminViewProps) {
 
   const runMailAction = async (action: 'smtp' | 'imap' | 'send') => {
     if (role !== 'ADMIN') return
+    const requireField = (value: string, label: string) => {
+      if (!String(value || '').trim()) {
+        setMailResult(`${label} is required`)
+        return false
+      }
+      return true
+    }
+    if (isCustomMailProvider) {
+      if (action === 'smtp' || action === 'send') {
+        if (!requireField(mailForm.smtp.host, 'SMTP server name')) return
+        if (!requireField(mailForm.smtp.user, 'SMTP email')) return
+        if (!requireField(mailForm.smtp.pass, 'SMTP password')) return
+      }
+      if (action === 'imap') {
+        if (!requireField(mailForm.imap.host, 'IMAP server name')) return
+        if (!requireField(mailForm.imap.user, 'IMAP email')) return
+        if (!requireField(mailForm.imap.pass, 'IMAP password')) return
+      }
+    }
     try {
       setMailBusy(true)
       setMailResult('')
@@ -2208,7 +2558,7 @@ export default function AdminView(_props: AdminViewProps) {
         provider: mailForm.provider,
         smtp: {
           host: mailForm.smtp.host.trim(),
-          port: Number(mailForm.smtp.port || 0),
+          port: resolvePortNumber(mailForm.smtp.port, resolveDefaultSmtpPort(mailForm.smtpEncryption)),
           secure: mailForm.smtpEncryption !== 'None',
           user: mailForm.smtp.user.trim(),
           pass: mailForm.smtp.pass,
@@ -2216,7 +2566,7 @@ export default function AdminView(_props: AdminViewProps) {
         },
         imap: {
           host: mailForm.imap.host.trim(),
-          port: Number(mailForm.imap.port || 0),
+          port: resolvePortNumber(mailForm.imap.port, resolveDefaultImapPort(mailForm.imapEncryption)),
           secure: mailForm.imapEncryption !== 'None',
           user: mailForm.imap.user.trim(),
           pass: mailForm.imap.pass,
@@ -2288,21 +2638,23 @@ export default function AdminView(_props: AdminViewProps) {
       setMailResult('Inbound default queue/team is required')
       return
     }
+    const mailboxValidation = validateMailboxRows(mailForm.mailboxes)
+    if (mailboxValidation) {
+      setMailResult(mailboxValidation)
+      return
+    }
     try {
       setMailBusy(true)
       setMailResult('')
+      const normalizedMailboxes = ensureSupportMailboxRoute(
+        normalizeMailboxRoutes(mailForm.mailboxes),
+        mailForm.supportMail || mailForm.inboundEmailAddress,
+        mailForm.inboundDefaultQueue || 'Support Team'
+      )
       await updateInboundMailConfig({
         defaultQueue,
-        inboundRoutes: [
-          { email: String(mailForm.inboundSupportEmail || '').trim().toLowerCase(), queue: 'Support Team' },
-          { email: String(mailForm.inboundHrEmail || '').trim().toLowerCase(), queue: 'HR Team' },
-          { email: String(mailForm.inboundManagementEmail || '').trim().toLowerCase(), queue: 'Management Team' },
-        ],
-        outboundRoutes: [
-          { queue: 'Support Team', from: String(mailForm.outboundSupportFrom || '').trim().toLowerCase() },
-          { queue: 'HR Team', from: String(mailForm.outboundHrFrom || '').trim().toLowerCase() },
-          { queue: 'Management Team', from: String(mailForm.outboundManagementFrom || '').trim().toLowerCase() },
-        ],
+        inboundRoutes: normalizedMailboxes.map((row) => ({ email: row.email, queue: row.queue })),
+        outboundRoutes: normalizedMailboxes.map((row) => ({ queue: row.queue, from: row.email })),
       })
       setMailResult(`Inbound mails will be routed to "${defaultQueue}"`)
     } catch (error: any) {
@@ -2359,6 +2711,32 @@ export default function AdminView(_props: AdminViewProps) {
       setMailResult('Inbound default queue/team is required')
       return
     }
+    const mailboxValidation = validateMailboxRows(mailForm.mailboxes)
+    if (mailboxValidation) {
+      setMailResult(mailboxValidation)
+      return
+    }
+    const normalizedMailboxes = ensureSupportMailboxRoute(
+      normalizeMailboxRoutes(mailForm.mailboxes),
+      mailForm.supportMail || mailForm.inboundEmailAddress,
+      mailForm.inboundDefaultQueue || 'Support Team'
+    )
+    const mailboxConfigs = normalizeMailboxConfigs(mailForm.mailboxes)
+    if (isCustomMailProvider) {
+      const requireField = (value: string, label: string) => {
+        if (!String(value || '').trim()) {
+          setMailResult(`${label} is required`)
+          return false
+        }
+        return true
+      }
+      if (!requireField(mailForm.smtp.host, 'SMTP server name')) return
+      if (!requireField(mailForm.smtp.user, 'SMTP email')) return
+      if (!requireField(mailForm.smtp.pass, 'SMTP password')) return
+      if (!requireField(mailForm.imap.host, 'IMAP server name')) return
+      if (!requireField(mailForm.imap.user, 'IMAP email')) return
+      if (!requireField(mailForm.imap.pass, 'IMAP password')) return
+    }
     try {
       setMailBusy(true)
       setMailResult('')
@@ -2366,7 +2744,7 @@ export default function AdminView(_props: AdminViewProps) {
         provider: mailForm.provider,
         smtp: {
           host: mailForm.smtp.host.trim(),
-          port: Number(mailForm.smtp.port || 0),
+          port: resolvePortNumber(mailForm.smtp.port, resolveDefaultSmtpPort(mailForm.smtpEncryption)),
           secure: mailForm.smtpEncryption !== 'None',
           user: mailForm.smtp.user.trim(),
           pass: mailForm.smtp.pass,
@@ -2374,7 +2752,7 @@ export default function AdminView(_props: AdminViewProps) {
         },
         imap: {
           host: mailForm.imap.host.trim(),
-          port: Number(mailForm.imap.port || 0),
+          port: resolvePortNumber(mailForm.imap.port, resolveDefaultImapPort(mailForm.imapEncryption)),
           secure: mailForm.imapEncryption !== 'None',
           user: mailForm.imap.user.trim(),
           pass: mailForm.imap.pass,
@@ -2382,16 +2760,8 @@ export default function AdminView(_props: AdminViewProps) {
         },
         inbound: {
           defaultQueue,
-          inboundRoutes: [
-            { email: String(mailForm.inboundSupportEmail || '').trim().toLowerCase(), queue: 'Support Team' },
-            { email: String(mailForm.inboundHrEmail || '').trim().toLowerCase(), queue: 'HR Team' },
-            { email: String(mailForm.inboundManagementEmail || '').trim().toLowerCase(), queue: 'Management Team' },
-          ],
-          outboundRoutes: [
-            { queue: 'Support Team', from: String(mailForm.outboundSupportFrom || '').trim().toLowerCase() },
-            { queue: 'HR Team', from: String(mailForm.outboundHrFrom || '').trim().toLowerCase() },
-            { queue: 'Management Team', from: String(mailForm.outboundManagementFrom || '').trim().toLowerCase() },
-          ],
+          inboundRoutes: normalizedMailboxes.map((row) => ({ email: row.email, queue: row.queue })),
+          outboundRoutes: normalizedMailboxes.map((row) => ({ queue: row.queue, from: row.email })),
         },
         settings: {
           supportMail: mailForm.supportMail.trim(),
@@ -2402,6 +2772,7 @@ export default function AdminView(_props: AdminViewProps) {
           routingRuleHelpdeskQueue: mailForm.routingRuleHelpdeskQueue,
           routingRuleAccessType: mailForm.routingRuleAccessType,
           routingRuleSupplierType: mailForm.routingRuleSupplierType,
+          mailboxes: mailboxConfigs,
         },
       })
       setMailResult('Configuration saved.')
@@ -3105,6 +3476,7 @@ export default function AdminView(_props: AdminViewProps) {
   const closeAssetTypeModal = () => {
     setAssetTypeModalOpen(false)
     setAssetTypeModalMode(null)
+    setAssetTypeAddKind('type')
     setAssetTypeTargetId('')
     setAssetTypeNameInput('')
     setAssetTypeDescriptionInput('')
@@ -3125,6 +3497,19 @@ export default function AdminView(_props: AdminViewProps) {
   const handleAssetTypeAdd = () => {
     setAssetTypeModalMode('add')
     setAssetTypeModalOpen(true)
+    setAssetTypeAddKind('type')
+    setAssetTypesError('')
+    setAssetTypeTargetId('')
+    setAssetTypeNameInput('')
+    setAssetTypeDescriptionInput('')
+    setAssetTypeParentIdInput('')
+    setAssetTypeIconInput('')
+  }
+
+  const handleAssetCategoryAdd = () => {
+    setAssetTypeModalMode('add')
+    setAssetTypeModalOpen(true)
+    setAssetTypeAddKind('category')
     setAssetTypesError('')
     setAssetTypeTargetId('')
     setAssetTypeNameInput('')
@@ -3162,14 +3547,17 @@ export default function AdminView(_props: AdminViewProps) {
     setAssetTypesError('')
     if (assetTypeModalMode === 'add') {
       const label = assetTypeNameInput.trim()
-      if (!label) return setAssetTypesError('Asset type name is required.')
+      if (!label) return setAssetTypesError(assetTypeAddKind === 'category' ? 'Category name is required.' : 'Asset type name is required.')
       const exists = assetTypesSettings.types.some((t) => t.label.toLowerCase() === label.toLowerCase())
       if (exists) return setAssetTypesError(`Asset type "${label}" already exists.`)
+      if (assetTypeAddKind === 'type' && !assetTypeParentIdInput) {
+        return setAssetTypesError('Select a parent category for this asset type.')
+      }
       const nextType: AssetTypeConfig = {
         id: `at-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         label,
-        description: assetTypeDescriptionInput.trim(),
-        parentId: assetTypeParentIdInput || null,
+        description: '',
+        parentId: assetTypeAddKind === 'category' ? null : (assetTypeParentIdInput || null),
         icon: assetTypeIconInput.trim(),
         fields: [],
       }
@@ -3187,7 +3575,7 @@ export default function AdminView(_props: AdminViewProps) {
       if (duplicate) return setAssetTypesError(`Asset type "${label}" already exists.`)
       const nextTypes = assetTypesSettings.types.map((t) =>
         t.id === target.id
-          ? { ...t, label, description: assetTypeDescriptionInput.trim(), parentId: assetTypeParentIdInput || null, icon: assetTypeIconInput.trim() }
+          ? { ...t, label, description: '', parentId: assetTypeParentIdInput || null, icon: assetTypeIconInput.trim() }
           : t
       )
       await saveAssetTypes({ types: nextTypes })
@@ -3810,7 +4198,11 @@ export default function AdminView(_props: AdminViewProps) {
     return (
       <>
         {adminLeftPanel}
-        <RbacModule isAdmin={role === 'ADMIN'} />
+        <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
+          <div className="admin-settings-background">
+            <RbacModule isAdmin={role === 'ADMIN'} />
+          </div>
+        </section>
       </>
     )
   }
@@ -3820,7 +4212,7 @@ export default function AdminView(_props: AdminViewProps) {
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-          <div style={{ padding: 16 }}>
+          <div className="admin-settings-background">
             {renderAdminSectionToolbar(
               'SLA Policies',
               <>
@@ -4198,8 +4590,8 @@ export default function AdminView(_props: AdminViewProps) {
                 ) : slaLoading ? (
                   <p>Loading SLA policies...</p>
                 ) : (
-                  <>
-                  <table className="rbac-permission-matrix sla-summary-table">
+                  <React.Fragment>
+                    <table className="rbac-permission-matrix sla-summary-table">
                     <colgroup>
                       <col style={{ width: 130 }} />
                       <col style={{ width: 88 }} />
@@ -4313,34 +4705,34 @@ export default function AdminView(_props: AdminViewProps) {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                  {slaTotalRows > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 10 }}>
-                      <span className="pagination">{slaRangeStart}-{slaRangeEnd} of {slaTotalRows}</span>
-                      <div className="toolbar-pagination-group">
-                        <button
-                          className="users-page-btn"
-                          onClick={() => setSlaPage((p) => Math.max(1, p - 1))}
-                          disabled={slaSafePage <= 1}
-                          aria-label="Previous page"
-                        >
-                          {'<'}
-                        </button>
-                        <button className="users-page-btn active" aria-label="Current page">
-                          {slaSafePage}
-                        </button>
-                        <button
-                          className="users-page-btn"
-                          onClick={() => setSlaPage((p) => Math.min(slaTotalPages, p + 1))}
-                          disabled={slaSafePage >= slaTotalPages}
-                          aria-label="Next page"
-                        >
-                          {'>'}
-                        </button>
+                    </table>
+                    {slaTotalRows > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                        <span className="pagination">{slaRangeStart}-{slaRangeEnd} of {slaTotalRows}</span>
+                        <div className="toolbar-pagination-group">
+                          <button
+                            className="users-page-btn"
+                            onClick={() => setSlaPage((p) => Math.max(1, p - 1))}
+                            disabled={slaSafePage <= 1}
+                            aria-label="Previous page"
+                          >
+                            {'<'}
+                          </button>
+                          <button className="users-page-btn active" aria-label="Current page">
+                            {slaSafePage}
+                          </button>
+                          <button
+                            className="users-page-btn"
+                            onClick={() => setSlaPage((p) => Math.min(slaTotalPages, p + 1))}
+                            disabled={slaSafePage >= slaTotalPages}
+                            aria-label="Next page"
+                          >
+                            {'>'}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  </>
+                    )}
+                  </React.Fragment>
                 )}
               </>
             )}
@@ -4355,9 +4747,9 @@ export default function AdminView(_props: AdminViewProps) {
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-          <div className="admin-config-page">
+          <div className="admin-settings-background">
             {renderAdminSectionToolbar(
-              'Mail Provider, Routing & Automation',
+              'Mail Configuration',
               !mailEditing ? (
                 <button
                   className="admin-settings-primary"
@@ -4402,246 +4794,336 @@ export default function AdminView(_props: AdminViewProps) {
               <>
                 <div className="admin-config-grid one">
                   <article className={`admin-config-card${mailEditing ? '' : ' admin-config-card-readonly'}`}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                      <h4 style={{ margin: 0 }}>Add mailbox</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }} />
+                    <div className="admin-config-row one" style={{ marginTop: 6 }}>
+                      <div style={{ color: '#6b7280', fontSize: 12, marginTop: 4 }}>
+                        Add support or team mailboxes and map them to a ticket queue.
+                      </div>
                     </div>
                     <div className="admin-config-row one">
-                      <label className="admin-field-row">
-                        <span>Mailbox name</span>
-                        <input
-                          readOnly={mailFieldDisabled}
-                          value={mailForm.smtp.from}
-                          onChange={(e) => {
-                            const next = e.target.value
-                            updateSmtpField('from', next)
-                          }}
-                          placeholder="Name of the sender that will be used in ticket replies"
-                        />
-                      </label>
-                    </div>
-                    <div className="admin-config-row one">
-                      <label className="admin-field-row">
-                        <span>Your service desk email *</span>
-                        <input
-                          readOnly={mailFieldDisabled}
-                          value={mailForm.inboundEmailAddress}
-                          onChange={(e) => {
-                            const next = e.target.value
-                            setMailForm((prev) => ({ ...prev, inboundEmailAddress: next, supportMail: next }))
-                          }}
-                          placeholder="This is also your Reply-to address"
-                        />
-                      </label>
-                    </div>
-                    <div className="admin-config-row one">
-                      <label className="admin-field-row">
-                        <span>Assign tickets to agent group</span>
-                        <select
-                          disabled={mailFieldDisabled}
-                          value={mailForm.inboundDefaultQueue}
-                          onChange={(e) => updateMailRoot('inboundDefaultQueue', e.target.value)}
-                        >
-                          {inboundQueueOptions.map((queueName) => (
-                            <option key={`mailbox-queue-${queueName}`} value={queueName}>{queueName}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </article>
-                </div>
-                <div className="admin-config-grid one">
-                  <article className="admin-config-card">
-                    <h4>Email service provider</h4>
-                    <div className="mail-provider-grid">
-                      {([
-                        { id: 'gmail', label: 'Gmail', sub: 'Connect via OAuth' },
-                        { id: 'outlook', label: 'Microsoft Outlook', sub: 'Connect via OAuth' },
-                        { id: 'zoho', label: 'Zoho Mail', sub: 'Connect via OAuth' },
-                        { id: 'custom', label: 'Custom email server', sub: 'Connect via SMTP / IMAP' },
-                      ] as const).map((item) => (
-                        <button
-                          key={item.id}
-                          className={`mail-provider-card${mailProvider === item.id ? ' active' : ''}`}
-                          onClick={() => setMailProvider(item.id)}
-                        >
-                          <div className="mail-provider-title">{item.label}</div>
-                          <div className="mail-provider-sub">{item.sub}</div>
-                        </button>
+                      {(mailForm.mailboxes.length ? mailForm.mailboxes : [createMailboxRoute({ queue: mailForm.inboundDefaultQueue || 'Support Team' })]).map((mailbox) => (
+                        <div key={mailbox.id} style={{ marginTop: 10, border: '1px solid #e5e7eb', borderRadius: 10, padding: 10, background: '#fff' }}>
+                          <div className="admin-config-row three">
+                            <label className="admin-field-row">
+                              <span>Mailbox email</span>
+                              <input
+                                readOnly={mailFieldDisabled}
+                                value={mailbox.email}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  updateMailbox(mailbox.id, (row) => {
+                                    return {
+                                      ...row,
+                                      email: value,
+                                      smtp: {
+                                        ...row.smtp,
+                                        user: value,
+                                        from: value,
+                                      },
+                                      imap: {
+                                        ...row.imap,
+                                        user: value,
+                                      },
+                                    }
+                                  })
+                                }}
+                                placeholder="support@example.com"
+                              />
+                            </label>
+                            <label className="admin-field-row">
+                              <span>Provider</span>
+                              <select
+                                disabled={mailFieldDisabled}
+                                value={mailbox.provider}
+                                onChange={(e) => {
+                                  const value = e.target.value as MailboxRoute['provider']
+                                  updateMailbox(mailbox.id, (row) => {
+                                    const nextMode = value === 'custom'
+                                      ? 'manual-credentials'
+                                      : (row.connectionMode === 'manual-credentials' ? 'oauth2' : row.connectionMode)
+                                    const preset = resolveMailboxPreset(value, nextMode)
+                                    return {
+                                      ...row,
+                                      provider: value,
+                                      connectionMode: nextMode,
+                                      smtp: {
+                                        ...row.smtp,
+                                        host: preset.smtp.host,
+                                        port: preset.smtp.port,
+                                        secure: preset.smtp.secure,
+                                      },
+                                      imap: {
+                                        ...row.imap,
+                                        host: preset.imap.host,
+                                        port: preset.imap.port,
+                                        secure: preset.imap.secure,
+                                      },
+                                    }
+                                  })
+                                }}
+                              >
+                                {mailboxProviderOptions.map((provider) => (
+                                  <option key={`mailbox-provider-${provider.value}`} value={provider.value}>{provider.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="admin-field-row">
+                              <span>Queue</span>
+                              <select
+                                disabled={mailFieldDisabled}
+                                value={mailbox.queue}
+                                onChange={(e) => {
+                                  const value = e.target.value
+                                  updateMailbox(mailbox.id, (row) => ({ ...row, queue: value }))
+                                }}
+                              >
+                                {mailboxQueueOptions.map((queueName) => (
+                                  <option key={`mailbox-queue-${queueName}`} value={queueName}>{queueName}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                          <div className="admin-config-row three" style={{ marginTop: 8 }}>
+                            <label className="admin-field-row">
+                              <span>Authentication</span>
+                              <select
+                                disabled={mailFieldDisabled || mailbox.provider === 'custom'}
+                                value={mailbox.connectionMode}
+                                onChange={(e) => {
+                                  const nextMode = e.target.value as MailboxRoute['connectionMode']
+                                  updateMailbox(mailbox.id, (row) => {
+                                    const preset = resolveMailboxPreset(row.provider, nextMode)
+                                    return {
+                                      ...row,
+                                      connectionMode: nextMode,
+                                      smtp: {
+                                        ...row.smtp,
+                                        host: preset.smtp.host,
+                                        port: preset.smtp.port,
+                                        secure: preset.smtp.secure,
+                                      },
+                                      imap: {
+                                        ...row.imap,
+                                        host: preset.imap.host,
+                                        port: preset.imap.port,
+                                        secure: preset.imap.secure,
+                                      },
+                                    }
+                                  })
+                                }}
+                              >
+                                {mailbox.provider === 'custom' ? (
+                                  <option value="manual-credentials">Manual credentials</option>
+                                ) : (
+                                  <>
+                                    <option value="oauth2">OAuth 2.0</option>
+                                    <option value="app-password">App password</option>
+                                  </>
+                                )}
+                              </select>
+                            </label>
+                            <label className="admin-field-row">
+                              <span>{mailbox.connectionMode === 'oauth2' ? 'OAuth status' : 'Password'}</span>
+                              {mailbox.connectionMode === 'oauth2' ? (
+                                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                                  <button
+                                    className="admin-settings-ghost"
+                                    type="button"
+                                    disabled={mailFieldDisabled || mailbox.provider === 'custom'}
+                                    onClick={() => void openMailboxOAuth(mailbox.provider, mailbox.id)}
+                                  >
+                                    {mailbox.oauthConnected ? 'Reconnect' : 'Connect'} {mailboxProviderOptions.find((p) => p.value === mailbox.provider)?.label || 'OAuth'}
+                                  </button>
+                                  <small style={{ color: mailbox.oauthConnected ? '#047857' : '#b91c1c' }}>
+                                    {mailbox.oauthConnected ? `Connected${mailbox.oauthTokenExpiry ? ` until ${mailbox.oauthTokenExpiry}` : ''}` : 'Not connected'}
+                                  </small>
+                                </div>
+                              ) : (
+                                <input
+                                  type="password"
+                                  readOnly={mailFieldDisabled}
+                                  value={mailbox.smtp.pass}
+                                  onChange={(e) => {
+                                    const value = e.target.value
+                                    updateMailbox(mailbox.id, (row) => ({
+                                      ...row,
+                                      smtp: { ...row.smtp, pass: value },
+                                      imap: { ...row.imap, pass: value },
+                                    }))
+                                  }}
+                                  placeholder={mailbox.provider === 'custom' ? 'Password' : 'App password'}
+                                />
+                              )}
+                            </label>
+                            <div className="admin-field-row" style={{ alignSelf: 'flex-end', paddingBottom: 4 }}>
+                              <button
+                                className="admin-settings-ghost"
+                                type="button"
+                                disabled={mailFieldDisabled || mailForm.mailboxes.length <= 1}
+                                onClick={() => {
+                                  setMailForm((prev) => ({
+                                    ...prev,
+                                    mailboxes: prev.mailboxes.filter((row) => row.id !== mailbox.id),
+                                  }))
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                          {mailbox.provider === 'custom' ? (
+                            <>
+                              <div className="admin-config-row two" style={{ marginTop: 8 }}>
+                                <label className="admin-field-row">
+                                  <span>IMAP server</span>
+                                  <input
+                                    readOnly={mailFieldDisabled || mailbox.provider !== 'custom'}
+                                    value={mailbox.imap.host}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, imap: { ...row.imap, host: value } }))
+                                    }}
+                                    placeholder="imap.example.com"
+                                  />
+                                </label>
+                                <label className="admin-field-row">
+                                  <span>IMAP port</span>
+                                  <input
+                                    readOnly={mailFieldDisabled || mailbox.provider !== 'custom'}
+                                    value={mailbox.imap.port}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, imap: { ...row.imap, port: value } }))
+                                    }}
+                                    placeholder="993"
+                                  />
+                                </label>
+                              </div>
+                              <div className="admin-config-row two">
+                                <label className="admin-field-row switch-row">
+                                  <span>IMAP SSL/TLS</span>
+                                  <input
+                                    type="checkbox"
+                                    disabled={mailFieldDisabled || mailbox.provider !== 'custom'}
+                                    checked={mailbox.imap.secure}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, imap: { ...row.imap, secure: checked } }))
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <div className="admin-config-row two">
+                                <label className="admin-field-row">
+                                  <span>IMAP password</span>
+                                  <input
+                                    type="password"
+                                    readOnly={mailFieldDisabled}
+                                    value={mailbox.imap.pass}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, imap: { ...row.imap, pass: value } }))
+                                    }}
+                                    placeholder="Password"
+                                  />
+                                </label>
+                                <label className="admin-field-row">
+                                  <span>Mailbox</span>
+                                  <input
+                                    readOnly={mailFieldDisabled}
+                                    value={mailbox.imap.mailbox}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, imap: { ...row.imap, mailbox: value } }))
+                                    }}
+                                    placeholder="INBOX"
+                                  />
+                                </label>
+                              </div>
+                              <div className="admin-config-row two" style={{ marginTop: 8 }}>
+                                <label className="admin-field-row">
+                                  <span>SMTP server</span>
+                                  <input
+                                    readOnly={mailFieldDisabled || mailbox.provider !== 'custom'}
+                                    value={mailbox.smtp.host}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, smtp: { ...row.smtp, host: value } }))
+                                    }}
+                                    placeholder="smtp.example.com"
+                                  />
+                                </label>
+                                <label className="admin-field-row">
+                                  <span>SMTP port</span>
+                                  <input
+                                    readOnly={mailFieldDisabled || mailbox.provider !== 'custom'}
+                                    value={mailbox.smtp.port}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, smtp: { ...row.smtp, port: value } }))
+                                    }}
+                                    placeholder="587"
+                                  />
+                                </label>
+                              </div>
+                              <div className="admin-config-row two">
+                                <label className="admin-field-row switch-row">
+                                  <span>SMTP SSL/TLS</span>
+                                  <input
+                                    type="checkbox"
+                                    disabled={mailFieldDisabled || mailbox.provider !== 'custom'}
+                                    checked={mailbox.smtp.secure}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, smtp: { ...row.smtp, secure: checked } }))
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <div className="admin-config-row two">
+                                <label className="admin-field-row">
+                                  <span>SMTP password</span>
+                                  <input
+                                    type="password"
+                                    readOnly={mailFieldDisabled}
+                                    value={mailbox.smtp.pass}
+                                    onChange={(e) => {
+                                      const value = e.target.value
+                                      updateMailbox(mailbox.id, (row) => ({ ...row, smtp: { ...row.smtp, pass: value } }))
+                                    }}
+                                    placeholder="Password"
+                                  />
+                                </label>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
                       ))}
+                      <button
+                        className="admin-settings-ghost"
+                        type="button"
+                        disabled={mailFieldDisabled}
+                        style={{ marginTop: 8 }}
+                        onClick={() => {
+                          const nextQueue = mailForm.inboundDefaultQueue || 'Support Team'
+                          const baseProvider = mailForm.mailboxes[0]?.provider
+                            || (['gmail', 'outlook', 'zoho', 'custom'].includes(String(mailForm.provider))
+                              ? String(mailForm.provider)
+                              : 'custom')
+                          const nextProvider = baseProvider as MailboxRoute['provider']
+                          const nextConnectionMode = nextProvider === 'custom' ? 'manual-credentials' : 'oauth2'
+                          setMailForm((prev) => ({
+                            ...prev,
+                            mailboxes: [...prev.mailboxes, createMailboxRoute({ queue: nextQueue, provider: nextProvider, connectionMode: nextConnectionMode })],
+                          }))
+                        }}
+                      >
+                        Add mailbox
+                      </button>
                     </div>
                   </article>
                 </div>
-                {mailProvider && mailProvider !== 'custom' ? (
-                  <div className="admin-config-grid one">
-                    <article className="admin-config-card">
-                      <h4>Select OAuth method</h4>
-                      <p>Select one of the options below to connect your {mailProvider === 'gmail' ? 'Google' : mailProvider === 'outlook' ? 'Microsoft' : 'Zoho'} account.</p>
-                      <div className="admin-config-actions">
-                        <button
-                          className="admin-settings-primary"
-                          onClick={() => openOAuthProvider(mailProvider)}
-                          disabled={!mailEditing}
-                        >
-                          Configure {mailProvider === 'gmail' ? 'Gmail' : mailProvider === 'outlook' ? 'Outlook' : 'Zoho'} OAuth
-                        </button>
-                      </div>
-                    </article>
-                  </div>
-                ) : null}
-                {mailProvider === 'custom' ? (
-                  <div className="admin-config-grid one">
-                    <article className="admin-config-card">
-                      <h4>Incoming Mail Server</h4>
-                      <div className="admin-config-row two">
-                        <label className="admin-field-row">
-                          <span>IMAP Server Name</span>
-                          <input
-                            readOnly={mailFieldDisabled}
-                            value={imapHost}
-                            onChange={(e) => setImapHost(e.target.value)}
-                            placeholder="Enter IMAP Server Name"
-                          />
-                        </label>
-                        <label className="admin-field-row">
-                          <span>Port</span>
-                          <input
-                            readOnly={mailFieldDisabled}
-                            value={imapPort}
-                            onChange={(e) => setImapPort(e.target.value)}
-                            placeholder="Port"
-                          />
-                        </label>
-                      </div>
-                      <div className="admin-config-row two">
-                        <label className="admin-field-row switch-row">
-                          <span>Use SSL/TLS</span>
-                          <input
-                            type="checkbox"
-                            disabled={mailFieldDisabled}
-                            checked={imapSsl}
-                            onChange={(e) => setImapSsl(e.target.checked)}
-                          />
-                        </label>
-                      </div>
-                      <div className="admin-config-row two mail-auth-row">
-                        <label className="admin-field-row switch-row">
-                          <span>Authentication: Plain</span>
-                          <input
-                            type="radio"
-                            disabled={mailFieldDisabled}
-                            checked={imapAuthMode === 'plain'}
-                            onChange={() => setImapAuthMode('plain')}
-                          />
-                        </label>
-                        <label className="admin-field-row switch-row">
-                          <span>Authentication: Login</span>
-                          <input
-                            type="radio"
-                            disabled={mailFieldDisabled}
-                            checked={imapAuthMode === 'login'}
-                            onChange={() => setImapAuthMode('login')}
-                          />
-                        </label>
-                      </div>
-                      <div className="admin-config-row two">
-                        <label className="admin-field-row">
-                          <span>Email address</span>
-                          <input
-                            readOnly={mailFieldDisabled}
-                            value={imapUser}
-                            onChange={(e) => setImapUser(e.target.value)}
-                            placeholder="Enter your email address"
-                          />
-                        </label>
-                        <label className="admin-field-row">
-                          <span>Password</span>
-                          <input
-                            type="password"
-                            readOnly={mailFieldDisabled}
-                            value={imapPass}
-                            onChange={(e) => setImapPass(e.target.value)}
-                            placeholder="Password"
-                          />
-                        </label>
-                      </div>
-                    </article>
-                    <article className="admin-config-card">
-                      <h4>Outgoing Mail Server</h4>
-                      <div className="admin-config-row two">
-                        <label className="admin-field-row">
-                          <span>SMTP Server Name</span>
-                          <input
-                            readOnly={mailFieldDisabled}
-                            value={smtpHost}
-                            onChange={(e) => setSmtpHost(e.target.value)}
-                            placeholder="Enter SMTP Server Name"
-                          />
-                        </label>
-                        <label className="admin-field-row">
-                          <span>Port</span>
-                          <input
-                            readOnly={mailFieldDisabled}
-                            value={smtpPort}
-                            onChange={(e) => setSmtpPort(e.target.value)}
-                            placeholder="Port"
-                          />
-                        </label>
-                      </div>
-                      <div className="admin-config-row two">
-                        <label className="admin-field-row switch-row">
-                          <span>Use SSL/TLS</span>
-                          <input
-                            type="checkbox"
-                            disabled={mailFieldDisabled}
-                            checked={smtpSsl}
-                            onChange={(e) => setSmtpSsl(e.target.checked)}
-                          />
-                        </label>
-                      </div>
-                      <div className="admin-config-row two mail-auth-row">
-                        <label className="admin-field-row switch-row">
-                          <span>Authentication: Plain</span>
-                          <input
-                            type="radio"
-                            disabled={mailFieldDisabled}
-                            checked={smtpAuthMode === 'plain'}
-                            onChange={() => setSmtpAuthMode('plain')}
-                          />
-                        </label>
-                        <label className="admin-field-row switch-row">
-                          <span>Authentication: Login</span>
-                          <input
-                            type="radio"
-                            disabled={mailFieldDisabled}
-                            checked={smtpAuthMode === 'login'}
-                            onChange={() => setSmtpAuthMode('login')}
-                          />
-                        </label>
-                      </div>
-                      <div className="admin-config-row two">
-                        <label className="admin-field-row">
-                          <span>Email address</span>
-                          <input
-                            readOnly={mailFieldDisabled}
-                            value={smtpUser}
-                            onChange={(e) => setSmtpUser(e.target.value)}
-                            placeholder="Enter your email address"
-                          />
-                        </label>
-                        <label className="admin-field-row">
-                          <span>Password</span>
-                          <input
-                            type="password"
-                            readOnly={mailFieldDisabled}
-                            value={smtpPass}
-                            onChange={(e) => setSmtpPass(e.target.value)}
-                            placeholder="Password"
-                          />
-                        </label>
-                      </div>
-                    </article>
-                  </div>
-                ) : null}
+                {mailResult ? <div className="admin-config-result">{mailResult}</div> : null}
               </>
             )}
           </div>
@@ -4655,7 +5137,7 @@ export default function AdminView(_props: AdminViewProps) {
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-          <div className="admin-config-page admin-mail-template-page">
+          <div className="admin-settings-background">
             {renderAdminSectionToolbar(
               'Email & Signature Templates',
               <button className="admin-settings-ghost" onClick={loadMailConfiguration} disabled={mailBusy || mailLoading}>
@@ -4826,7 +5308,7 @@ export default function AdminView(_props: AdminViewProps) {
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-          <div className="admin-config-page">
+          <div className="admin-settings-background">
             {renderAdminSectionToolbar(
               'Database Configuration',
               <>
@@ -4899,7 +5381,7 @@ export default function AdminView(_props: AdminViewProps) {
       <>
         {adminLeftPanel}
         <section className="rbac-module-card" style={{ marginLeft: sidebarCollapsed ? 12 : 0 }}>
-          <div className="admin-config-page">
+          <div className="admin-settings-background">
             {renderAdminSectionToolbar(
               'Types and Workflow',
               <>
@@ -5771,7 +6253,11 @@ export default function AdminView(_props: AdminViewProps) {
                       {assetTypeModalOpen && assetTypeModalMode && (
                         <div style={{ marginTop: 16, border: '1px solid #e5e7eb', borderRadius: 10, padding: 12, background: '#fffafa' }}>
                           <h4 style={{ margin: 0 }}>
-                            {assetTypeModalMode === 'add' ? 'Add Asset Type' : assetTypeModalMode === 'edit' ? 'Edit Asset Type' : 'Delete Asset Type'}
+                            {assetTypeModalMode === 'add'
+                              ? (assetTypeAddKind === 'category' ? 'Add Asset Category' : 'Add Asset Type')
+                              : assetTypeModalMode === 'edit'
+                                ? 'Edit Asset Type'
+                                : 'Delete Asset Type'}
                           </h4>
                           {assetTypeModalMode !== 'add' && (
                             <label className="admin-field-row" style={{ marginTop: 10 }}>
@@ -5800,26 +6286,22 @@ export default function AdminView(_props: AdminViewProps) {
                                   placeholder="Hardware"
                                 />
                               </label>
-                              <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Description</span>
-                                <input
-                                  value={assetTypeDescriptionInput}
-                                  onChange={(e) => setAssetTypeDescriptionInput(e.target.value)}
-                                  placeholder="Laptop, server, peripherals"
-                                />
-                              </label>
-                              <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Parent type</span>
-                                <select
-                                  value={assetTypeParentIdInput}
-                                  onChange={(e) => setAssetTypeParentIdInput(e.target.value)}
-                                >
-                                  <option value="">None</option>
-                                  {assetTypesSettings.types.map((type) => (
-                                    <option key={type.id} value={type.id}>{getAssetTypePath(type)}</option>
-                                  ))}
-                                </select>
-                              </label>
+                              {assetTypeModalMode !== 'add' || assetTypeAddKind === 'type' ? (
+                                <label className="admin-field-row" style={{ marginTop: 10 }}>
+                                  <span>Parent category</span>
+                                  <select
+                                    value={assetTypeParentIdInput}
+                                    onChange={(e) => setAssetTypeParentIdInput(e.target.value)}
+                                  >
+                                    {assetTypeAddKind === 'type' ? <option value="">Select category</option> : <option value="">None</option>}
+                                    {assetTypesSettings.types
+                                      .filter((type) => !type.parentId)
+                                      .map((type) => (
+                                        <option key={type.id} value={type.id}>{getAssetTypePath(type)}</option>
+                                      ))}
+                                  </select>
+                                </label>
+                              ) : null}
                               <label className="admin-field-row" style={{ marginTop: 10 }}>
                                 <span>Icon</span>
                                 <select value={assetTypeIconInput} onChange={(e) => setAssetTypeIconInput(e.target.value)}>
@@ -5915,6 +6397,7 @@ export default function AdminView(_props: AdminViewProps) {
                         <h3 style={{ marginTop: 0 }}>Asset Types & Custom Fields</h3>
                         <p>Create asset type hierarchy and custom fields without hardcoding.</p>
                         <div className="admin-settings-toolbar-actions">
+                          <button className="admin-settings-ghost" onClick={handleAssetCategoryAdd}>New Category</button>
                           <button className="admin-settings-ghost" onClick={handleAssetTypeAdd}>New Asset Type</button>
                           <button className="admin-settings-ghost" onClick={handleAssetTypeEdit}>Edit Asset Type</button>
                           <button className="admin-settings-ghost" onClick={handleAssetTypeDelete}>Delete Asset Type</button>
