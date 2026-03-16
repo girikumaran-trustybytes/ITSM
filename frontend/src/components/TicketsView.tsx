@@ -1569,7 +1569,7 @@ export default function TicketsView() {
     return 'available'
   }
 
-  const shouldShowQueuePresenceDot = (presenceClass: 'available' | 'away' | 'dnd' | 'offline') => presenceClass !== 'away'
+  const shouldShowQueuePresenceDot = (_presenceClass: 'available' | 'away' | 'dnd' | 'offline') => true
 
   const findAgentRecord = (agentKey: string, label?: string) => {
     const key = String(agentKey || '').trim().toLowerCase()
@@ -1589,29 +1589,34 @@ export default function TicketsView() {
       name: displayName,
       email: String(agent?.email || '').trim(),
     }
+    const meId = String(user?.id || '').trim()
     const meName = String(user?.name || '').trim().toLowerCase()
     const meEmail = String(user?.email || '').trim().toLowerCase()
     const mergedName = String(merged?.name || '').trim().toLowerCase()
     const mergedEmail = String(merged?.email || '').trim().toLowerCase()
+    const mergedId = String(merged?.id || '').trim()
     const isMe = Boolean(
+      (meId && mergedId && meId === mergedId) ||
       (meName && mergedName && meName === mergedName) ||
       (meEmail && mergedEmail && meEmail === mergedEmail)
     )
     const avatarUrl = isMe ? getUserAvatarUrl(user) : getUserAvatarUrl(merged)
     const initials = getUserInitials(merged, getInitials(displayName))
-    if (avatarUrl) {
-      return (
-        <img
-          src={avatarUrl}
-          alt={displayName}
-          className="queue-avatar-image"
-          onError={(e) => {
-            e.currentTarget.style.display = 'none'
-          }}
-        />
-      )
-    }
-    return initials
+    return (
+      <span className={`queue-avatar-content${avatarUrl ? '' : ' fallback-visible'}`}>
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={displayName}
+            className="queue-avatar-image"
+            onError={(e) => {
+              e.currentTarget.parentElement?.classList.add('fallback-visible')
+            }}
+          />
+        ) : null}
+        <span className="queue-avatar-fallback">{initials}</span>
+      </span>
+    )
   }
 
   const classifyTimelineKind = (text: string, internal = false, explicitKind?: TimelineEntry['kind']): TimelineEntry['kind'] => {
@@ -2709,6 +2714,44 @@ Click below to proceed:
       })),
     [agents]
   )
+  const escalationStaffOptions = React.useMemo(() => {
+    const teamKey = String(escalateForm.teamId || '').trim()
+    if (!teamKey) return []
+    const normalize = (value: string) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+    const teamLabel = createTeamOptions.find((team) => team.key === teamKey)?.label || teamKey
+    const teamKeyNorm = normalize(teamKey)
+    const teamLabelNorm = normalize(teamLabel)
+
+    return agents
+      .filter((agent: any) => {
+        const role = String(agent?.role || '').trim().toUpperCase()
+        const status = String(agent?.status || '').trim().toUpperCase()
+        const isDisabled = ['DEACTIVATED', 'DISABLED', 'INACTIVE'].includes(status)
+        const isAgentLike = role === 'AGENT' || role === 'ADMIN' || Boolean(agent?.isServiceAccount)
+        if (!isAgentLike || isDisabled) return false
+        const queueIds: string[] = Array.isArray(agent?.queueIds)
+          ? agent.queueIds.map((queueId: any) => String(queueId || '').trim()).filter(Boolean)
+          : []
+        if (queueIds.length === 0) return false
+        return queueIds.some((queueId) => {
+          const queueNorm = normalize(queueId)
+          return queueNorm === teamKeyNorm || queueNorm === teamLabelNorm
+        })
+      })
+      .map((agent: any) => ({
+        id: String(agent?.id || ''),
+        label: getAgentDisplayName(agent),
+      }))
+  }, [agents, createTeamOptions, escalateForm.teamId])
+
+  React.useEffect(() => {
+    if (!escalateForm.teamId) return
+    if (escalateForm.staffId === 'unassigned') return
+    const exists = escalationStaffOptions.some((agent) => agent.id === String(escalateForm.staffId))
+    if (!exists) {
+      setEscalateForm((prev) => ({ ...prev, staffId: 'unassigned' }))
+    }
+  }, [escalateForm.teamId, escalateForm.staffId, escalationStaffOptions])
   const issueOptions = React.useMemo(
     () => uniqueOptions(Object.keys(categoryOptions).map((key) => key.split('>')[0])),
     [categoryOptions]
@@ -3014,7 +3057,7 @@ Click below to proceed:
                             const record = findAgentRecord(agentKey, agent.label)
                             const presenceClass = getAgentPresenceClass(record || { id: agentKey, name: agent.label })
                             return (
-                          <div className="queue-avatar queue-avatar-with-presence">
+                          <div className="queue-avatar queue-avatar-with-presence unified-user-avatar">
                             {renderQueueAgentAvatar(record || { id: agentKey, name: agent.label }, agent.label)}
                             {shouldShowQueuePresenceDot(presenceClass) ? (
                               <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
@@ -3049,7 +3092,7 @@ Click below to proceed:
                   setQueueFilter((prev) => prev.type === 'agent' && String(prev.agentId || '') === String(a.id) ? { type: 'all' } : { type: 'agent', agentId: String(a.id), agentName: displayName })
                 }}
               >
-                <div className="queue-avatar queue-avatar-with-presence">
+                <div className="queue-avatar queue-avatar-with-presence unified-user-avatar">
                   {renderQueueAgentAvatar(a, getAgentDisplayName(a))}
                   {(() => {
                     const presenceClass = getAgentPresenceClass(a)
@@ -3209,16 +3252,17 @@ Click below to proceed:
       const isMe = agent && String(agent?.id || '') === String(user?.id || '')
       const avatarUrl = isMe ? getUserAvatarUrl(user) : getUserAvatarUrl(agent)
       const initials = getUserInitials(agent, getInitials(displayName))
-      return { name: displayName, avatarUrl, initials }
+      const presenceClass = isMe ? toPresenceClass(myPresenceStatus) : getAgentPresenceClass(agent)
+      return { name: displayName, avatarUrl, initials, isMe, presenceClass }
     }
 
     if (!author) {
-      return { name: inbound.name || 'End User', avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name || 'End User') }
+      return { name: inbound.name || 'End User', avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name || 'End User'), isMe: false }
     }
     if (lower && (lower === inbound.email || lower === inbound.username || lower === inbound.name.toLowerCase())) {
-      return { name: inbound.name, avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name) }
+      return { name: inbound.name, avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name), isMe: false }
     }
-    return { name: author || 'Unknown', avatarUrl: '', initials: getInitials(author || 'Unknown') }
+    return { name: author || 'Unknown', avatarUrl: '', initials: getInitials(author || 'Unknown'), isMe: false }
   }
 
   const handleAccept = () => {
@@ -3637,9 +3681,7 @@ Click below to proceed:
         category: teamLabel,
         team: teamLabel,
       }
-      if (shouldAssignStaff) {
-        updatePayload.assigneeId = Number(staffId)
-      }
+      updatePayload.assigneeId = shouldAssignStaff ? Number(staffId) : null
       await ticketService.updateTicket(selectedTicket.id, updatePayload)
       if (escalationNote) {
         await ticketService.privateNote(selectedTicket.id, { note: escalationNote }).catch(() => undefined)
@@ -5277,7 +5319,7 @@ Click below to proceed:
                         onChange={(e) => setEscalateForm((prev) => ({ ...prev, staffId: e.target.value }))}
                       >
                         <option value="unassigned">Unassigned</option>
-                        {agentOptions.map((agent) => (
+                        {escalationStaffOptions.map((agent) => (
                           <option key={agent.id} value={agent.id}>{agent.label}</option>
                         ))}
                       </select>
@@ -5316,16 +5358,23 @@ Click below to proceed:
                 const actionLabel = String((c as any)?.action || '').trim()
                 return (
               <div key={`${c.time}-${idx}`} className={`progress-item${!progressExpanded ? ' is-collapsed' : ''}`}>
-                <div className="progress-avatar">
-                  {identity.avatarUrl ? (
-                    <img
-                      src={identity.avatarUrl}
-                      alt={identity.name}
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none'
-                      }}
-                    />
-                  ) : identity.initials}
+                <div className={`progress-avatar unified-user-avatar${identity.isMe ? ' queue-avatar-with-presence' : ''}`}>
+                  <span className={`queue-avatar-content${identity.avatarUrl ? '' : ' fallback-visible'}`}>
+                    {identity.avatarUrl ? (
+                      <img
+                        src={identity.avatarUrl}
+                        alt={identity.name}
+                        className="queue-avatar-image"
+                        onError={(e) => {
+                          e.currentTarget.parentElement?.classList.add('fallback-visible')
+                        }}
+                      />
+                    ) : null}
+                    <span className="queue-avatar-fallback">{identity.initials}</span>
+                  </span>
+                  {identity.isMe ? (
+                    <span className={`queue-avatar-presence queue-avatar-presence-${identity.presenceClass || 'available'}`} />
+                  ) : null}
                 </div>
                 <div className="progress-body">
                   <div className="progress-meta">
@@ -5711,7 +5760,7 @@ Click below to proceed:
                   <div className="sla-row">
                     <span>Response Target</span>
                     <span>{responseSla.targetLabel}</span>
-                    <span className={`sla-x${responseSla.met ? ' sla-check' : ''}`}>{responseSla.met ? '?' : responseSla.breached ? 'x' : ''}</span>
+                    <span className={`sla-x${responseSla.met ? ' sla-check' : ''}`}>{responseSla.met ? '✓' : responseSla.breached ? '✕' : ''}</span>
                   </div>
                   {!responseSla.done ? (
                     <div className="sla-progress-track" role="progressbar" aria-label="Response SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(responseSla.percent)}>
@@ -5732,7 +5781,7 @@ Click below to proceed:
                   <div className="sla-row">
                     <span>Resolution Target</span>
                     <span>{resolutionSla.targetLabel}</span>
-                    <span className={`sla-x${resolutionSla.met ? ' sla-check' : ''}`}>{resolutionSla.met ? '?' : resolutionSla.breached ? 'x' : ''}</span>
+                    <span className={`sla-x${resolutionSla.met ? ' sla-check' : ''}`}>{resolutionSla.met ? '✓' : resolutionSla.breached ? '✕' : ''}</span>
                   </div>
                   {!resolutionSla.done ? (
                     <div className="sla-progress-track" role="progressbar" aria-label="Resolution SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(resolutionSla.percent)}>
