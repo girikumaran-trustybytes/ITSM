@@ -1,0 +1,152 @@
+ITSM Project Summary
+====================
+
+Overview
+- Internal ITSM platform providing ticketing, assets, users, suppliers, admin configuration, mail integration, workflows, SLA tracking, escalation, approvals, and reporting.
+- Frontend: React (Vite), TypeScript.
+- Backend: Node/Express with Postgres.
+
+How It Works (High Level)
+1. Users create tickets via UI or inbound mail.
+2. Tickets are assigned to queues based on team and routing rules.
+3. Agents accept tickets to take ownership.
+4. Agents work tickets using notes, emails, and escalation.
+5. Status is controlled by workflow transitions.
+6. SLA is tracked for response and resolution targets.
+7. Tickets close after resolution.
+
+Primary Navigation
+- Dashboard
+- Tickets
+- Assets
+- Users
+- Suppliers
+- Reports
+- Accounts
+- Admin
+- Knowledge Base feature was implemented but fully hidden from navigation and routes as requested.
+
+Tickets Module (How It Works)
+- Ticket creation
+  - From New Ticket button or inbound email.
+  - Required fields: Type, Subject, Description.
+  - Ticket ID generated as TB#00001 format.
+- Queue placement
+  - Tickets appear under team queues in the left panel.
+  - Unassigned queue contains tickets without staff assignment.
+- Acceptance
+  - Accept Ticket assigns to the logged agent.
+  - Accept action appears in timeline with logged user name.
+- Actions and updates
+  - Email User: sends outbound email to requester.
+  - Log to Supplier: links and logs to supplier channel.
+  - Internal note: visible only to agents.
+  - Private note: personal log if enabled.
+  - Note + Email: internal log plus outbound email.
+- Status handling
+  - Status updates follow workflow transitions.
+  - Invalid transitions are blocked with error message.
+  - Status badge reflects current state in ticket info panel.
+- Conversation views
+  - All Conversation shows full system and user/agent updates.
+  - Conversation & Internal hides system progress updates.
+- Escalation
+  - Target team and optional staff selection.
+  - Staff dropdown is filtered by selected team membership.
+  - Unassigned is supported (null assignee).
+  - Ticket moves to new queue and appears under new team.
+- Updates from end users
+  - Inbound mail reply marks list badge as “Update” (orange) but does not change actual status.
+
+SLA & Priorities (How It Works)
+- SLA timer starts based on ticket priority.
+- Response SLA stops when agent uses Mark as responsed.
+- Resolution SLA continues until ticket is closed.
+- Green tick means SLA met; red X means breached.
+
+Mail Configuration (How It Works)
+- Supports Gmail, Outlook, Zoho, Custom SMTP/IMAP per mailbox.
+- Per-mailbox configuration includes IMAP/SMTP or OAuth.
+- Default IMAP/SMTP values auto-filled for common providers.
+- Auto-route rebuild occurs when new mailbox is added or migrated.
+- Outbound emails only sent when agent/admin explicitly uses ticket mail actions.
+
+Email Templates & Signatures (How It Works)
+- Templates support placeholders like $ticketID$, $subject$, $User Name$.
+- Used by Email User and Note + Email actions.
+- Signatures can be configured per agent or globally.
+
+Assets Module (How It Works)
+- Asset creation includes identification, assignment, and details fields.
+- Details tab is visible only for Laptop, Workstation, Desktop, PC.
+- Assets can be linked to tickets and users.
+
+Asset Types & Fields (How It Works)
+- Categories act as parents (Hardware, Software, Cloud).
+- Asset Types are children under categories.
+- Only child types appear in asset selection dropdown.
+
+Users & Agents (How It Works)
+- Agents and Users are separate records.
+- Adding an agent does not create a user entry.
+- Users table holds employee info (work email, department, reporting manager, employee ID, employment type, work mode).
+- Duplicate user creation should be blocked by work email.
+
+Suppliers (How It Works)
+- Suppliers list contains vendor contacts.
+- Supplier selected during Log to Supplier action.
+- Supplier email auto-fills based on supplier record.
+
+Admin Settings (How It Works)
+- Queue Management: manage queues, team visibility, and default routing.
+- Workflow: control allowed status transitions per ticket type.
+- Mail Configuration: provider setup and routing for inbound/outbound.
+- Templates: define email and signature content.
+- Security: login policies, session timeout, IP restrictions, SSO.
+
+UI/UX Consistency
+- Unified avatar + presence dot for logged user across queue list, profile, and timeline cards.
+- Background panels and toolbars are styled consistently across admin sections.
+- SLA indicators use tick and X icons instead of “?”.
+
+Reports
+- Reports panel is currently empty per request; can be re-enabled later.
+
+Database & IDs
+- Ticket IDs use TB#00001 format.
+- Reset operations can restart numbering when required.
+
+Known Considerations
+- Workflow rules are authoritative for status changes; update workflow to allow valid transitions.
+- Escalation should never assign staff outside selected team.
+- Duplicate user creation must be prevented using work email.
+
+Build/Deployment
+- Frontend build: npm run build or npx vite build.
+- Backend and frontend can be restarted independently.
+- Git workflow on main branch as requested.
+
+Comparison: ITSM vs HaloPSA (Gaps)
+- Scope
+  - Your ITSM: internal service desk, ticketing, assets, suppliers, workflows, SLAs, mail.
+  - HaloPSA: PSA platform for MSPs with full billing, CRM, projects, and integrations.
+- Billing & Contracts
+  - ITSM: no billing/contracts/profitability tracking.
+  - HaloPSA: PSA billing, contracts, recurring revenue management.
+- CRM & Customer Portal
+  - ITSM: no CRM or external portal.
+  - HaloPSA: CRM and customer portal.
+- Time & Project Management
+  - ITSM: no time entry or projects.
+  - HaloPSA: time tracking, projects, and resource planning.
+- Integrations
+  - ITSM: limited (mail/IMAP/SMTP).
+  - HaloPSA: large integration ecosystem and API-driven automation.
+- Multi-tenant MSP operations
+  - ITSM: single org focus.
+  - HaloPSA: multi-customer MSP operations.
+- Automation depth
+  - ITSM: basic workflow transitions and routing.
+  - HaloPSA: advanced automation and orchestration across services.
+
+End of Summary
