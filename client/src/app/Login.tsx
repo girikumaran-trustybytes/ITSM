@@ -563,17 +563,11 @@ export default function Login() {
           <>
         {mode === 'login' ? (
           <div className="login-template-head">
-            <div className="login-template-icon-wrap">
-              <img src={`/techdesk-icon.svg?v=${LOGO_ASSET_VERSION}`} alt="Support Tech Desk" className="login-template-icon" />
-            </div>
             <div className="login-template-title">Welcome Back!</div>
             <div className="login-template-subtitle">Please enter your login details.</div>
           </div>
         ) : (
           <>
-            <div className="login-brand">
-              <img src={`/techdesk-logo.png?v=${LOGO_ASSET_VERSION}`} alt="Support Tech Desk" className="login-brand-logo" />
-            </div>
             {mode !== 'forgot' && mode !== 'reset' && (
               <div className="login-title">
                 {mode === 'mfa' || mode === 'twofa' ? 'TWO-FACTOR AUTHENTICATION' : 'LOG IN'}

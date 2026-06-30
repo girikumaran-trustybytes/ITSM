@@ -162,7 +162,7 @@ const DEFAULT_SECURITY_SETTINGS: SecuritySettings = {
 }
 
 const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
-  accountName: 'Support Tech Desk Workspace',
+  accountName: 'TB Asset Support Workspace',
   currentPlan: 'Standard',
   activeSince: '',
   assetsCount: 0,
@@ -198,7 +198,7 @@ type SlaEscalationRule = {
   recipients: string
 }
 const SLA_PRIORITY_LABELS: Record<SlaPriority, string> = {
-  Critical: 'Urgent',
+  Critical: 'Critical',
   High: 'High',
   Medium: 'Medium',
   Low: 'Low',
@@ -955,8 +955,8 @@ const toWorkspaceProvider = (
 
 const defaultPriorityPolicy = (priority: SlaPriority): PrioritySlaForm => {
   const defaults: Record<SlaPriority, { response: string; responseUnit: SlaTimeUnit; resolution: string; resolutionUnit: SlaTimeUnit }> = {
-    Critical: { response: '15', responseUnit: 'min', resolution: '4', resolutionUnit: 'hrs' },
-    High: { response: '30', responseUnit: 'min', resolution: '8', resolutionUnit: 'hrs' },
+    Critical: { response: '15', responseUnit: 'min', resolution: '2', resolutionUnit: 'hrs' },
+    High: { response: '30', responseUnit: 'min', resolution: '4', resolutionUnit: 'hrs' },
     Medium: { response: '1', responseUnit: 'hrs', resolution: '1', resolutionUnit: 'days' },
     Low: { response: '4', responseUnit: 'hrs', resolution: '3', resolutionUnit: 'days' },
   }
@@ -2596,8 +2596,8 @@ export default function AdminView(_props: AdminViewProps) {
         const result = await sendMailTest({
           ...payload,
           to,
-          subject: 'Support Tech Desk Mail Configuration Test',
-          text: 'This is a test email from Support Tech Desk Admin Mail Configuration.',
+          subject: 'TB Asset Support Mail Configuration Test',
+          text: 'This is a test email from TB Asset Support Admin Mail Configuration.',
           from: mailForm.smtp.from.trim() || mailForm.supportMail.trim() || undefined,
         })
         const messageId = String(result?.messageId || '')
@@ -4280,6 +4280,12 @@ export default function AdminView(_props: AdminViewProps) {
                         <div>
                           <h4>SLA Targets</h4>
                           <p>Set Service Level Targets for each ticket priority</p>
+                          <p style={{ marginTop: 8, color: '#4b5563', lineHeight: 1.6 }}>
+                            P1 – Critical: Business completely stopped. <br />
+                            P2 – High: Major functionality affected. <br />
+                            P3 – Medium: Partial loss of service. <br />
+                            P4 – Low: Minor issue with limited impact.
+                          </p>
                         </div>
                       </div>
                       <table className="sla-targets-table">
@@ -5773,7 +5779,7 @@ export default function AdminView(_props: AdminViewProps) {
                   <>
                     <article className="admin-settings-card">
                       <h3>Default Login Policy</h3>
-                      <p>Choose which login methods are allowed for your Support Tech Desk workspace.</p>
+                      <p>Choose which login methods are allowed for your TB Asset Support workspace.</p>
                       {([
                         { key: 'password', label: 'Password login', help: 'Standard email and password sign-in.' },
                         { key: 'passwordless', label: 'Passwordless login', help: 'Send one-time codes for sign-in.' },

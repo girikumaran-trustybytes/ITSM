@@ -36,7 +36,7 @@ function formatTicketReplySubject(ticket: any, subjectOverride?: string) {
 }
 
 function formatTicketReplyTextBody(ticket: any, message: string, agentName?: string) {
-  const signatureName = String(agentName || 'Support Tech Desk Support Team').trim() || 'Support Tech Desk Support Team'
+  const signatureName = String(agentName || 'TB Asset Support Team').trim() || 'TB Asset Support Team'
   const bodyContext = String(message || '-').trim() || '-'
   return [
     bodyContext,
@@ -50,7 +50,7 @@ function formatTicketReplyTextBody(ticket: any, message: string, agentName?: str
 }
 
 function formatTicketReplyHtmlBody(ticket: any, message: string, agentName?: string) {
-  const signatureName = String(agentName || 'Support Tech Desk Support Team').trim() || 'Support Tech Desk Support Team'
+  const signatureName = String(agentName || 'TB Asset Support Team').trim() || 'TB Asset Support Team'
   const escapedMessage = htmlEscape(String(message || '-').trim() || '-')
   const htmlLines = escapedMessage.replace(/\r?\n/g, '<br/>')
   return [
@@ -93,7 +93,7 @@ async function strictSend(to: string, subject: string, text: string) {
 
 export default {
   async sendTicketCreated(email: string, ticket: any) {
-    const subject = `[Support Tech Desk] Ticket created: ${ticket?.ticketId || ticket?.id || ''}`.trim()
+    const subject = `[TB Asset Support] Ticket created: ${ticket?.ticketId || ticket?.id || ''}`.trim()
     const text = [
       'Your ticket has been created.',
       `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
@@ -104,7 +104,7 @@ export default {
   },
 
   async sendStatusUpdated(email: string, ticket: any) {
-    const subject = `[Support Tech Desk] Ticket status updated: ${ticket?.ticketId || ticket?.id || ''}`.trim()
+    const subject = `[TB Asset Support] Ticket status updated: ${ticket?.ticketId || ticket?.id || ''}`.trim()
     const text = [
       'A ticket status has been updated.',
       `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
@@ -115,7 +115,7 @@ export default {
   },
 
   async sendTicketResponse(email: string, ticket: any, message: string) {
-    const subject = `[Support Tech Desk] New response: ${ticket?.ticketId || ticket?.id || ''}`.trim()
+    const subject = `[TB Asset Support] New response: ${ticket?.ticketId || ticket?.id || ''}`.trim()
     const text = [
       'A new response was added to your ticket.',
       `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,
@@ -146,7 +146,7 @@ export default {
   },
 
   async sendTicketClosed(email: string, ticket: any) {
-    const subject = `[Support Tech Desk] Ticket closed: ${ticket?.ticketId || ticket?.id || ''}`.trim()
+    const subject = `[TB Asset Support] Ticket closed: ${ticket?.ticketId || ticket?.id || ''}`.trim()
     const text = [
       'Your ticket has been closed.',
       `Ticket: ${ticket?.ticketId || ticket?.id || '-'}`,

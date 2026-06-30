@@ -30,7 +30,7 @@ const TOKEN_PEPPER = process.env.AUTH_TOKEN_PEPPER || ACCESS_SECRET
 const DEFAULT_PUBLIC_APP_URL = 'http://localhost:3000'
 const FRONTEND_URL = String(process.env.FRONTEND_URL || DEFAULT_PUBLIC_APP_URL).replace(/\/+$/, '')
 const MFA_TRUSTED_DAYS = Math.max(1, Number(process.env.MFA_TRUSTED_DEVICE_DAYS || 30))
-const MFA_ISSUER = String(process.env.MFA_ISSUER || 'Support Tech Desk').trim() || 'Support Tech Desk'
+const MFA_ISSUER = String(process.env.MFA_ISSUER || 'TB Asset Support').trim() || 'TB Asset Support'
 
 function htmlEscape(value: string) {
   return String(value || '')
@@ -58,7 +58,7 @@ function formatIstDate(date: Date): string {
 }
 
 function passwordResetMailContext() {
-  const appName = String(process.env.APPLICATION_NAME || process.env.APP_NAME || 'Support Tech Desk').trim() || 'Support Tech Desk'
+  const appName = String(process.env.APPLICATION_NAME || process.env.APP_NAME || 'TB Asset Support').trim() || 'TB Asset Support'
   const supportTeamName = String(process.env.RESET_SENDER_NAME || `${appName} Support Team`).trim() || `${appName} Support Team`
   const supportEmail = String(process.env.SUPPORT_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || 'support.techdesk@gmail.com').trim()
   const from = String(process.env.APPLICATION_BASE_MAIL || process.env.SMTP_FROM || process.env.SMTP_USER || 'support.techdesk@gmail.com').trim()
@@ -262,31 +262,31 @@ async function ensureAuthSchema() {
   if (!authSchemaInit) {
     authSchemaInit = (async () => {
       await query('CREATE EXTENSION IF NOT EXISTS pgcrypto')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleSub" VARCHAR(255)')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "zohoSub" VARCHAR(255)')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "microsoftSub" VARCHAR(255)')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaTotpSecret" TEXT')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaTotpTempSecret" TEXT')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaTotpEnabled" BOOLEAN DEFAULT FALSE')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "is_deleted" BOOLEAN DEFAULT FALSE')
-      await query('ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "googleSub" VARCHAR(255)')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "zohoSub" VARCHAR(255)')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "microsoftSub" VARCHAR(255)')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "mfaTotpSecret" TEXT')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "mfaTotpTempSecret" TEXT')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "mfaTotpEnabled" BOOLEAN DEFAULT FALSE')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "is_deleted" BOOLEAN DEFAULT FALSE')
+      await query('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)')
       await query(
-        `CREATE TABLE IF NOT EXISTS "PasswordResetToken" (
+        `CREATE TABLE IF NOT EXISTS "passwordresettoken" (
           "id" BIGSERIAL PRIMARY KEY,
-          "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+          "userId" INTEGER NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
           "tokenHash" TEXT NOT NULL UNIQUE,
           "expiresAt" TIMESTAMP NOT NULL,
           "consumed" BOOLEAN NOT NULL DEFAULT FALSE,
           "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )`
       )
-      await query('CREATE INDEX IF NOT EXISTS idx_password_reset_user_id ON "PasswordResetToken"("userId")')
+      await query('CREATE INDEX IF NOT EXISTS idx_password_reset_user_id ON "passwordresettoken"("userId")')
       await query(
-        `CREATE TABLE IF NOT EXISTS "MfaChallenge" (
+        `CREATE TABLE IF NOT EXISTS "mfachallenge" (
           "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+          "userId" INTEGER NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
           "codeHash" TEXT NOT NULL,
           "expiresAt" TIMESTAMP NOT NULL,
           "consumed" BOOLEAN NOT NULL DEFAULT FALSE,
@@ -294,7 +294,7 @@ async function ensureAuthSchema() {
         )`
       )
       await query(
-        `CREATE TABLE IF NOT EXISTS "MfaPolicy" (
+        `CREATE TABLE IF NOT EXISTS "mfapolicy" (
           "id" INTEGER PRIMARY KEY CHECK ("id" = 1),
           "mfaRequiredForPrivilegedRoles" BOOLEAN NOT NULL DEFAULT FALSE,
           "primaryMfaMethod" TEXT NOT NULL DEFAULT 'Authenticator App',
@@ -304,9 +304,9 @@ async function ensureAuthSchema() {
           "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )`
       )
-      await query('ALTER TABLE "MfaPolicy" ADD COLUMN IF NOT EXISTS "isConfigured" BOOLEAN NOT NULL DEFAULT FALSE')
+      await query('ALTER TABLE "mfapolicy" ADD COLUMN IF NOT EXISTS "isConfigured" BOOLEAN NOT NULL DEFAULT FALSE')
       await query(
-        `INSERT INTO "MfaPolicy" (
+        `INSERT INTO "mfapolicy" (
           "id",
           "mfaRequiredForPrivilegedRoles",
           "primaryMfaMethod",
@@ -317,11 +317,11 @@ async function ensureAuthSchema() {
         VALUES (1, FALSE, 'Authenticator App', 0, FALSE, FALSE)
         ON CONFLICT ("id") DO NOTHING`
       )
-      await query('CREATE INDEX IF NOT EXISTS idx_mfa_challenge_user_id ON "MfaChallenge"("userId")')
+      await query('CREATE INDEX IF NOT EXISTS idx_mfa_challenge_user_id ON "mfachallenge"("userId")')
       await query(
-        `CREATE TABLE IF NOT EXISTS "MfaTrustedDevice" (
+        `CREATE TABLE IF NOT EXISTS "mfatrusteddevice" (
           "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          "userId" INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+          "userId" INTEGER NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
           "tokenHash" TEXT NOT NULL UNIQUE,
           "label" TEXT,
           "expiresAt" TIMESTAMP NOT NULL,
@@ -329,12 +329,12 @@ async function ensureAuthSchema() {
           "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )`
       )
-      await query('CREATE INDEX IF NOT EXISTS idx_mfa_trusted_device_user_id ON "MfaTrustedDevice"("userId")')
-      await query('CREATE INDEX IF NOT EXISTS idx_user_email_lower ON "User"(LOWER("email"))')
-      await query('CREATE INDEX IF NOT EXISTS idx_service_accounts_user_id ON "ServiceAccounts"("userId")')
-      await query('CREATE INDEX IF NOT EXISTS idx_user_google_sub ON "User"("googleSub")')
-      await query('CREATE INDEX IF NOT EXISTS idx_user_zoho_sub ON "User"("zohoSub")')
-      await query('CREATE INDEX IF NOT EXISTS idx_user_microsoft_sub ON "User"("microsoftSub")')
+      await query('CREATE INDEX IF NOT EXISTS idx_mfa_trusted_device_user_id ON "mfatrusteddevice"("userId")')
+      await query('CREATE INDEX IF NOT EXISTS idx_user_email_lower ON "user"(LOWER("email"))')
+      await query('CREATE INDEX IF NOT EXISTS idx_service_accounts_user_id ON "serviceaccounts"("userId")')
+      await query('CREATE INDEX IF NOT EXISTS idx_user_google_sub ON "user"("googleSub")')
+      await query('CREATE INDEX IF NOT EXISTS idx_user_zoho_sub ON "user"("zohoSub")')
+      await query('CREATE INDEX IF NOT EXISTS idx_user_microsoft_sub ON "user"("microsoftSub")')
     })().catch((err) => {
       // Allow automatic retries on transient DB outages instead of permanently
       // caching a rejected initialization promise.
@@ -620,7 +620,7 @@ async function getAssignedRoles(user: AuthUser) {
   }
   try {
     const serviceAccount = await queryOne<{ enabled: boolean }>(
-      'SELECT "enabled" FROM "ServiceAccounts" WHERE "userId" = $1 LIMIT 1',
+      'SELECT "enabled" FROM "serviceaccounts" WHERE "userId" = $1 LIMIT 1',
       [user.id]
     )
     if (serviceAccount?.enabled) mergedRoles.push('AGENT')
@@ -713,7 +713,7 @@ export async function getMfaPolicy(): Promise<MfaPolicy> {
       "enrollmentGracePeriodDays",
       "allowEmergencyBypass",
       "isConfigured"
-     FROM "MfaPolicy"
+     FROM "mfapolicy"
      WHERE "id" = 1`
   )
   return normalizeMfaPolicyRow(row || {})
@@ -738,7 +738,7 @@ export async function updateMfaPolicy(input: any): Promise<MfaPolicy> {
   }
 
   await query(
-    `UPDATE "MfaPolicy"
+    `UPDATE "mfapolicy"
      SET
        "mfaRequiredForPrivilegedRoles" = $1,
        "primaryMfaMethod" = $2,
@@ -761,7 +761,7 @@ export async function getUserMfaState(userId: number) {
   await ensureAuthSchema()
   const user = await queryOne<any>(
     `SELECT "id", "email", "name", "role", COALESCE("mfaEnabled", FALSE) AS "mfaEnabled", COALESCE("mfaTotpEnabled", FALSE) AS "mfaTotpEnabled"
-     FROM "User"
+     FROM "user"
      WHERE "id" = $1`,
     [userId]
   )
@@ -782,13 +782,13 @@ export async function getUserMfaState(userId: number) {
 export async function setUserMfaEnabled(userId: number, enabled: boolean) {
   await ensureAuthSchema()
   const user = await queryOne<any>(
-    `SELECT "id", "role" FROM "User" WHERE "id" = $1`,
+    `SELECT "id", "role" FROM "user" WHERE "id" = $1`,
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
   const policy = await getMfaPolicy()
   const updated = await queryOne<any>(
-    `UPDATE "User"
+    `UPDATE "user"
      SET "mfaEnabled" = $1, "updatedAt" = NOW()
      WHERE "id" = $2
      RETURNING "id", "email", "name", "role", COALESCE("mfaEnabled", FALSE) AS "mfaEnabled", COALESCE("mfaTotpEnabled", FALSE) AS "mfaTotpEnabled"`,
@@ -819,13 +819,13 @@ export async function requestMfaChallenge(challengeToken: string, method: MfaCha
 export async function setupAuthenticator(userId: number) {
   await ensureAuthSchema()
   const user = await queryOne<AuthUser>(
-    `SELECT "id", "email", "name" FROM "User" WHERE "id" = $1`,
+    `SELECT "id", "email", "name" FROM "user" WHERE "id" = $1`,
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
   const secret = randomBase32Secret(20)
   await query(
-    `UPDATE "User"
+    `UPDATE "user"
      SET "mfaTotpTempSecret" = $1, "updatedAt" = NOW()
      WHERE "id" = $2`,
     [secret, userId]
@@ -844,7 +844,7 @@ export async function setupAuthenticator(userId: number) {
 export async function verifyAuthenticatorSetup(userId: number, code: string) {
   await ensureAuthSchema()
   const user = await queryOne<AuthUser>(
-    `SELECT "id", "mfaTotpTempSecret" FROM "User" WHERE "id" = $1`,
+    `SELECT "id", "mfaTotpTempSecret" FROM "user" WHERE "id" = $1`,
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
@@ -852,7 +852,7 @@ export async function verifyAuthenticatorSetup(userId: number, code: string) {
   if (!tempSecret) throw { status: 400, message: 'Authenticator setup is not initialized.' }
   if (!verifyTotpCode(tempSecret, code, 1)) throw { status: 400, message: 'Invalid authenticator code.' }
   await query(
-    `UPDATE "User"
+    `UPDATE "user"
      SET
        "mfaTotpSecret" = $1,
        "mfaTotpTempSecret" = NULL,
@@ -868,12 +868,12 @@ export async function verifyAuthenticatorSetup(userId: number, code: string) {
 export async function resetAuthenticator(userId: number) {
   await ensureAuthSchema()
   const user = await queryOne<{ id: number }>(
-    `SELECT "id" FROM "User" WHERE "id" = $1`,
+    `SELECT "id" FROM "user" WHERE "id" = $1`,
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
   await query(
-    `UPDATE "User"
+    `UPDATE "user"
      SET
        "mfaTotpSecret" = NULL,
        "mfaTotpTempSecret" = NULL,
@@ -903,10 +903,10 @@ async function issueTokens(user: AuthUser, rememberMe = false): Promise<TokenRes
 
   const expiresAt = new Date(Date.now() + REFRESH_EXPIRES_DAYS * 24 * 60 * 60 * 1000)
   await query(
-    'INSERT INTO "RefreshToken" ("token", "userId", "expiresAt", "createdAt") VALUES ($1, $2, $3, NOW())',
+    'INSERT INTO "refreshtoken" ("token", "userId", "expiresAt", "createdAt") VALUES ($1, $2, $3, NOW())',
     [refreshToken, user.id, expiresAt]
   )
-  await query('UPDATE "User" SET "lastLogin" = NOW(), "updatedAt" = NOW() WHERE "id" = $1', [user.id])
+  await query('UPDATE "user" SET "lastLogin" = NOW(), "updatedAt" = NOW() WHERE "id" = $1', [user.id])
 
   return {
     accessToken,
@@ -953,29 +953,29 @@ function buildMfaPrompt(user: AuthUser, policy: MfaPolicy, rememberMe = false) {
 function getMfaMailTemplate(user: AuthUser, code: string) {
   const displayName = toGreetingName(safeDisplayName(user))
   const text = [
-    'Your Support Tech Desk Verification Code',
+    'Your TB Asset Support Verification Code',
     '',
     `Hello ${displayName},`,
     '',
-    'To complete your sign-in process to Support Tech Desk, please use the verification code below:',
+    'To complete your sign-in process to TB Asset Support, please use the verification code below:',
     '',
     `**${code}**`,
     '',
     'If you did not request this code, please disregard this email or contact our support team for assistance.',
     '',
     'Kind regards,',
-    'Support Tech Desk Support Team',
+    'TB Asset Support Team',
   ].join('\n')
   const html = `
     <div style="font-family:Segoe UI,Arial,sans-serif;max-width:620px;margin:0 auto;padding:20px;background:#ffffff;color:#111827;line-height:1.5">
       <p style="margin:0 0 16px 0">Hello ${htmlEscape(displayName)},</p>
-      <p style="margin:0 0 12px 0">To complete your sign-in process to <strong>Support Tech Desk</strong>, please use the verification code below:</p>
+      <p style="margin:0 0 12px 0">To complete your sign-in process to <strong>TB Asset Support</strong>, please use the verification code below:</p>
       <p style="margin:0 0 16px 0;font-size:24px;font-weight:700;letter-spacing:3px">${htmlEscape(code)}</p>
       <p style="margin:0 0 16px 0;color:#4b5563">If you did not request this code, please disregard this email or contact our support team for assistance.</p>
-      <p style="margin:0">Kind regards,<br/>Support Tech Desk Support Team</p>
+      <p style="margin:0">Kind regards,<br/>TB Asset Support Team</p>
     </div>
   `
-  return { subject: 'Your Support Tech Desk Verification Code', text, html }
+  return { subject: 'Your TB Asset Support Verification Code', text, html }
 }
 
 async function createEmailMfaChallenge(user: AuthUser, rememberMe = false) {
@@ -983,7 +983,7 @@ async function createEmailMfaChallenge(user: AuthUser, rememberMe = false) {
   const codeHash = hashOpaqueToken(code)
   const expiresAt = nowPlusMinutes(MFA_CODE_TTL_MIN)
   const row = await queryOne<{ id: string }>(
-    'INSERT INTO "MfaChallenge" ("userId", "codeHash", "expiresAt") VALUES ($1, $2, $3) RETURNING "id"',
+    'INSERT INTO "mfachallenge" ("userId", "codeHash", "expiresAt") VALUES ($1, $2, $3) RETURNING "id"',
     [user.id, codeHash, expiresAt]
   )
   if (!row) throw new Error('Unable to create 2FA challenge')
@@ -1050,7 +1050,7 @@ async function issueTrustedDeviceToken(userId: number, label = 'browser') {
   const tokenHash = hashOpaqueToken(raw)
   const expiresAt = new Date(Date.now() + MFA_TRUSTED_DAYS * 24 * 60 * 60 * 1000)
   await query(
-    `INSERT INTO "MfaTrustedDevice" ("userId", "tokenHash", "label", "expiresAt", "lastUsedAt")
+    `INSERT INTO "mfatrusteddevice" ("userId", "tokenHash", "label", "expiresAt", "lastUsedAt")
      VALUES ($1, $2, $3, $4, NOW())`,
     [userId, tokenHash, String(label || 'browser').trim() || 'browser', expiresAt]
   )
@@ -1063,7 +1063,7 @@ async function isTrustedDeviceForUser(userId: number, trustedDeviceToken?: strin
   const tokenHash = hashOpaqueToken(token)
   const row = await queryOne<{ id: string }>(
     `SELECT "id"
-     FROM "MfaTrustedDevice"
+     FROM "mfatrusteddevice"
      WHERE "userId" = $1
        AND "tokenHash" = $2
        AND "expiresAt" > NOW()
@@ -1071,7 +1071,7 @@ async function isTrustedDeviceForUser(userId: number, trustedDeviceToken?: strin
     [userId, tokenHash]
   )
   if (!row) return false
-  await query('UPDATE "MfaTrustedDevice" SET "lastUsedAt" = NOW() WHERE "id" = $1', [row.id])
+  await query('UPDATE "mfatrusteddevice" SET "lastUsedAt" = NOW() WHERE "id" = $1', [row.id])
   return true
 }
 
@@ -1085,7 +1085,7 @@ async function parseMfaPreToken(challengeToken: string) {
   if (!payload || payload.type !== 'mfa-pre' || !payload.sub) throw new Error('Invalid 2FA challenge')
   const user = await queryOne<AuthUser>(
     `SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub", "mfaTotpSecret", "mfaTotpTempSecret", "mfaTotpEnabled"
-     FROM "User"
+     FROM "user"
      WHERE "id" = $1`,
     [payload.sub]
   )
@@ -1101,8 +1101,8 @@ async function findActiveUserByEmail(email: string) {
     `SELECT
        u."id", u."email", u."password", u."name", u."role", u."status",
        u."mfaEnabled", u."avatarUrl", u."googleSub", u."mfaTotpSecret", u."mfaTotpTempSecret", u."mfaTotpEnabled"
-     FROM "User" u
-     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+     FROM "user" u
+     LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
      WHERE LOWER(u."email") = LOWER($1)
        AND COALESCE(u."is_deleted", FALSE) = FALSE
        AND COALESCE(u."status", 'ACTIVE') <> 'INACTIVE'
@@ -1169,7 +1169,7 @@ async function createSsoBackedUser(info: { provider: SsoProvider; email: string;
   const zohoSub = info.provider === 'zoho' ? info.sub : null
   const microsoftSub = info.provider === 'outlook' ? info.sub : null
   const created = await queryOne<AuthUser>(
-    `INSERT INTO "User" ("email", "password", "name", "status", "role", "googleSub", "zohoSub", "microsoftSub", "avatarUrl", "createdAt", "updatedAt")
+    `INSERT INTO "user" ("email", "password", "name", "status", "role", "googleSub", "zohoSub", "microsoftSub", "avatarUrl", "createdAt", "updatedAt")
      VALUES ($1, $2, $3, 'ACTIVE', 'USER', $4, $5, $6, $7, NOW(), NOW())
      RETURNING "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub", "mfaTotpSecret", "mfaTotpTempSecret", "mfaTotpEnabled"`,
     [info.email, passwordHash, fullName, googleSub, zohoSub, microsoftSub, info.picture || null]
@@ -1203,8 +1203,8 @@ export async function loginWithGoogle(idToken: string, trustedDeviceToken?: stri
     `SELECT
        u."id", u."email", u."password", u."name", u."role", u."status",
        u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub", u."mfaTotpSecret", u."mfaTotpTempSecret", u."mfaTotpEnabled"
-     FROM "User" u
-     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+     FROM "user" u
+     LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
      WHERE (LOWER(u."email") = LOWER($1) OR u."googleSub" = $2)
        AND COALESCE(u."is_deleted", FALSE) = FALSE
        AND COALESCE(sa."enabled", TRUE) = TRUE
@@ -1216,7 +1216,7 @@ export async function loginWithGoogle(idToken: string, trustedDeviceToken?: stri
   if (!user) {
     user = await createSsoBackedUser({ ...google, provider: 'google' })
   } else {
-    await query('UPDATE "User" SET "googleSub" = $1, "avatarUrl" = COALESCE(NULLIF($2, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $3', [
+    await query('UPDATE "user" SET "googleSub" = $1, "avatarUrl" = COALESCE(NULLIF($2, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $3', [
       google.sub,
       google.picture,
       user.id,
@@ -1247,16 +1247,16 @@ export async function verifyMfa(challengeToken: string, code: string, dontAskAga
   if (method === 'email') {
     if (!payload.cid) throw new Error('Invalid 2FA challenge')
     const row = await queryOne<any>(
-      'SELECT "id", "userId", "codeHash", "expiresAt", "consumed" FROM "MfaChallenge" WHERE "id" = $1 AND "userId" = $2',
+      'SELECT "id", "userId", "codeHash", "expiresAt", "consumed" FROM "mfachallenge" WHERE "id" = $1 AND "userId" = $2',
       [payload.cid, payload.sub]
     )
     if (!row || row.consumed || new Date(row.expiresAt).getTime() < Date.now()) throw new Error('2FA challenge expired')
     if (hashOpaqueToken(String(code || '')) !== row.codeHash) throw new Error('Invalid verification code')
-    await query('UPDATE "MfaChallenge" SET "consumed" = TRUE WHERE "id" = $1', [row.id])
+    await query('UPDATE "mfachallenge" SET "consumed" = TRUE WHERE "id" = $1', [row.id])
   } else if (method === 'authenticator') {
     const userForTotp = await queryOne<AuthUser>(
       `SELECT "id", "mfaTotpSecret", COALESCE("mfaTotpEnabled", FALSE) AS "mfaTotpEnabled"
-       FROM "User"
+       FROM "user"
        WHERE "id" = $1`,
       [payload.sub]
     )
@@ -1268,7 +1268,7 @@ export async function verifyMfa(challengeToken: string, code: string, dontAskAga
 
   const user = await queryOne<AuthUser>(
     `SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub", "mfaTotpSecret", "mfaTotpTempSecret", "mfaTotpEnabled"
-     FROM "User" WHERE "id" = $1`,
+     FROM "user" WHERE "id" = $1`,
     [payload.sub]
   )
   if (!user) throw new Error('User not found')
@@ -1291,7 +1291,7 @@ export async function forgotPassword(email: string) {
   const tokenHash = hashOpaqueToken(rawToken)
   const expiresAt = nowPlusMinutes(RESET_TOKEN_TTL_MIN)
 
-  await query('INSERT INTO "PasswordResetToken" ("userId", "tokenHash", "expiresAt") VALUES ($1, $2, $3)', [
+  await query('INSERT INTO "passwordresettoken" ("userId", "tokenHash", "expiresAt") VALUES ($1, $2, $3)', [
     user.id,
     tokenHash,
     expiresAt,
@@ -1369,7 +1369,7 @@ export async function resetPassword(token: string, newPassword: string) {
   const tokenHash = hashOpaqueToken(token)
   const resetRow = await queryOne<any>(
     `SELECT "id", "userId", "expiresAt", "consumed"
-     FROM "PasswordResetToken"
+     FROM "passwordresettoken"
      WHERE "tokenHash" = $1
      ORDER BY "id" DESC
      LIMIT 1`,
@@ -1378,9 +1378,9 @@ export async function resetPassword(token: string, newPassword: string) {
   if (!resetRow || resetRow.consumed || new Date(resetRow.expiresAt).getTime() < Date.now()) throw new Error('Reset token is invalid or expired')
 
   const hashed = await bcrypt.hash(newPassword, 12)
-  await query('UPDATE "User" SET "password" = $1, "updatedAt" = NOW() WHERE "id" = $2', [hashed, resetRow.userId])
-  await query('UPDATE "PasswordResetToken" SET "consumed" = TRUE WHERE "id" = $1', [resetRow.id])
-  await query('UPDATE "RefreshToken" SET "revoked" = TRUE WHERE "userId" = $1', [resetRow.userId])
+  await query('UPDATE "user" SET "password" = $1, "updatedAt" = NOW() WHERE "id" = $2', [hashed, resetRow.userId])
+  await query('UPDATE "passwordresettoken" SET "consumed" = TRUE WHERE "id" = $1', [resetRow.id])
+  await query('UPDATE "refreshtoken" SET "revoked" = TRUE WHERE "userId" = $1', [resetRow.userId])
 
   return { ok: true }
 }
@@ -1393,7 +1393,7 @@ export async function changePassword(userId: number, currentPassword: string, ne
 
   const user = await queryOne<AuthUser>(
     `SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub", "mfaTotpSecret", "mfaTotpTempSecret", "mfaTotpEnabled"
-     FROM "User"
+     FROM "user"
      WHERE "id" = $1`,
     [userId]
   )
@@ -1404,8 +1404,8 @@ export async function changePassword(userId: number, currentPassword: string, ne
   if (!ok) throw new Error('Current password is incorrect')
 
   const hashed = await bcrypt.hash(newPassword, 12)
-  await query('UPDATE "User" SET "password" = $1, "updatedAt" = NOW() WHERE "id" = $2', [hashed, userId])
-  await query('UPDATE "RefreshToken" SET "revoked" = TRUE WHERE "userId" = $1', [userId])
+  await query('UPDATE "user" SET "password" = $1, "updatedAt" = NOW() WHERE "id" = $2', [hashed, userId])
+  await query('UPDATE "refreshtoken" SET "revoked" = TRUE WHERE "userId" = $1', [userId])
   return { ok: true }
 }
 
@@ -1414,14 +1414,14 @@ export async function refresh(refreshToken: string) {
   try {
     ;(jwt as any).verify(refreshToken, REFRESH_SECRET)
     const record = await queryOne<any>(
-      'SELECT * FROM "RefreshToken" WHERE "token" = $1 AND "revoked" = FALSE AND "expiresAt" > NOW()',
+      'SELECT * FROM "refreshtoken" WHERE "token" = $1 AND "revoked" = FALSE AND "expiresAt" > NOW()',
       [refreshToken]
     )
     if (!record) throw new Error('Invalid refresh token')
 
     const user = await queryOne<AuthUser>(
       `SELECT "id", "email", "password", "name", "role", "status", "mfaEnabled", "avatarUrl", "googleSub", "zohoSub", "microsoftSub", "mfaTotpSecret", "mfaTotpTempSecret", "mfaTotpEnabled"
-       FROM "User" WHERE "id" = $1`,
+       FROM "user" WHERE "id" = $1`,
       [record.userId]
     )
     if (!user) throw new Error('User not found')
@@ -1450,8 +1450,8 @@ export async function loginWithSsoCode(provider: SsoProvider, code: string, reme
     `SELECT
        u."id", u."email", u."password", u."name", u."role", u."status",
        u."mfaEnabled", u."avatarUrl", u."googleSub", u."zohoSub", u."microsoftSub", u."mfaTotpSecret", u."mfaTotpTempSecret", u."mfaTotpEnabled"
-     FROM "User" u
-     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+     FROM "user" u
+     LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
      WHERE (LOWER(u."email") = LOWER($1) OR ${subField} = $2)
        AND COALESCE(u."is_deleted", FALSE) = FALSE
        AND COALESCE(sa."enabled", TRUE) = TRUE
@@ -1467,7 +1467,7 @@ export async function loginWithSsoCode(provider: SsoProvider, code: string, reme
     const zohoSub = provider === 'zoho' ? identity.sub : (user.zohoSub || null)
     const microsoftSub = provider === 'outlook' ? identity.sub : (user.microsoftSub || null)
     await query(
-      'UPDATE "User" SET "googleSub" = $1, "zohoSub" = $2, "microsoftSub" = $3, "avatarUrl" = COALESCE(NULLIF($4, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $5',
+      'UPDATE "user" SET "googleSub" = $1, "zohoSub" = $2, "microsoftSub" = $3, "avatarUrl" = COALESCE(NULLIF($4, \'\'), "avatarUrl"), "updatedAt" = NOW() WHERE "id" = $5',
       [googleSub || null, zohoSub || null, microsoftSub || null, identity.picture, user.id]
     )
     user.googleSub = googleSub || null

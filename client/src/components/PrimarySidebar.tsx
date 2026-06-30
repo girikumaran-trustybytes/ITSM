@@ -144,10 +144,9 @@ export default function PrimarySidebar({
         to="/dashboard"
         className="sidebar-brand"
         onClick={() => setActiveNav('dashboard')}
-        aria-label="Support Tech Desk home"
+        aria-label="TB Asset Support home"
       >
-        <img src="/techdesk-icon.svg" alt="Support Tech Desk logo" className="sidebar-brand-logo" />
-      </Link>
+        </Link>
 
       <nav className="nav-items">
         {visibleNavItems.map((item) => (

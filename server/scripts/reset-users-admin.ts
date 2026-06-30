@@ -114,21 +114,21 @@ async function applySchemaFiles(pool: Pool) {
 }
 
 async function ensureUserTable(pool: Pool) {
-  const exists = await tableExists(pool, 'public."User"')
+  const exists = await tableExists(pool, 'public."user"')
   if (exists) return
   console.log('User table missing. Bootstrapping schema files...')
   await applySchemaFiles(pool)
-  const created = await tableExists(pool, 'public."User"')
+  const created = await tableExists(pool, 'public."user"')
   if (!created) {
-    throw new Error('Failed to create "User" table after schema bootstrap')
+    throw new Error('Failed to create "user" table after schema bootstrap')
   }
 }
 
 async function deleteAllUsers(pool: Pool) {
   await pool.query('BEGIN')
   try {
-    if (await tableExists(pool, 'public."RefreshToken"')) {
-      await pool.query('DELETE FROM "RefreshToken"')
+    if (await tableExists(pool, 'public."refreshtoken"')) {
+      await pool.query('DELETE FROM "refreshtoken"')
     }
     if (await tableExists(pool, 'public.user_roles')) {
       await pool.query('DELETE FROM user_roles')
@@ -136,25 +136,25 @@ async function deleteAllUsers(pool: Pool) {
     if (await tableExists(pool, 'public.user_permissions_override')) {
       await pool.query('DELETE FROM user_permissions_override')
     }
-    if (await tableExists(pool, 'public."ServiceAccounts"')) {
-      await pool.query('DELETE FROM "ServiceAccounts"')
+    if (await tableExists(pool, 'public."serviceaccounts"')) {
+      await pool.query('DELETE FROM "serviceaccounts"')
     }
-    if (await tableExists(pool, 'public."UserPresence"')) {
-      await pool.query('DELETE FROM "UserPresence"')
+    if (await tableExists(pool, 'public."userpresence"')) {
+      await pool.query('DELETE FROM "userpresence"')
     }
-    if (await tableExists(pool, 'public."PasswordResetToken"')) {
-      await pool.query('DELETE FROM "PasswordResetToken"')
+    if (await tableExists(pool, 'public."passwordresettoken"')) {
+      await pool.query('DELETE FROM "passwordresettoken"')
     }
-    if (await tableExists(pool, 'public."MfaChallenge"')) {
-      await pool.query('DELETE FROM "MfaChallenge"')
+    if (await tableExists(pool, 'public."mfachallenge"')) {
+      await pool.query('DELETE FROM "mfachallenge"')
     }
-    if (await tableExists(pool, 'public."MfaTrustedDevice"')) {
-      await pool.query('DELETE FROM "MfaTrustedDevice"')
+    if (await tableExists(pool, 'public."mfatrusteddevice"')) {
+      await pool.query('DELETE FROM "mfatrusteddevice"')
     }
     if (await tableExists(pool, 'public.invitations')) {
       await pool.query('DELETE FROM invitations')
     }
-    await pool.query('DELETE FROM "User"')
+    await pool.query('DELETE FROM "user"')
     await pool.query('COMMIT')
   } catch (error) {
     await pool.query('ROLLBACK')
@@ -176,7 +176,7 @@ async function ensureRoleTables(pool: Pool) {
   if (!(await tableExists(pool, 'public.user_roles'))) {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_roles (
-        user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
         role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
         created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY(user_id, role_id)
@@ -194,7 +194,7 @@ async function createSingleAdmin(pool: Pool, email: string, password: string, na
     role: string
     status: string
   }>(
-    `INSERT INTO "User" ("email", "password", "name", "role", "status", "createdAt", "updatedAt")
+    `INSERT INTO "user" ("email", "password", "name", "role", "status", "createdAt", "updatedAt")
      VALUES ($1, $2, $3, 'ADMIN', 'ACTIVE', NOW(), NOW())
      RETURNING "id", "email", "name", "role"::text AS "role", "status"`,
     [email, hash, name]
@@ -219,7 +219,7 @@ async function createSingleAdmin(pool: Pool, email: string, password: string, na
 async function verifyFinalState(pool: Pool, email: string) {
   const tableCheck = await pool.query<{ rel: string | null }>(
     'SELECT to_regclass($1) AS rel',
-    ['public."User"']
+    ['public."user"']
   )
   const stats = await pool.query<{
     total_users: string
@@ -230,7 +230,7 @@ async function verifyFinalState(pool: Pool, email: string) {
        COUNT(*)::text AS total_users,
        COUNT(*) FILTER (WHERE UPPER(COALESCE("role"::text, '')) = 'ADMIN')::text AS admin_users,
        COUNT(*) FILTER (WHERE LOWER("email") = LOWER($1))::text AS target_exists
-     FROM "User"`,
+     FROM "user"`,
     [email]
   )
   return {

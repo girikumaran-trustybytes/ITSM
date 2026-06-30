@@ -23,7 +23,7 @@ async function main() {
   try {
     const hash = await bcrypt.hash(password, 12)
     const rows = await query<CreatedAdmin>(
-      `INSERT INTO "User" ("email", "password", "name", "role", "status", "createdAt", "updatedAt")
+      `INSERT INTO "user" ("email", "password", "name", "role", "status", "createdAt", "updatedAt")
        VALUES ($1, $2, $3, 'ADMIN', 'ACTIVE', NOW(), NOW())
        ON CONFLICT ("email") DO UPDATE SET
          "password" = EXCLUDED."password",

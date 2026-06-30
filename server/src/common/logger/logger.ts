@@ -22,7 +22,7 @@ export async function auditLog(entry: { ticketId?: string; user?: any; from?: st
   try {
     const userId = typeof entry.user === 'number' ? entry.user : parseInt(String(entry.user)) || undefined
     await query(
-      'INSERT INTO "AuditLog" ("action", "entity", "entityId", "userId", "assetId", "meta", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+      'INSERT INTO "auditlog" ("action", "entity", "entityId", "userId", "assetId", "meta", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
       [
         entry.action,
         entry.entity || (entry.ticketId ? 'ticket' : 'system'),

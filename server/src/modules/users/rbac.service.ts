@@ -294,7 +294,7 @@ async function ensureTeamMembershipSchema() {
   await query(`
     CREATE TABLE IF NOT EXISTS team_members (
       team_id INTEGER NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
-      user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
       created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY(team_id, user_id)
     )
@@ -611,7 +611,7 @@ export async function ensureRbacSeeded() {
         );
 
         CREATE TABLE IF NOT EXISTS user_roles (
-          user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
           role_id INTEGER NOT NULL REFERENCES roles(role_id) ON DELETE CASCADE,
           created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           PRIMARY KEY(user_id, role_id)
@@ -630,7 +630,7 @@ export async function ensureRbacSeeded() {
         );
 
         CREATE TABLE IF NOT EXISTS user_permissions_override (
-          user_id INTEGER NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
           permission_id INTEGER NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
           allowed BOOLEAN NOT NULL,
           PRIMARY KEY(user_id, permission_id)
@@ -773,7 +773,7 @@ export async function ensureRbacSeeded() {
           BEGIN
             INSERT INTO user_roles (user_id, role_id)
             SELECT u."id", r.role_id
-            FROM "User" u
+            FROM "user" u
             INNER JOIN roles r ON r.role_name = UPPER(COALESCE(u."role"::text, 'USER'))
             ON CONFLICT (user_id, role_id) DO NOTHING;
           EXCEPTION
@@ -909,7 +909,7 @@ export async function getUserPermissionsSnapshot(userId: number) {
     role: string
     status: string
   }>(
-    'SELECT "id", "name", "email", "role", "status" FROM "User" WHERE "id" = $1',
+    'SELECT "id", "name", "email", "role", "status" FROM "user" WHERE "id" = $1',
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
@@ -1017,7 +1017,7 @@ export async function upsertUserPermissions(
 ) {
   await ensureRbacSeeded()
   await ensureTeamMembershipSchema()
-  const user = await queryOne<{ id: number; role: string; tenantId: number | null; email: string }>('SELECT "id", "role", "tenantId", "email" FROM "User" WHERE "id" = $1', [userId])
+  const user = await queryOne<{ id: number; role: string; tenantId: number | null; email: string }>('SELECT "id", "role", "tenantId", "email" FROM "user" WHERE "id" = $1', [userId])
   if (!user) throw { status: 404, message: 'User not found' }
   if (isProtectedAdminEmail(user.email)) {
     await enforceProtectedAdminRoleByUserId(userId)
@@ -1062,7 +1062,7 @@ export async function upsertUserPermissions(
   }
 
   const roleId = await getRoleId(effectiveRole)
-  await query('UPDATE "User" SET "role" = $1, "updatedAt" = NOW() WHERE "id" = $2', [effectiveRole, userId])
+  await query('UPDATE "user" SET "role" = $1, "updatedAt" = NOW() WHERE "id" = $2', [effectiveRole, userId])
 
   const roleRows = await query<{ permission_id: number; permission_key: string; allowed: boolean }>(
     `SELECT rp.permission_id, p.permission_key, rp.allowed
@@ -1121,7 +1121,7 @@ export async function upsertUserPermissions(
 
       if (accessTeamKeys.length > 0) {
         await client.query(
-          `INSERT INTO "ServiceAccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
+          `INSERT INTO "serviceaccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
            VALUES ($1, TRUE, FALSE, $2, NOW(), NOW())
            ON CONFLICT ("userId")
            DO UPDATE SET
@@ -1132,7 +1132,7 @@ export async function upsertUserPermissions(
           [userId, accessTeamKeys]
         )
       } else {
-        await client.query(`DELETE FROM "ServiceAccounts" WHERE "userId" = $1`, [userId])
+        await client.query(`DELETE FROM "serviceaccounts" WHERE "userId" = $1`, [userId])
       }
       await syncTeamMembershipWithClient(client, userId, tenantId, accessTeamKeys)
       await client.query('COMMIT')
@@ -1308,7 +1308,7 @@ export async function deleteTicketQueue(queueId: number, actorUserId?: number) {
 
       await client.query('DELETE FROM ticket_queues WHERE queue_id = $1', [queueId])
       await client.query('DELETE FROM teams WHERE tenant_id = 1 AND team_key = $1', [row.queue_key])
-      await client.query('UPDATE "ServiceAccounts" SET "queueIds" = array_remove("queueIds", $1)', [row.queue_key])
+      await client.query('UPDATE "serviceaccounts" SET "queueIds" = array_remove("queueIds", $1)', [row.queue_key])
 
       await client.query('COMMIT')
       await auditLog({
@@ -1392,7 +1392,7 @@ export async function markInvitePending(userId: number, actorUserId?: number) {
     workEmail: string | null
     tenantId: number | null
   }>(
-    'SELECT "id", "email", "workEmail", "tenantId" FROM "User" WHERE "id" = $1',
+    'SELECT "id", "email", "workEmail", "tenantId" FROM "user" WHERE "id" = $1',
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
@@ -1416,7 +1416,7 @@ export async function markInvitePending(userId: number, actorUserId?: number) {
     VALUES ($1, $2, $3, $4, NULL, NULL, 'PENDING', 0, NULL)`,
     [tenantId, userId, recipientEmail, actorUserId || null]
   )
-  await query('UPDATE "User" SET "status" = $1, "updatedAt" = NOW() WHERE "id" = $2', ['INVITED', userId])
+  await query('UPDATE "user" SET "status" = $1, "updatedAt" = NOW() WHERE "id" = $2', ['INVITED', userId])
 
   await auditLog({
     action: 'invite_pending_created',
@@ -1462,7 +1462,7 @@ function invitationContext(overrideAppBaseUrl?: string) {
     process.env.APPLICATION_NAME ||
     process.env.APP_NAME ||
     process.env.ORG_NAME ||
-    'Support Tech Desk'
+    'TB Asset Support'
   ).trim()
   const appBaseUrl = trimSlash(
     String(
@@ -1476,7 +1476,7 @@ function invitationContext(overrideAppBaseUrl?: string) {
   const loginRoot = appBaseUrl.includes('#') ? appBaseUrl : `${appBaseUrl}/#`
   const loginUrl = `${loginRoot.replace(/\/+$/, '')}/login`
   const companyName = String(process.env.COMPANY_NAME || appName).trim()
-  const senderName = String(process.env.INVITE_SENDER_NAME || 'Support Tech Desk Support').trim()
+  const senderName = String(process.env.INVITE_SENDER_NAME || 'TB Asset Support Support').trim()
   const senderTitle = String(process.env.INVITE_SENDER_TITLE || 'Support Team').trim()
   const supportEmail = String(
     process.env.SUPPORT_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER || 'support.techdesk@gmail.com'
@@ -1572,7 +1572,7 @@ async function sendInviteEmail(
       `If you did not request this reactivation link, please ignore this email and immediately report it to ${supportEmail}.`,
       '',
       `Best regards,`,
-      `Support Tech Desk Support Team`,
+      `TB Asset Support Team`,
     ].join('\n')
     : [
       `Dear ${person},`,
@@ -1614,7 +1614,7 @@ async function sendInviteEmail(
         <p>For security reasons, this link will expire on ${htmlEscape(expiresText)}. We strongly recommend completing the reactivation process as soon as possible.</p>
         <p>If you did not request this reactivation link, please ignore this email and immediately report it to <a href="mailto:${htmlEscape(supportEmail)}">${htmlEscape(supportEmail)}</a>.</p>
         <p>Best regards,<br/>
-        Support Tech Desk Support Team</p>
+        TB Asset Support Team</p>
       </div>
     `
     : `
@@ -1686,7 +1686,7 @@ export async function sendUserInvite(
     name: string | null
     tenantId: number | null
   }>(
-    'SELECT "id", "email", "workEmail", "name", "tenantId" FROM "User" WHERE "id" = $1',
+    'SELECT "id", "email", "workEmail", "name", "tenantId" FROM "user" WHERE "id" = $1',
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }
@@ -1707,7 +1707,7 @@ export async function sendUserInvite(
 
   const actor = actorUserId
     ? await queryOne<{ name: string | null; email: string | null }>(
-      'SELECT "name", "email" FROM "User" WHERE "id" = $1',
+      'SELECT "name", "email" FROM "user" WHERE "id" = $1',
       [actorUserId]
     )
     : null
@@ -1744,7 +1744,7 @@ export async function sendUserInvite(
     RETURNING invitation_id`,
     [tenantId, userId, recipientEmail, actorUserId || null, tokenHash, expiresAt, mode]
   )
-  await query('UPDATE "User" SET "status" = $1, "updatedAt" = NOW() WHERE "id" = $2', ['INVITED', userId])
+  await query('UPDATE "user" SET "status" = $1, "updatedAt" = NOW() WHERE "id" = $2', ['INVITED', userId])
 
   const activationBase = resolveInviteActivationBaseUrl(options?.activationBaseUrl)
   const root = activationBase.includes('#') ? activationBase : `${activationBase}/#`
@@ -1821,7 +1821,7 @@ export async function sendServiceAccountInvite(
 ) {
   await ensureRbacSeeded()
   const user = await queryOne<{ id: number; role: string }>(
-    'SELECT "id", "role" FROM "User" WHERE "id" = $1',
+    'SELECT "id", "role" FROM "user" WHERE "id" = $1',
     [userId]
   )
   if (!user) throw { status: 404, message: 'User not found' }

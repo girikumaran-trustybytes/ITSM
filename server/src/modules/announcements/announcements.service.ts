@@ -25,7 +25,7 @@ async function ensureAnnouncementsTable() {
   if (!ensureTablePromise) {
     ensureTablePromise = (async () => {
       await query(`
-        CREATE TABLE IF NOT EXISTS "Announcement" (
+        CREATE TABLE IF NOT EXISTS "announcement" (
           "id" SERIAL PRIMARY KEY,
           "title" TEXT NOT NULL,
           "body" TEXT NOT NULL,
@@ -40,7 +40,7 @@ async function ensureAnnouncementsTable() {
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `)
-      await query(`ALTER TABLE "Announcement" ADD COLUMN IF NOT EXISTS "repeatInterval" TEXT NOT NULL DEFAULT 'none'`)
+      await query(`ALTER TABLE "announcement" ADD COLUMN IF NOT EXISTS "repeatInterval" TEXT NOT NULL DEFAULT 'none'`)
     })().catch((err) => {
       ensureTablePromise = null
       throw err
@@ -94,7 +94,7 @@ async function touchRepeatingAnnouncements(type?: AnnouncementType) {
   }
   const rows = await query<Announcement>(
     `SELECT "id", "repeatInterval", "publishAt", "createdAt"
-     FROM "Announcement"
+     FROM "announcement"
      WHERE ${conditions.join(' AND ')}`,
     params
   )
@@ -127,7 +127,7 @@ async function touchRepeatingAnnouncements(type?: AnnouncementType) {
   }
   if (updates.length) {
     await query(
-      `UPDATE "Announcement"
+      `UPDATE "announcement"
        SET "publishAt" = NOW(),
            "status" = 'published',
            "updatedAt" = NOW()
@@ -153,7 +153,7 @@ export async function listAnnouncementsAdmin(): Promise<Announcement[]> {
       "updatedBy",
       "createdAt",
       "updatedAt"
-     FROM "Announcement"
+     FROM "announcement"
      ORDER BY COALESCE("publishAt", "createdAt") DESC, "createdAt" DESC`
   )
   return rows
@@ -185,7 +185,7 @@ export async function listActiveAnnouncements(type?: AnnouncementType): Promise<
       "updatedBy",
       "createdAt",
       "updatedAt"
-     FROM "Announcement"
+     FROM "announcement"
      WHERE ${conditions.join(' AND ')}
      ORDER BY COALESCE("publishAt", "createdAt") DESC, "createdAt" DESC`,
     params
@@ -205,7 +205,7 @@ export async function createAnnouncement(payload: any, userId?: number): Promise
   const status = normalizeStatus(payload?.status, publishAt)
   const repeatInterval = normalizeRepeat(payload?.repeatInterval)
   const rows = await query<Announcement>(
-    `INSERT INTO "Announcement"
+    `INSERT INTO "announcement"
       ("title", "body", "type", "status", "repeatInterval", "publishAt", "expireAt", "createdBy", "updatedBy", "createdAt", "updatedAt")
      VALUES ($1, $2, $3, $4,
       $5, $6::timestamptz,
@@ -239,7 +239,7 @@ export async function updateAnnouncement(id: number, payload: any, userId?: numb
   const repeatInterval = payload?.repeatInterval !== undefined ? normalizeRepeat(payload?.repeatInterval) : undefined
 
   const rows = await query<Announcement>(
-    `UPDATE "Announcement"
+    `UPDATE "announcement"
      SET
       "title" = COALESCE($1, "title"),
       "body" = COALESCE($2, "body"),
@@ -270,14 +270,14 @@ export async function updateAnnouncement(id: number, payload: any, userId?: numb
 
 export async function deleteAnnouncement(id: number) {
   await ensureAnnouncementsTable()
-  await query(`DELETE FROM "Announcement" WHERE "id" = $1`, [id])
+  await query(`DELETE FROM "announcement" WHERE "id" = $1`, [id])
   return { ok: true }
 }
 
 export async function repostAnnouncement(id: number, userId?: number): Promise<Announcement> {
   await ensureAnnouncementsTable()
   const rows = await query<Announcement>(
-    `UPDATE "Announcement"
+    `UPDATE "announcement"
      SET "status" = 'published',
          "publishAt" = NOW(),
          "updatedBy" = $2,

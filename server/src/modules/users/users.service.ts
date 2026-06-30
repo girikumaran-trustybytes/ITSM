@@ -27,27 +27,27 @@ let userSchemaReady: Promise<void> | null = null
 async function ensureUserCrudSchema() {
   if (!userSchemaReady) {
     userSchemaReady = (async () => {
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "personalEmail" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workEmail" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employeeId" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "designation" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "department" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "reportingManager" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dateOfJoining" DATE`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isEndUser" BOOLEAN DEFAULT FALSE`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE`)
-      await query(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)`)
-      await query(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId")`)
-      await query(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail")`)
-      await query(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail")`)
-      await query(`CREATE INDEX IF NOT EXISTS idx_user_is_end_user ON "User"("isEndUser")`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "personalEmail" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "workEmail" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "employeeId" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "designation" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "department" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "reportingManager" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "dateOfJoining" DATE`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "employmentType" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "workMode" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "avatarUrl" TEXT`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "isEndUser" BOOLEAN DEFAULT FALSE`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "mfaEnabled" BOOLEAN DEFAULT FALSE`)
+      await query(`ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "lastLogin" TIMESTAMP(3)`)
+      await query(`CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "user"("employeeId")`)
+      await query(`CREATE INDEX IF NOT EXISTS idx_user_work_email ON "user"("workEmail")`)
+      await query(`CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "user"("personalEmail")`)
+      await query(`CREATE INDEX IF NOT EXISTS idx_user_is_end_user ON "user"("isEndUser")`)
       await query(`
-        CREATE TABLE IF NOT EXISTS "ServiceAccounts" (
+        CREATE TABLE IF NOT EXISTS "serviceaccounts" (
           "id" SERIAL PRIMARY KEY,
-          "userId" INTEGER NOT NULL UNIQUE REFERENCES "User"("id") ON DELETE CASCADE,
+          "userId" INTEGER NOT NULL UNIQUE REFERENCES "user"("id") ON DELETE CASCADE,
           "enabled" BOOLEAN NOT NULL DEFAULT TRUE,
           "autoUpgradeQueues" BOOLEAN NOT NULL DEFAULT TRUE,
           "queueIds" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
@@ -55,16 +55,16 @@ async function ensureUserCrudSchema() {
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `)
-      await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_accounts_user_id ON "ServiceAccounts"("userId")`)
+      await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_accounts_user_id ON "serviceaccounts"("userId")`)
       await query(`
-        CREATE TABLE IF NOT EXISTS "UserPresence" (
-          "userId" INTEGER PRIMARY KEY REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CREATE TABLE IF NOT EXISTS "userpresence" (
+          "userId" INTEGER PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
           "status" TEXT NOT NULL DEFAULT 'Available',
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
       `)
       await enforceProtectedAdminBaseline()
-      await query(`UPDATE "User" SET "isEndUser" = TRUE WHERE "role" = 'USER' AND COALESCE("isEndUser", FALSE) = FALSE`)
+      await query(`UPDATE "user" SET "isEndUser" = TRUE WHERE "role" = 'USER' AND COALESCE("isEndUser", FALSE) = FALSE`)
     })()
   }
   await userSchemaReady
@@ -93,12 +93,12 @@ async function syncServiceAccount(
   opts: { autoUpgradeQueues?: any; queueIds?: any } = {}
 ) {
   if (!enabled) {
-    await query(`DELETE FROM "ServiceAccounts" WHERE "userId" = $1`, [userId])
+    await query(`DELETE FROM "serviceaccounts" WHERE "userId" = $1`, [userId])
     return
   }
 
   const existing = await queryOne<{ autoUpgradeQueues: boolean; queueIds: string[] }>(
-    `SELECT "autoUpgradeQueues", "queueIds" FROM "ServiceAccounts" WHERE "userId" = $1`,
+    `SELECT "autoUpgradeQueues", "queueIds" FROM "serviceaccounts" WHERE "userId" = $1`,
     [userId]
   )
   const autoUpgradeQueues = typeof opts.autoUpgradeQueues === 'boolean'
@@ -109,7 +109,7 @@ async function syncServiceAccount(
     : (existing?.queueIds ?? [])
 
   await query(
-    `INSERT INTO "ServiceAccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
+    `INSERT INTO "serviceaccounts" ("userId", "enabled", "autoUpgradeQueues", "queueIds", "createdAt", "updatedAt")
      VALUES ($1, TRUE, $2, $3, NOW(), NOW())
      ON CONFLICT ("userId")
      DO UPDATE SET
@@ -204,9 +204,9 @@ export async function listUsersLightweight(opts: { q?: string; limit?: number; r
          ELSE 'AGENT'
        END AS "principalType",
        'none'::text AS "inviteStatus"
-     FROM "User" u
-     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
-     LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+     FROM "user" u
+     LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
+     LEFT JOIN "userpresence" up ON up."userId" = u."id"
      ${where}
      ORDER BY u."name" ASC NULLS LAST, u."email" ASC
      LIMIT $${params.length}`,
@@ -246,7 +246,7 @@ export async function listUsersEmergency(opts: { q?: string; limit?: number; rol
          ELSE 'AGENT'
        END AS "principalType",
        'none'::text AS "inviteStatus"
-     FROM "User" u
+     FROM "user" u
      ${where}
      ORDER BY u."name" ASC NULLS LAST, u."email" ASC
      LIMIT $${params.length}`,
@@ -302,9 +302,9 @@ export async function listUsers(opts: { q?: string; limit?: number; role?: strin
            END,
            'none'
          ) AS "inviteStatus"
-       FROM "User" u
-       LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
-       LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+       FROM "user" u
+       LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
+       LEFT JOIN "userpresence" up ON up."userId" = u."id"
        LEFT JOIN LATERAL (
          SELECT status, last_sent_at
          FROM invitations
@@ -358,9 +358,9 @@ export async function getUserById(id: number) {
       COALESCE(sa."enabled", FALSE) AS "isServiceAccount",
       COALESCE(sa."autoUpgradeQueues", TRUE) AS "autoUpgradeQueues",
       COALESCE(sa."queueIds", ARRAY[]::TEXT[]) AS "queueIds"
-    FROM "User" u
-    LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
-    LEFT JOIN "UserPresence" up ON up."userId" = u."id"
+    FROM "user" u
+    LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
+    LEFT JOIN "userpresence" up ON up."userId" = u."id"
     WHERE u."id" = $1`,
     [id]
   )
@@ -379,7 +379,7 @@ export async function createUser(payload: any) {
 
   const existing = await queryOne<{ id: number; role: string | null; isEndUser: boolean | null }>(
     `SELECT "id", "role", COALESCE("isEndUser", FALSE) AS "isEndUser"
-     FROM "User"
+     FROM "user"
      WHERE LOWER("email") = LOWER($1) OR LOWER("workEmail") = LOWER($1)`,
     [email]
   )
@@ -397,7 +397,7 @@ export async function createUser(payload: any) {
       const nextEmploymentType = payload.employmentType ?? null
       const nextWorkMode = payload.workMode ?? null
       await query(
-        `UPDATE "User"
+        `UPDATE "user"
          SET
            "isEndUser" = TRUE,
            "name" = COALESCE($2, "name"),
@@ -472,7 +472,7 @@ export async function createUser(payload: any) {
 
   try {
     const rows = await query(
-      `INSERT INTO "User" (
+      `INSERT INTO "user" (
         "email", "password", "name", "avatarUrl", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department",
         "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "role", "isEndUser", "status", "createdAt", "updatedAt"
       ) VALUES (
@@ -505,7 +505,7 @@ export async function createUser(payload: any) {
 export async function updateUser(id: number, payload: any) {
   await ensureUserCrudSchema()
   const currentUser = await queryOne<{ id: number; role: string; email: string; status: string | null }>(
-    'SELECT "id", "role", "email", "status" FROM "User" WHERE "id" = $1',
+    'SELECT "id", "role", "email", "status" FROM "user" WHERE "id" = $1',
     [id]
   )
   if (!currentUser) throw { status: 404, message: 'User not found' }
@@ -537,7 +537,7 @@ export async function updateUser(id: number, payload: any) {
   if (candidateEmails.length > 0) {
     for (const candidate of candidateEmails) {
       const conflict = await queryOne(
-        `SELECT "id" FROM "User"
+        `SELECT "id" FROM "user"
          WHERE "id" <> $2
            AND (LOWER("email") = LOWER($1) OR LOWER("workEmail") = LOWER($1))`,
         [candidate, id]
@@ -591,7 +591,7 @@ export async function updateUser(id: number, payload: any) {
     setParts.push('"updatedAt" = NOW()')
     params.push(id)
     const rows = await query(
-      `UPDATE "User" SET ${setParts.join(', ')} WHERE "id" = $${params.length}
+      `UPDATE "user" SET ${setParts.join(', ')} WHERE "id" = $${params.length}
        RETURNING "id", "name", "avatarUrl", "email", "role", "phone", "personalEmail", "workEmail", "employeeId", "designation", "department", "reportingManager", "dateOfJoining", "employmentType", "workMode", "client", "site", "accountManager", "status", "createdAt", "updatedAt"`,
       params
     )
@@ -628,8 +628,8 @@ export async function deleteUser(id: number) {
   try {
     const deleting = await queryOne<{ email: string | null; role: string | null; status: string | null; isServiceAccount: boolean }>(
       `SELECT u."email", u."role", u."status", COALESCE(sa."enabled", FALSE) AS "isServiceAccount"
-       FROM "User" u
-       LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+       FROM "user" u
+       LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
        WHERE u."id" = $1`,
       [id]
     )
@@ -646,10 +646,10 @@ export async function deleteUser(id: number) {
       throw { status: 409, message: 'Only deactivated accounts can be deleted.' }
     }
     // RefreshToken uses ON DELETE RESTRICT in init schema, so clear tokens before deleting user.
-    await query('DELETE FROM "RefreshToken" WHERE "userId" = $1', [id])
-    await query('DELETE FROM "ServiceAccounts" WHERE "userId" = $1', [id])
+    await query('DELETE FROM "refreshtoken" WHERE "userId" = $1', [id])
+    await query('DELETE FROM "serviceaccounts" WHERE "userId" = $1', [id])
     const rows = await query(
-      'DELETE FROM "User" WHERE "id" = $1 RETURNING "id", "name", "email"',
+      'DELETE FROM "user" WHERE "id" = $1 RETURNING "id", "name", "email"',
       [id]
     )
     if (!rows[0]) throw { status: 404, message: 'User not found' }
@@ -665,10 +665,10 @@ export async function deleteUser(id: number) {
 
 export async function getUserPresence(userId: number): Promise<{ status: PresenceStatus }> {
   await ensureUserCrudSchema()
-  const user = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [userId])
+  const user = await queryOne<{ id: number }>('SELECT "id" FROM "user" WHERE "id" = $1', [userId])
   if (!user) throw { status: 404, message: 'User not found' }
   const row = await queryOne<{ status: string }>(
-    'SELECT "status" FROM "UserPresence" WHERE "userId" = $1',
+    'SELECT "status" FROM "userpresence" WHERE "userId" = $1',
     [userId]
   )
   return { status: normalizePresenceStatus(row?.status) }
@@ -676,11 +676,11 @@ export async function getUserPresence(userId: number): Promise<{ status: Presenc
 
 export async function saveUserPresence(userId: number, statusInput: any): Promise<{ status: PresenceStatus }> {
   await ensureUserCrudSchema()
-  const user = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [userId])
+  const user = await queryOne<{ id: number }>('SELECT "id" FROM "user" WHERE "id" = $1', [userId])
   if (!user) throw { status: 404, message: 'User not found' }
   const status = normalizePresenceStatus(statusInput)
   await query(
-    `INSERT INTO "UserPresence" ("userId", "status", "updatedAt")
+    `INSERT INTO "userpresence" ("userId", "status", "updatedAt")
      VALUES ($1, $2, NOW())
      ON CONFLICT ("userId")
      DO UPDATE SET "status" = EXCLUDED."status", "updatedAt" = NOW()`,

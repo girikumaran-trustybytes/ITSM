@@ -26,7 +26,7 @@ const normalizeTicketStatus = (value: any) => {
 async function ensureResolvedStatusMigration() {
   if (!resolvedStatusMigration) {
     resolvedStatusMigration = (async () => {
-      await query('UPDATE "Ticket" SET "status" = \'Closed\' WHERE "status" = \'Resolved\'')
+      await query('UPDATE "ticket" SET "status" = \'Closed\' WHERE "status" = \'Resolved\'')
     })()
   }
   await resolvedStatusMigration
@@ -42,7 +42,7 @@ function buildTicketWhere(idOrTicketId: string, alias = 't', startIndex = 1) {
 async function getTicketRecord(idOrTicketId: string) {
   await ensureResolvedStatusMigration()
   const where = buildTicketWhere(idOrTicketId, 't', 1)
-  const ticket = await queryOne<any>(`SELECT * FROM "Ticket" t WHERE ${where.clause}`, where.params)
+  const ticket = await queryOne<any>(`SELECT * FROM "ticket" t WHERE ${where.clause}`, where.params)
   if (ticket?.status) {
     ticket.status = normalizeTicketStatus(ticket.status)
   }
@@ -81,12 +81,12 @@ function formatSlaClock(ms: number) {
 async function ensureSlaTrackingSchema() {
   if (!slaSchemaReady) {
     slaSchemaReady = (async () => {
-      await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "responseTargetAt" TIMESTAMP(3)')
-      await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolutionTargetAt" TIMESTAMP(3)')
-      await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "firstRespondedAt" TIMESTAMP(3)')
-      await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "firstRespondedById" INTEGER')
-      await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "resolvedAt" TIMESTAMP(3)')
-      await query('ALTER TABLE "SlaTracking" ADD COLUMN IF NOT EXISTS "policyId" INTEGER')
+      await query('ALTER TABLE "slatracking" ADD COLUMN IF NOT EXISTS "responseTargetAt" TIMESTAMP(3)')
+      await query('ALTER TABLE "slatracking" ADD COLUMN IF NOT EXISTS "resolutionTargetAt" TIMESTAMP(3)')
+      await query('ALTER TABLE "slatracking" ADD COLUMN IF NOT EXISTS "firstRespondedAt" TIMESTAMP(3)')
+      await query('ALTER TABLE "slatracking" ADD COLUMN IF NOT EXISTS "firstRespondedById" INTEGER')
+      await query('ALTER TABLE "slatracking" ADD COLUMN IF NOT EXISTS "resolvedAt" TIMESTAMP(3)')
+      await query('ALTER TABLE "slatracking" ADD COLUMN IF NOT EXISTS "policyId" INTEGER')
     })()
   }
   await slaSchemaReady
@@ -95,10 +95,10 @@ async function ensureSlaTrackingSchema() {
 async function ensureSlaConfigSchema() {
   if (!slaConfigSchemaReady) {
     slaConfigSchemaReady = (async () => {
-      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "priorityRank" INTEGER')
-      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "format" TEXT')
-      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "timeZone" TEXT')
-      await query('ALTER TABLE "SlaConfig" ADD COLUMN IF NOT EXISTS "businessSchedule" JSONB')
+      await query('ALTER TABLE "slaconfig" ADD COLUMN IF NOT EXISTS "priorityRank" INTEGER')
+      await query('ALTER TABLE "slaconfig" ADD COLUMN IF NOT EXISTS "format" TEXT')
+      await query('ALTER TABLE "slaconfig" ADD COLUMN IF NOT EXISTS "timeZone" TEXT')
+      await query('ALTER TABLE "slaconfig" ADD COLUMN IF NOT EXISTS "businessSchedule" JSONB')
     })()
   }
   await slaConfigSchemaReady
@@ -110,7 +110,7 @@ async function getSlaPolicyByPriority(priority: string) {
   const rank = priorityRank(priority)
   const byPriority = await queryOne<any>(
     `SELECT *
-     FROM "SlaConfig"
+     FROM "slaconfig"
      WHERE "active" = TRUE
        AND (
          "priorityRank" = $1
@@ -123,7 +123,7 @@ async function getSlaPolicyByPriority(priority: string) {
   if (byPriority) return byPriority
   const fallback = await queryOne<any>(
     `SELECT *
-     FROM "SlaConfig"
+     FROM "slaconfig"
      WHERE "active" = TRUE
      ORDER BY "updatedAt" DESC
      LIMIT 1`
@@ -226,7 +226,7 @@ async function upsertSlaTrackingForTicket(ticket: any, options?: { keepFirstResp
     : new Date(startTime.getTime() + resolutionMin * 60 * 1000)
   const status = normalizeTicketStatus(ticket.status) === 'Closed' ? 'resolved' : 'running'
   await query(
-    `INSERT INTO "SlaTracking" (
+    `INSERT INTO "slatracking" (
       "ticketId", "slaName", "startTime", "breachTime", "status", "policyId",
       "responseTargetAt", "resolutionTargetAt", "firstRespondedAt", "firstRespondedById", "resolvedAt", "createdAt", "updatedAt"
     )
@@ -240,9 +240,9 @@ async function upsertSlaTrackingForTicket(ticket: any, options?: { keepFirstResp
       "policyId" = EXCLUDED."policyId",
       "responseTargetAt" = EXCLUDED."responseTargetAt",
       "resolutionTargetAt" = EXCLUDED."resolutionTargetAt",
-      "firstRespondedAt" = CASE WHEN $9 THEN "SlaTracking"."firstRespondedAt" ELSE EXCLUDED."firstRespondedAt" END,
-      "firstRespondedById" = CASE WHEN $9 THEN "SlaTracking"."firstRespondedById" ELSE EXCLUDED."firstRespondedById" END,
-      "resolvedAt" = CASE WHEN $10 THEN "SlaTracking"."resolvedAt" ELSE EXCLUDED."resolvedAt" END,
+      "firstRespondedAt" = CASE WHEN $9 THEN "slatracking"."firstRespondedAt" ELSE EXCLUDED."firstRespondedAt" END,
+      "firstRespondedById" = CASE WHEN $9 THEN "slatracking"."firstRespondedById" ELSE EXCLUDED."firstRespondedById" END,
+      "resolvedAt" = CASE WHEN $10 THEN "slatracking"."resolvedAt" ELSE EXCLUDED."resolvedAt" END,
       "updatedAt" = NOW()`,
     [
       ticket.id,
@@ -333,7 +333,7 @@ async function attachSlaData(items: any[]) {
   const ids = items.map((t) => Number(t.id)).filter((id) => Number.isFinite(id))
   if (!ids.length) return items
   const rows = await query<any>(
-    'SELECT * FROM "SlaTracking" WHERE "ticketId" = ANY($1::int[])',
+    'SELECT * FROM "slatracking" WHERE "ticketId" = ANY($1::int[])',
     [ids]
   )
   const map = new Map<number, any>()
@@ -350,8 +350,8 @@ async function attachSlaData(items: any[]) {
 async function ensureAttachmentSchema() {
   if (!attachmentSchemaReady) {
     attachmentSchemaReady = (async () => {
-      await query('ALTER TABLE "Attachment" ADD COLUMN IF NOT EXISTS "sizeBytes" INTEGER')
-      await query('ALTER TABLE "Attachment" ADD COLUMN IF NOT EXISTS "contentType" TEXT')
+      await query('ALTER TABLE "attachment" ADD COLUMN IF NOT EXISTS "sizeBytes" INTEGER')
+      await query('ALTER TABLE "attachment" ADD COLUMN IF NOT EXISTS "contentType" TEXT')
     })()
   }
   await attachmentSchemaReady
@@ -360,7 +360,7 @@ async function ensureAttachmentSchema() {
 async function ensureTicketOriginSchema() {
   if (!ticketOriginSchemaReady) {
     ticketOriginSchemaReady = (async () => {
-      await query('ALTER TABLE "Ticket" ADD COLUMN IF NOT EXISTS "createdFrom" TEXT')
+      await query('ALTER TABLE "ticket" ADD COLUMN IF NOT EXISTS "createdFrom" TEXT')
     })()
   }
   await ticketOriginSchemaReady
@@ -369,10 +369,10 @@ async function ensureTicketOriginSchema() {
 async function ensureTicketTeamSchema() {
   if (!ticketTeamSchemaReady) {
     ticketTeamSchemaReady = (async () => {
-      await query('ALTER TABLE "Ticket" ADD COLUMN IF NOT EXISTS "teamId" TEXT')
-      await query('ALTER TABLE "Ticket" ALTER COLUMN "teamId" SET DEFAULT \'helpdesk\'')
-      await query('CREATE INDEX IF NOT EXISTS idx_ticket_team_id ON "Ticket"("teamId")')
-      await query('CREATE INDEX IF NOT EXISTS idx_ticket_assignee_id ON "Ticket"("assigneeId")')
+      await query('ALTER TABLE "ticket" ADD COLUMN IF NOT EXISTS "teamId" TEXT')
+      await query('ALTER TABLE "ticket" ALTER COLUMN "teamId" SET DEFAULT \'helpdesk\'')
+      await query('CREATE INDEX IF NOT EXISTS idx_ticket_team_id ON "ticket"("teamId")')
+      await query('CREATE INDEX IF NOT EXISTS idx_ticket_assignee_id ON "ticket"("assigneeId")')
     })()
   }
   await ticketTeamSchemaReady
@@ -411,13 +411,13 @@ async function resolveChangedById(user: any): Promise<number | null> {
   const parsed = typeof candidateIdRaw === 'number' ? candidateIdRaw : parseInt(String(candidateIdRaw), 10)
 
   if (Number.isFinite(parsed) && parsed > 0) {
-    // Primary path: auth id directly matches "User"."id"
-    const direct = await queryOne<{ id: number }>('SELECT "id" FROM "User" WHERE "id" = $1', [parsed])
+    // Primary path: auth id directly matches "user"."id"
+    const direct = await queryOne<{ id: number }>('SELECT "id" FROM "user" WHERE "id" = $1', [parsed])
     if (direct?.id) return direct.id
 
-    // Compatibility fallback: token subject may be "ServiceAccounts"."id"
+    // Compatibility fallback: token subject may be "serviceaccounts"."id"
     const serviceAccount = await queryOne<{ userId: number }>(
-      'SELECT "userId" FROM "ServiceAccounts" WHERE "id" = $1 AND "enabled" = TRUE',
+      'SELECT "userId" FROM "serviceaccounts" WHERE "id" = $1 AND "enabled" = TRUE',
       [parsed]
     )
     if (serviceAccount?.userId) return serviceAccount.userId
@@ -429,7 +429,7 @@ async function resolveChangedById(user: any): Promise<number | null> {
     : (user && typeof user === 'object' ? String(user.email || '').trim() : '')
   if (rawEmail) {
     const byEmail = await queryOne<{ id: number }>(
-      'SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1) LIMIT 1',
+      'SELECT "id" FROM "user" WHERE LOWER("email") = LOWER($1) LIMIT 1',
       [rawEmail]
     )
     if (byEmail?.id) return byEmail.id
@@ -459,7 +459,7 @@ function canUserModifyTicketStatus(status: any) {
 async function getAgentTicketScope(userId: number): Promise<AgentTicketScope> {
   const serviceAccount = await queryOne<{ autoUpgradeQueues: boolean; queueIds: string[] }>(
     `SELECT "autoUpgradeQueues", "queueIds"
-     FROM "ServiceAccounts"
+     FROM "serviceaccounts"
      WHERE "userId" = $1
        AND "enabled" = TRUE`,
     [userId]
@@ -583,7 +583,7 @@ async function getNextTicketTag(): Promise<string> {
       'ticket_id_seq',
       GREATEST(
         (SELECT last_value FROM ticket_id_seq),
-        (SELECT COALESCE(MAX((regexp_match("ticketId", '^(?:STD|TB)#([0-9]+)$', 'i'))[1]::INTEGER), 0) FROM "Ticket")
+        (SELECT COALESCE(MAX((regexp_match("ticketId", '^(?:STD|TB)#([0-9]+)$', 'i'))[1]::INTEGER), 0) FROM "ticket")
       )
     )`
   )
@@ -612,9 +612,9 @@ export const getTickets = async (opts: { page?: number; pageSize?: number; q?: s
   const [items, totalRow] = await Promise.all([
     query(
       `SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee"
-       FROM "Ticket" t
-       LEFT JOIN "User" r ON r."id" = t."requesterId"
-       LEFT JOIN "User" a ON a."id" = t."assigneeId"
+       FROM "ticket" t
+       LEFT JOIN "user" r ON r."id" = t."requesterId"
+       LEFT JOIN "user" a ON a."id" = t."assigneeId"
        ${where}
        ORDER BY t."createdAt" DESC
        OFFSET $${params.length + 1}
@@ -622,7 +622,7 @@ export const getTickets = async (opts: { page?: number; pageSize?: number; q?: s
       [...params, offset, pageSize]
     ),
     queryOne<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM "Ticket" t ${where}`,
+      `SELECT COUNT(*)::text AS count FROM "ticket" t ${where}`,
       params
     ),
   ])
@@ -652,10 +652,10 @@ export const getTicketById = async (id: string, viewer?: any) => {
   const where = buildTicketWhere(id, 't', 1)
   const t = await queryOne<any>(
     `SELECT t.*, row_to_json(r) AS "requester", row_to_json(a) AS "assignee", row_to_json(asset) AS "asset"
-     FROM "Ticket" t
-     LEFT JOIN "User" r ON r."id" = t."requesterId"
-     LEFT JOIN "User" a ON a."id" = t."assigneeId"
-     LEFT JOIN "Asset" asset ON asset."id" = t."assetId"
+     FROM "ticket" t
+     LEFT JOIN "user" r ON r."id" = t."requesterId"
+     LEFT JOIN "user" a ON a."id" = t."assigneeId"
+     LEFT JOIN "asset" asset ON asset."id" = t."assetId"
      WHERE ${where.clause}`,
     where.params
   )
@@ -674,14 +674,14 @@ export const getTicketById = async (id: string, viewer?: any) => {
          "sizeBytes",
          "contentType",
          "createdAt"
-       FROM "Attachment"
+       FROM "attachment"
        WHERE "ticketId" = $1
        ORDER BY "createdAt" ASC`,
       [t.id]
     ),
-    query('SELECT * FROM "TicketHistory" WHERE "ticketId" = $1', [t.id]),
+    query('SELECT * FROM "tickethistory" WHERE "ticketId" = $1', [t.id]),
   ])
-  const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [t.id])
+  const tracking = await queryOne<any>('SELECT * FROM "slatracking" WHERE "ticketId" = $1', [t.id])
   t.attachments = attachments
   t.history = history
   t.sla = buildSlaSnapshot(t, tracking)
@@ -743,7 +743,7 @@ export const createTicket = async (payload: any, creator = 'system') => {
     subcategory: payload.subcategory,
     description: payload.description,
     slaStart: now,
-    createdFrom: String(payload.createdFrom || '').trim() || 'Support Tech Desk Platform',
+    createdFrom: String(payload.createdFrom || '').trim() || 'TB Asset Support Platform',
     teamId: normalizeTeamId(payload.teamId),
   }
   if (category) data.category = category
@@ -772,7 +772,7 @@ export const createTicket = async (payload: any, creator = 'system') => {
     await mailer.sendTicketCreated(payload.requesterEmail, created)
   }
 
-  const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [created.id])
+  const tracking = await queryOne<any>('SELECT * FROM "slatracking" WHERE "ticketId" = $1', [created.id])
   created.sla = buildSlaSnapshot(created, tracking)
   created.slaTimeLeft = deriveSlaTimeLeft(created.sla)
   return created
@@ -792,7 +792,7 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
   const from = t.status
   const where = buildTicketWhere(ticketId, 't', 2)
   const updatedRows = await query(
-    `UPDATE "Ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
+    `UPDATE "ticket" t SET "status" = $1, "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
     [normalizedToState, ...where.params]
   )
   const updated = updatedRows[0]
@@ -800,13 +800,13 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
   if (normalizeTicketStatus(normalizedToState) === 'Closed') {
     await ensureSlaTrackingSchema()
     await query(
-      'UPDATE "SlaTracking" SET "resolvedAt" = COALESCE("resolvedAt", NOW()), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2',
+      'UPDATE "slatracking" SET "resolvedAt" = COALESCE("resolvedAt", NOW()), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2',
       ['resolved', t.id]
     )
   }
 
   await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [
       t.id,
       from,
@@ -822,7 +822,7 @@ export const transitionTicket = async (ticketId: string, toState: string, user =
     user,
     meta: { from, to: normalizedToState },
   })
-  const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id])
+  const tracking = await queryOne<any>('SELECT * FROM "slatracking" WHERE "ticketId" = $1', [updated.id])
   updated.sla = buildSlaSnapshot(updated, tracking)
   updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla)
   // NOTE: Status update emails are intentionally disabled. End users
@@ -838,7 +838,7 @@ export const createHistoryEntry = async (ticketId: string, opts: { note: string;
 
   const changedById = await resolveChangedById(opts.user)
   const rows = await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
     [
       t.id,
       t.status,
@@ -865,7 +865,7 @@ async function resolveAttachmentRows(ticketDbId: number, attachmentIds: number[]
   const unique = Array.from(new Set(attachmentIds.filter((id) => Number.isFinite(id) && id > 0)))
   if (!unique.length) return []
   const rows = await query<any>(
-    `SELECT * FROM "Attachment"
+    `SELECT * FROM "attachment"
      WHERE "ticketId" = $1
        AND "id" = ANY($2::int[])`,
     [ticketDbId, unique]
@@ -907,7 +907,7 @@ export const addResponse = async (
 
   const changedById = await resolveChangedById(opts.user)
   const rows = await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
     [
       t.id,
       t.status,
@@ -929,7 +929,7 @@ export const addResponse = async (
   if (opts.sendEmail) {
     let targetEmail = String(opts.to || '').trim()
     if (!targetEmail && t.requesterId) {
-      const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
+      const requester = await queryOne<any>('SELECT * FROM "user" WHERE "id" = $1', [t.requesterId])
       targetEmail = String(requester?.email || '').trim()
     }
     if (!targetEmail) {
@@ -980,11 +980,11 @@ export const markResponseSlaMet = async (ticketId: string, user: any = 'system')
 
   await ensureSlaTrackingSchema()
   await query(
-    'UPDATE "SlaTracking" SET "firstRespondedAt" = COALESCE("firstRespondedAt", NOW()), "firstRespondedById" = COALESCE("firstRespondedById", $2), "status" = CASE WHEN "status" = \'resolved\' THEN "status" ELSE \'responded\' END, "updatedAt" = NOW() WHERE "ticketId" = $1',
+    'UPDATE "slatracking" SET "firstRespondedAt" = COALESCE("firstRespondedAt", NOW()), "firstRespondedById" = COALESCE("firstRespondedById", $2), "status" = CASE WHEN "status" = \'resolved\' THEN "status" ELSE \'responded\' END, "updatedAt" = NOW() WHERE "ticketId" = $1',
     [t.id, changedById]
   )
   await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [t.id, t.status, t.status, changedById, 'Response SLA marked as responded', false]
   )
   await auditLog({
@@ -995,7 +995,7 @@ export const markResponseSlaMet = async (ticketId: string, user: any = 'system')
   })
 
   const updated = await getTicketRecord(ticketId)
-  const tracking = updated ? await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id]) : null
+  const tracking = updated ? await queryOne<any>('SELECT * FROM "slatracking" WHERE "ticketId" = $1', [updated.id]) : null
   if (!updated) throw { status: 404, message: 'Ticket not found' }
   updated.sla = buildSlaSnapshot(updated, tracking)
   updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla)
@@ -1010,7 +1010,7 @@ export const addPrivateNote = async (ticketId: string, opts: { note: string; use
 
   const changedById = await resolveChangedById(opts.user)
   const rows = await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
     [
       t.id,
       t.status,
@@ -1039,7 +1039,7 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
   const from = t.status
   const where = buildTicketWhere(ticketId, 't', 4)
   const updatedRows = await query(
-    `UPDATE "Ticket" t SET "status" = $1, "resolution" = $2, "resolutionCategory" = $3, "resolvedAt" = NOW(), "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
+    `UPDATE "ticket" t SET "status" = $1, "resolution" = $2, "resolutionCategory" = $3, "resolvedAt" = NOW(), "updatedAt" = NOW() WHERE ${where.clause} RETURNING *`,
     [
       'Closed',
       opts.resolution,
@@ -1050,13 +1050,13 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
   const updated = updatedRows[0]
   await ensureSlaTrackingSchema()
   await query(
-    'UPDATE "SlaTracking" SET "resolvedAt" = NOW(), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2',
+    'UPDATE "slatracking" SET "resolvedAt" = NOW(), "status" = $1, "updatedAt" = NOW() WHERE "ticketId" = $2',
     ['resolved', t.id]
   )
 
   const changedById = await resolveChangedById(opts.user)
   await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [t.id, from, 'Closed', changedById, opts.resolution || 'Ticket closed', false]
   )
 
@@ -1064,7 +1064,7 @@ export const resolveTicketWithDetails = async (ticketId: string, opts: { resolut
 
   if (opts.sendEmail && t.requesterId) {
     try {
-      const requester = await queryOne<any>('SELECT * FROM "User" WHERE "id" = $1', [t.requesterId])
+      const requester = await queryOne<any>('SELECT * FROM "user" WHERE "id" = $1', [t.requesterId])
       if (requester?.email) await mailer.sendTicketClosed(requester.email, updated)
     } catch (e) {
       console.warn('Failed sending ticket closed email', e)
@@ -1143,7 +1143,7 @@ export const uploadTicketAttachments = async (
     const fullPath = path.join(ticketDir, storedName)
     await fs.writeFile(fullPath, binary)
     const created = await queryOne<any>(
-      `INSERT INTO "Attachment" ("filename", "path", "ticketId", "uploadedById", "sizeBytes", "contentType", "createdAt")
+      `INSERT INTO "attachment" ("filename", "path", "ticketId", "uploadedById", "sizeBytes", "contentType", "createdAt")
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
        RETURNING *`,
       [safe, fullPath, t.id, changedById, declaredSize, String(file.type || '') || null]
@@ -1153,7 +1153,7 @@ export const uploadTicketAttachments = async (
 
   if (opts.note && String(opts.note).trim()) {
     await query(
-      'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+      'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
       [
         t.id,
         t.status,
@@ -1220,7 +1220,7 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
   setParts.push('"updatedAt" = NOW()')
   const where = buildTicketWhere(ticketId, 't', params.length + 1)
   const updatedRows = await query(
-    `UPDATE "Ticket" t SET ${setParts.join(', ')} WHERE ${where.clause} RETURNING *`,
+    `UPDATE "ticket" t SET ${setParts.join(', ')} WHERE ${where.clause} RETURNING *`,
     [...params, ...where.params]
   )
   const updated = updatedRows[0]
@@ -1230,7 +1230,7 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
 
   const changedById = await resolveChangedById(user)
   await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [
       t.id,
       t.status,
@@ -1242,7 +1242,7 @@ export const updateTicket = async (ticketId: string, payload: any, user?: any) =
   )
 
   await auditLog({ action: 'update_ticket', ticketId: updated.ticketId, user, meta: { changes: data } })
-  const tracking = await queryOne<any>('SELECT * FROM "SlaTracking" WHERE "ticketId" = $1', [updated.id])
+  const tracking = await queryOne<any>('SELECT * FROM "slatracking" WHERE "ticketId" = $1', [updated.id])
   updated.sla = buildSlaSnapshot(updated, tracking)
   updated.slaTimeLeft = deriveSlaTimeLeft(updated.sla)
   return updated
@@ -1255,12 +1255,12 @@ export const deleteTicket = async (ticketId: string, user?: any) => {
 
   // hard delete for now
   const where = buildTicketWhere(ticketId, 't', 1)
-  const deletedRows = await query(`DELETE FROM "Ticket" t WHERE ${where.clause} RETURNING *`, where.params)
+  const deletedRows = await query(`DELETE FROM "ticket" t WHERE ${where.clause} RETURNING *`, where.params)
   const deleted = deletedRows[0]
 
   const changedById = await resolveChangedById(user)
   await query(
-    'INSERT INTO "TicketHistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+    'INSERT INTO "tickethistory" ("ticketId", "fromStatus", "toStatus", "changedById", "note", "internal", "createdAt") VALUES ($1, $2, $3, $4, $5, $6, NOW())',
     [
       t.id,
       t.status,
@@ -1279,19 +1279,19 @@ export const assignAsset = async (ticketId: string, assetId: number, user?: any)
   const t = await getTicketRecord(ticketId)
   if (!t) throw { status: 404, message: 'Ticket not found' }
   await assertViewerTicketAccess(t, user, 'update')
-  const asset = await queryOne<any>('SELECT * FROM "Asset" WHERE "id" = $1', [assetId])
+  const asset = await queryOne<any>('SELECT * FROM "asset" WHERE "id" = $1', [assetId])
   if (!asset) throw { status: 404, message: 'Asset not found' }
 
   const where = buildTicketWhere(ticketId, 't', 2)
   await query(
-    `UPDATE "Ticket" t SET "assetId" = $1, "updatedAt" = NOW() WHERE ${where.clause}`,
+    `UPDATE "ticket" t SET "assetId" = $1, "updatedAt" = NOW() WHERE ${where.clause}`,
     [asset.id, ...where.params]
   )
 
   const updated = await queryOne<any>(
     `SELECT t.*, row_to_json(a) AS "asset"
-     FROM "Ticket" t
-     LEFT JOIN "Asset" a ON a."id" = t."assetId"
+     FROM "ticket" t
+     LEFT JOIN "asset" a ON a."id" = t."assetId"
      WHERE t."id" = $1`,
     [t.id]
   )
@@ -1307,14 +1307,14 @@ export const unassignAsset = async (ticketId: string, user?: any) => {
 
   const where = buildTicketWhere(ticketId, 't', 1)
   await query(
-    `UPDATE "Ticket" t SET "assetId" = NULL, "updatedAt" = NOW() WHERE ${where.clause}`,
+    `UPDATE "ticket" t SET "assetId" = NULL, "updatedAt" = NOW() WHERE ${where.clause}`,
     where.params
   )
 
   const updated = await queryOne<any>(
     `SELECT t.*, row_to_json(a) AS "asset"
-     FROM "Ticket" t
-     LEFT JOIN "Asset" a ON a."id" = t."assetId"
+     FROM "ticket" t
+     LEFT JOIN "asset" a ON a."id" = t."assetId"
      WHERE t."id" = $1`,
     [t.id]
   )

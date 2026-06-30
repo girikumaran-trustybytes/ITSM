@@ -14,8 +14,8 @@ async function ensureNotificationStateTable() {
   if (!ensureStateTablePromise) {
     ensureStateTablePromise = (async () => {
       await query(`
-        CREATE TABLE IF NOT EXISTS "NotificationState" (
-          "userId" INTEGER PRIMARY KEY REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+        CREATE TABLE IF NOT EXISTS "notificationstate" (
+          "userId" INTEGER PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
           "readIds" JSONB NOT NULL DEFAULT '[]'::jsonb,
           "deletedIds" JSONB NOT NULL DEFAULT '[]'::jsonb,
           "clearedAt" TIMESTAMP(3),
@@ -92,8 +92,8 @@ export async function listNotifications(viewer: Viewer, opts: { limit?: number }
       a."meta",
       a."createdAt",
       (a."meta"->>'ticketId') AS "ticketId"
-     FROM "AuditLog" a
-     LEFT JOIN "Ticket" t ON t."ticketId" = (a."meta"->>'ticketId')
+     FROM "auditlog" a
+     LEFT JOIN "ticket" t ON t."ticketId" = (a."meta"->>'ticketId')
      WHERE ${conditions.join(' AND ')}
      ORDER BY a."createdAt" DESC
      LIMIT $${params.length}`,
@@ -137,7 +137,7 @@ export async function getNotificationState(viewer: Viewer): Promise<Notification
       "readIds",
       "deletedIds",
       CAST(EXTRACT(EPOCH FROM "clearedAt") * 1000 AS BIGINT) AS "clearedAtMs"
-     FROM "NotificationState"
+     FROM "notificationstate"
      WHERE "userId" = $1
      LIMIT 1`,
     [viewerId]
@@ -157,7 +157,7 @@ export async function saveNotificationState(viewer: Viewer, input: NotificationS
   if (!viewerId) return normalized
   await ensureNotificationStateTable()
   await query(
-    `INSERT INTO "NotificationState" ("userId", "readIds", "deletedIds", "clearedAt", "updatedAt")
+    `INSERT INTO "notificationstate" ("userId", "readIds", "deletedIds", "clearedAt", "updatedAt")
      VALUES (
       $1,
       to_jsonb($2::int[]),

@@ -30,7 +30,7 @@ export function authorize(moduleName: string, action: string, optionalQueue?: st
         : []
       if (tokenPermissions.includes('*')) return next()
 
-      const user = await queryOne<{ role: string }>('SELECT "role" FROM "User" WHERE "id" = $1', [userId])
+      const user = await queryOne<{ role: string }>('SELECT "role" FROM "user" WHERE "id" = $1', [userId])
       if (!user) return res.status(401).json({ error: 'Unauthorized' })
 
       let roleIds = (await query<{ role_id: number }>(

@@ -27,13 +27,13 @@ export function isProtectedAdminEmail(email: string | null | undefined): boolean
 export async function enforceProtectedAdminRoleByUserId(userId: number): Promise<void> {
   if (!Number.isFinite(userId) || userId <= 0) return
   const user = await queryOne<{ email: string | null }>(
-    'SELECT "email" FROM "User" WHERE "id" = $1',
+    'SELECT "email" FROM "user" WHERE "id" = $1',
     [userId]
   )
   if (!isProtectedAdminEmail(user?.email || '')) return
 
   await query(
-    `UPDATE "User"
+    `UPDATE "user"
      SET "role" = 'ADMIN',
          "status" = 'ACTIVE',
          "updatedAt" = NOW()
@@ -48,7 +48,7 @@ export async function enforceProtectedAdminBaseline(): Promise<void> {
 
   const rows = await query<{ id: number }>(
     `SELECT "id"
-     FROM "User"
+     FROM "user"
      WHERE LOWER("email") = ANY($1::text[])`,
     [protectedEmails]
   )

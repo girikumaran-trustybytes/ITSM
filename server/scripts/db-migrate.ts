@@ -18,6 +18,7 @@ const migrationFiles: MigrationFile[] = [
   { name: 'realtime.sql', fullPath: path.resolve(__dirname, '..', 'schema', 'realtime.sql') },
   { name: 'security_rls.sql', fullPath: path.resolve(__dirname, '..', 'schema', 'security_rls.sql') },
   { name: 'security_policies.sql', fullPath: path.resolve(__dirname, '..', 'schema', 'security_policies.sql') },
+  { name: 'lowercase_table_names.sql', fullPath: path.resolve(__dirname, '..', 'schema', 'lowercase_table_names.sql') },
 ]
 
 function readArgValue(flag: string) {

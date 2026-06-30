@@ -369,7 +369,7 @@ export default function TicketsView() {
   const inferCreatedFrom = (ticketData: any) => {
     const explicitSource = String(ticketData?.createdFrom || ticketData?.source || '').trim().toLowerCase()
     if (explicitSource.includes('portal')) return 'User portal'
-    if (explicitSource.includes('itsm') || explicitSource.includes('platform')) return 'Support Tech Desk Platform'
+    if (explicitSource.includes('itsm') || explicitSource.includes('platform')) return 'TB Asset Support Platform'
 
     if (Number(ticketData?.requesterId || 0) > 0 && String(ticketData?.assigneeId || '').trim() === '') {
       return 'User portal'
@@ -377,8 +377,8 @@ export default function TicketsView() {
 
     const requesterRole = String(ticketData?.requester?.role || ticketData?.requesterRole || '').trim().toUpperCase()
     if (requesterRole === 'USER') return 'User portal'
-    if (requesterRole) return 'Support Tech Desk Platform'
-    return 'Support Tech Desk Platform'
+    if (requesterRole) return 'TB Asset Support Platform'
+    return 'TB Asset Support Platform'
   }
 
   const formatTimelineTime = (raw: any) => {
@@ -901,7 +901,7 @@ export default function TicketsView() {
           type: 'Incident',
           endUser: '',
           clientCompany: '',
-          createdFrom: 'Support Tech Desk Platform',
+          createdFrom: 'TB Asset Support Platform',
           dateReported: new Date().toLocaleString(),
           lastAction: '',
           lastActionTime: '',
@@ -1199,7 +1199,7 @@ export default function TicketsView() {
   }, [isIncidentType, isTaskType, isServiceRequestType, isNewStarterType, isProblemType, isOffboardingType, isNewAssetsType, newIncidentForm.teamId, newIncidentForm.description, supportTeamOption, hrTeamOption])
   const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'On Hold', 'Closed']
   const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
-  const createdFromOptions = ['User portal', 'Support Tech Desk Platform']
+  const createdFromOptions = ['User portal', 'TB Asset Support Platform']
 
   const uniqueOptions = (values: Array<string | null | undefined>) =>
     Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)))
@@ -1220,7 +1220,7 @@ export default function TicketsView() {
 
   const [ticketWorkflowValue, setTicketWorkflowValue] = useState('Incident Management Workflow')
   const [ticketTeamValue, setTicketTeamValue] = useState('')
-  const [createdFromValue, setCreatedFromValue] = useState('Support Tech Desk Platform')
+  const [createdFromValue, setCreatedFromValue] = useState('TB Asset Support Platform')
   const [additionalStaffValue, setAdditionalStaffValue] = useState('')
   const [issueValue, setIssueValue] = useState('')
   const [issueDetailValue, setIssueDetailValue] = useState('')
@@ -1430,7 +1430,7 @@ export default function TicketsView() {
           category: teamLabelValue || selectedCreateTeamLabel || undefined,
           description: finalDescription,
           subject: subjectValue,
-          createdFrom: 'Support Tech Desk Platform',
+          createdFrom: 'TB Asset Support Platform',
           requesterId: user?.id ? Number(user.id) : undefined,
           requesterEmail: user?.email || undefined,
           assigneeId: isTaskType && String(newIncidentForm.staffId || '').trim() ? Number(newIncidentForm.staffId) : undefined,
@@ -1448,7 +1448,7 @@ export default function TicketsView() {
           type: created.type,
           workflow: created.workflow || workflowValue,
           endUser: '',
-          createdFrom: user?.role === 'USER' ? 'User portal' : 'Support Tech Desk Platform',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'TB Asset Support Platform',
           dateReported: new Date(created.createdAt).toLocaleString(),
           lastAction: 'Created',
           lastActionTime: new Date().toISOString()
@@ -1476,7 +1476,7 @@ export default function TicketsView() {
           type: typeValue,
           workflow: workflowValue,
           endUser: '',
-          createdFrom: user?.role === 'USER' ? 'User portal' : 'Support Tech Desk Platform',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'TB Asset Support Platform',
           dateReported: new Date().toLocaleString(),
           lastAction: 'Created',
           lastActionTime: new Date().toISOString()
@@ -2071,7 +2071,7 @@ Thank you for your prompt action.
 
 Regards,
 Service Desk
-Support Tech Desk
+TB Asset Support
 
 ---
 Quick Approval Template
@@ -2207,7 +2207,7 @@ Click below to proceed:
       || activeSignatures.find((s) => String(s.userId || '').trim().toUpperCase() === userRole)
       || activeSignatures.find((s) => String(s.userLabel || '').trim().toUpperCase() === userRole)
     const bodyHtml = sanitizePreviewHtml(composerBodyHtml || '<p>(Empty message)</p>')
-    const defaultSignature = 'Kind regards,\nSupport Tech Desk Support Team'
+    const defaultSignature = 'Kind regards,\nTB Asset Support Team'
     const rawSignature = String(signature?.signatureHtml || '').trim() || defaultSignature
     const hasTags = /<[^>]+>/.test(rawSignature)
     const safeSignature = sanitizePreviewHtml(hasTags ? rawSignature : rawSignature.replace(/\n/g, '<br/>'))

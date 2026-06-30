@@ -5,7 +5,7 @@ const intervalMs = Number(process.env.SLA_JOB_INTERVAL_MS || 60000)
 async function runSlaSweep() {
   try {
     await query(
-      `UPDATE "SlaTracking"
+      `UPDATE "slatracking"
        SET "status" = 'breached', "updatedAt" = NOW()
        WHERE COALESCE("resolvedAt", NULL) IS NULL
          AND "resolutionTargetAt" IS NOT NULL

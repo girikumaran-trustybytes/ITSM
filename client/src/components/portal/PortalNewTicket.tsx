@@ -488,9 +488,6 @@ export default function PortalNewTicket() {
   return (
     <div className="portal-root portal-new-ticket">
       <header className="portal-topbar portal-home-topbar portal-unified-topbar">
-        <div className="portal-logo">
-          <img src="/techdesk-logo.svg?v=20260401a" alt="Support Tech Desk" className="portal-logo-image" />
-        </div>
         <div className="portal-top-actions">
           <nav className="portal-nav">
             <button className="portal-nav-link" onClick={() => navigate('/portal/home')}>

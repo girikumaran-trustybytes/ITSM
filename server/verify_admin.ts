@@ -21,7 +21,7 @@ async function verify() {
          u."role"::text AS "role",
          u."status",
          ARRAY_REMOVE(ARRAY_AGG(r.role_name), NULL) AS assigned_roles
-       FROM "User" u
+       FROM "user" u
        LEFT JOIN user_roles ur ON ur.user_id = u."id"
        LEFT JOIN roles r ON r.role_id = ur.role_id
        WHERE LOWER(u."email") = LOWER($1)

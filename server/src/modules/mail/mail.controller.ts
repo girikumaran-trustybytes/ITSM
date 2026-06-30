@@ -633,8 +633,8 @@ export async function testImap(req: Request, res: Response) {
 export async function sendTestMail(req: Request, res: Response) {
   try {
     const to = req.body?.to
-    const subject = req.body?.subject || 'Support Tech Desk Mail Integration Test'
-    const text = req.body?.text || 'SMTP integration test email from Support Tech Desk backend.'
+    const subject = req.body?.subject || 'TB Asset Support Mail Integration Test'
+    const text = req.body?.text || 'SMTP integration test email from TB Asset Support backend.'
     const html = req.body?.html
     const from = req.body?.from
     const result = await sendSmtpMail({ to, subject, text, html, from }, pickOverride(req.body))

@@ -8,11 +8,11 @@ export async function listProblems(opts: { q?: string } = {}) {
     conditions.push(`("code" ILIKE $${params.length} OR "title" ILIKE $${params.length})`)
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
-  return query(`SELECT * FROM "Problem" ${where} ORDER BY "createdAt" DESC`, params)
+  return query(`SELECT * FROM "problem" ${where} ORDER BY "createdAt" DESC`, params)
 }
 
 export async function getProblem(id: number) {
-  return queryOne('SELECT * FROM "Problem" WHERE "id" = $1', [id])
+  return queryOne('SELECT * FROM "problem" WHERE "id" = $1', [id])
 }
 
 export async function createProblem(payload: any) {
@@ -21,7 +21,7 @@ export async function createProblem(payload: any) {
   if (!code) throw { status: 400, message: 'Code is required' }
   if (!title) throw { status: 400, message: 'Title is required' }
   const rows = await query(
-    'INSERT INTO "Problem" ("code", "title", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *',
+    'INSERT INTO "problem" ("code", "title", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *',
     [code, title, payload.status || null]
   )
   return rows[0]
@@ -42,7 +42,7 @@ export async function updateProblem(id: number, payload: any) {
     setParts.push('"updatedAt" = NOW()')
     params.push(id)
     const rows = await query(
-      `UPDATE "Problem" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING *`,
+      `UPDATE "problem" SET ${setParts.join(', ')} WHERE "id" = $${params.length} RETURNING *`,
       params
     )
     if (!rows[0]) throw { status: 404, message: 'Problem not found' }
@@ -55,7 +55,7 @@ export async function updateProblem(id: number, payload: any) {
 
 export async function deleteProblem(id: number) {
   try {
-    const rows = await query('DELETE FROM "Problem" WHERE "id" = $1 RETURNING *', [id])
+    const rows = await query('DELETE FROM "problem" WHERE "id" = $1 RETURNING *', [id])
     if (!rows[0]) throw { status: 404, message: 'Problem not found' }
     return rows[0]
   } catch (err: any) {

@@ -91,9 +91,9 @@ async function ensureInviteSchema() {
       CREATE TABLE IF NOT EXISTS invitations (
         invitation_id BIGSERIAL PRIMARY KEY,
         tenant_id INTEGER NOT NULL,
-        user_id INTEGER REFERENCES "User"("id") ON DELETE SET NULL,
+        user_id INTEGER REFERENCES "user"("id") ON DELETE SET NULL,
         email TEXT NOT NULL,
-        invited_by INTEGER REFERENCES "User"("id") ON DELETE SET NULL,
+        invited_by INTEGER REFERENCES "user"("id") ON DELETE SET NULL,
         token_hash TEXT,
         expires_at TIMESTAMP(3),
         status TEXT NOT NULL DEFAULT 'PENDING',
@@ -149,8 +149,8 @@ async function assertAgentInviteTarget(userId: number) {
       u."role"::text AS "role",
       COALESCE(u."isEndUser", FALSE) AS "is_end_user",
       COALESCE(sa."enabled", FALSE) AS "is_service_account"
-     FROM "User" u
-     LEFT JOIN "ServiceAccounts" sa ON sa."userId" = u."id"
+     FROM "user" u
+     LEFT JOIN "serviceaccounts" sa ON sa."userId" = u."id"
      WHERE u."id" = $1
      LIMIT 1`,
     [userId]
@@ -242,7 +242,7 @@ export async function createInvitationRequest(
   if (!email) throw { status: 400, message: 'Email is required' }
 
   let existing = await queryOne<{ id: number }>(
-    'SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1) LIMIT 1',
+    'SELECT "id" FROM "user" WHERE LOWER("email") = LOWER($1) LIMIT 1',
     [email]
   )
 
@@ -375,7 +375,7 @@ export async function acceptInvitationToken(
 
   if (nextName) {
     await query(
-      `UPDATE "User"
+      `UPDATE "user"
        SET "password" = $1,
            "name" = $2,
            "status" = 'ACTIVE',
@@ -385,7 +385,7 @@ export async function acceptInvitationToken(
     )
   } else {
     await query(
-      `UPDATE "User"
+      `UPDATE "user"
        SET "password" = $1,
            "status" = 'ACTIVE',
            "updatedAt" = NOW()

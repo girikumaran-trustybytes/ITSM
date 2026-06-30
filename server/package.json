@@ -15,6 +15,7 @@
     "users:reset-admin": "ts-node ./scripts/reset-users-admin.ts",
     "db:seed": "ts-node ./scripts/db-seed.ts",
     "db:setup": "npm run db:init && npm run db:seed",
+    "create:initial-users": "ts-node ./scripts/create_initial_users.ts",
     "smoke:test": "ts-node ./scripts/smoke-ticket-flow.ts"
   },
   "dependencies": {

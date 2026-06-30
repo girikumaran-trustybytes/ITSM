@@ -121,7 +121,7 @@ const resolveAppVersion = () => {
 }
 
 const DEFAULT_ACCOUNT_SETTINGS: AccountSettings = {
-  accountName: 'Support Tech Desk Workspace',
+  accountName: 'TB Asset Support Workspace',
   currentPlan: 'Standard',
   activeSince: '',
   assetsCount: 0,

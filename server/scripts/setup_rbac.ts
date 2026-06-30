@@ -9,7 +9,7 @@ async function main() {
 
     const adminEmail = String(process.env.ADMIN_EMAIL || 'admin@techdesk.local').trim().toLowerCase()
     const admin = await queryOne<{ id: number }>(
-      `SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1)`,
+      `SELECT "id" FROM "user" WHERE LOWER("email") = LOWER($1)`,
       [adminEmail]
     )
     if (!admin) {
@@ -31,7 +31,7 @@ async function main() {
       [admin.id, role.role_id]
     )
     await query(
-      `UPDATE "User"
+      `UPDATE "user"
        SET "role" = 'ADMIN', "updatedAt" = NOW()
        WHERE "id" = $1`,
       [admin.id]

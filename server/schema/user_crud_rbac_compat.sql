@@ -4,19 +4,19 @@
 BEGIN;
 
 -- Core user profile columns used by Add/Edit User UI
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "personalEmail" TEXT;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workEmail" TEXT;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employeeId" TEXT;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "designation" TEXT;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "department" TEXT;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "reportingManager" TEXT;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "dateOfJoining" DATE;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "employmentType" TEXT;
-ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "workMode" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "personalEmail" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "workEmail" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "employeeId" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "designation" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "department" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "reportingManager" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "dateOfJoining" DATE;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "employmentType" TEXT;
+ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "workMode" TEXT;
 
-CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "User"("employeeId");
-CREATE INDEX IF NOT EXISTS idx_user_work_email ON "User"("workEmail");
-CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "User"("personalEmail");
+CREATE INDEX IF NOT EXISTS idx_user_employee_id ON "user"("employeeId");
+CREATE INDEX IF NOT EXISTS idx_user_work_email ON "user"("workEmail");
+CREATE INDEX IF NOT EXISTS idx_user_personal_email ON "user"("personalEmail");
 
 -- RBAC permissions compatibility (legacy + modern columns)
 ALTER TABLE permissions ADD COLUMN IF NOT EXISTS permission_key TEXT;

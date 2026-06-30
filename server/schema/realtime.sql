@@ -60,27 +60,27 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trg_event_ticket ON "Ticket";
+DROP TRIGGER IF EXISTS trg_event_ticket ON "ticket";
 CREATE TRIGGER trg_event_ticket
-AFTER INSERT OR UPDATE OR DELETE ON "Ticket"
+AFTER INSERT OR UPDATE OR DELETE ON "ticket"
 FOR EACH ROW EXECUTE FUNCTION app_emit_event();
 
-DROP TRIGGER IF EXISTS trg_event_ticket_history ON "TicketHistory";
+DROP TRIGGER IF EXISTS trg_event_ticket_history ON "tickethistory";
 CREATE TRIGGER trg_event_ticket_history
-AFTER INSERT OR UPDATE OR DELETE ON "TicketHistory"
+AFTER INSERT OR UPDATE OR DELETE ON "tickethistory"
 FOR EACH ROW EXECUTE FUNCTION app_emit_event();
 
-DROP TRIGGER IF EXISTS trg_event_asset ON "Asset";
+DROP TRIGGER IF EXISTS trg_event_asset ON "asset";
 CREATE TRIGGER trg_event_asset
-AFTER INSERT OR UPDATE OR DELETE ON "Asset"
+AFTER INSERT OR UPDATE OR DELETE ON "asset"
 FOR EACH ROW EXECUTE FUNCTION app_emit_event();
 
-DROP TRIGGER IF EXISTS trg_event_task ON "Task";
+DROP TRIGGER IF EXISTS trg_event_task ON "task";
 CREATE TRIGGER trg_event_task
-AFTER INSERT OR UPDATE OR DELETE ON "Task"
+AFTER INSERT OR UPDATE OR DELETE ON "task"
 FOR EACH ROW EXECUTE FUNCTION app_emit_event();
 
-DROP TRIGGER IF EXISTS trg_event_approval ON "Approval";
+DROP TRIGGER IF EXISTS trg_event_approval ON "approval";
 CREATE TRIGGER trg_event_approval
-AFTER INSERT OR UPDATE OR DELETE ON "Approval"
+AFTER INSERT OR UPDATE OR DELETE ON "approval"
 FOR EACH ROW EXECUTE FUNCTION app_emit_event();

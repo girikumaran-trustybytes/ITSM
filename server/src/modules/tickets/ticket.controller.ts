@@ -38,7 +38,7 @@ export const createTicket = async (req: Request, res: Response) => {
       if (!payload.createdFrom) payload.createdFrom = 'User portal'
       payload.teamId = 'support'
     }
-    if (!payload.createdFrom) payload.createdFrom = 'Support Tech Desk Platform'
+    if (!payload.createdFrom) payload.createdFrom = 'TB Asset Support Platform'
     const t = await ticketService.createTicket(payload, creator)
     res.status(201).json(t)
   } catch (err: any) {

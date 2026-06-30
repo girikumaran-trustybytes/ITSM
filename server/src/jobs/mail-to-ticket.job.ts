@@ -69,7 +69,7 @@ async function ensureIngestTable() {
       message_id TEXT,
       from_email TEXT,
       subject TEXT,
-      ticket_id INTEGER REFERENCES "Ticket"("id") ON DELETE SET NULL,
+      ticket_id INTEGER REFERENCES "ticket"("id") ON DELETE SET NULL,
       created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE (mailbox, uid)
     )`
@@ -258,7 +258,7 @@ function extractMessageIds(raw: string): string[] {
 async function findTicketDbIdByTicketRef(ticketRef: string): Promise<number | null> {
   if (!ticketRef) return null
   const row = await queryOne<{ id: number }>(
-    'SELECT "id" FROM "Ticket" WHERE UPPER("ticketId") = UPPER($1)',
+    'SELECT "id" FROM "ticket" WHERE UPPER("ticketId") = UPPER($1)',
     [ticketRef]
   )
   return Number(row?.id || 0) || null
@@ -284,7 +284,7 @@ async function findTicketDbIdByMessageThread(mail: ParsedMailHeader): Promise<nu
 
 async function appendInboundReplyToTicket(ticketDbId: number, mailbox: string, mail: ParsedMailHeader) {
   const ticket = await queryOne<{ id: number; ticketId: string; status: string }>(
-    'SELECT "id", "ticketId", "status" FROM "Ticket" WHERE "id" = $1',
+    'SELECT "id", "ticketId", "status" FROM "ticket" WHERE "id" = $1',
     [ticketDbId]
   )
   if (!ticket?.id) return null
@@ -345,7 +345,7 @@ async function markProcessed(payload: {
 async function findRequesterIdByEmail(email: string): Promise<number | undefined> {
   if (!email) return undefined
   const row = await queryOne<{ id: number }>(
-    'SELECT "id" FROM "User" WHERE LOWER("email") = LOWER($1)',
+    'SELECT "id" FROM "user" WHERE LOWER("email") = LOWER($1)',
     [email]
   )
   return row?.id

@@ -10,9 +10,9 @@ export type Asset = {
 }
 
 export async function getAssets() {
-  return query('SELECT * FROM "Asset" ORDER BY "createdAt" DESC')
+  return query('SELECT * FROM "asset" ORDER BY "createdAt" DESC')
 }
 
 export async function getAssetById(id: string) {
-  return queryOne('SELECT * FROM "Asset" WHERE "id" = $1', [Number(id)])
+  return queryOne('SELECT * FROM "asset" WHERE "id" = $1', [Number(id)])
 }

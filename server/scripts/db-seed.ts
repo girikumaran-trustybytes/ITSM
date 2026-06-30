@@ -14,7 +14,7 @@ async function main() {
 
     const hashed = await bcrypt.hash(password, 12)
     await pool.query(
-      'INSERT INTO "User" ("email", "password", "role", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT ("email") DO NOTHING',
+      'INSERT INTO "user" ("email", "password", "role", "status", "createdAt", "updatedAt") VALUES ($1, $2, $3, $4, NOW(), NOW()) ON CONFLICT ("email") DO NOTHING',
       [email, hashed, 'ADMIN', 'ACTIVE']
     )
 
