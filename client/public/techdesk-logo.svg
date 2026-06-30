@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 360" role="img" aria-labelledby="stdLogoTitle stdLogoDesc">
+  <title id="stdLogoTitle">Support Tech Desk Logo</title>
+  <desc id="stdLogoDesc">STD logo mark with headset arc and Support Tech Desk text.</desc>
+  <defs>
+    <linearGradient id="stdBlueGradient" x1="180" y1="62" x2="820" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1caec6" />
+      <stop offset="0.45" stop-color="#1581b7" />
+      <stop offset="1" stop-color="#17408d" />
+    </linearGradient>
+    <linearGradient id="stdGreenGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3db74a" />
+      <stop offset="1" stop-color="#6caf3e" />
+    </linearGradient>
+    <linearGradient id="stdArcBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2d66ba" />
+      <stop offset="1" stop-color="#18408f" />
+    </linearGradient>
+  </defs>
+
+  <path d="M72 180a128 128 0 0 1 230-82" fill="none" stroke="url(#stdArcBlue)" stroke-width="10" stroke-linecap="round" />
+  <path d="M104 176a96 96 0 0 1 172-62" fill="none" stroke="#29afcb" stroke-width="8" stroke-linecap="round" opacity="0.9" />
+  <path d="M72 184a128 128 0 0 0 162 118" fill="none" stroke="url(#stdArcBlue)" stroke-width="8" stroke-linecap="round" opacity="0.9" />
+  <rect x="54" y="150" width="30" height="66" rx="10" fill="url(#stdGreenGradient)" />
+  <rect x="86" y="150" width="30" height="66" rx="10" fill="url(#stdGreenGradient)" />
+
+  <text x="132" y="242" fill="url(#stdBlueGradient)" font-family="Segoe UI, Arial, sans-serif" font-size="216" font-weight="800" font-style="italic" letter-spacing="-8">
+    STD
+  </text>
+
+  <text x="42" y="334" fill="#1b3f87" font-family="Segoe UI, Arial, sans-serif" font-size="72" font-weight="700" letter-spacing="2">
+    SUPPORT
+  </text>
+  <text x="458" y="334" fill="url(#stdGreenGradient)" font-family="Segoe UI, Arial, sans-serif" font-size="72" font-weight="700" letter-spacing="2">
+    TECH DESK
+  </text>
+</svg>

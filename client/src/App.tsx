@@ -1,0 +1,1223 @@
+import React, { Suspense, useEffect, useMemo, useState } from 'react'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import PrimarySidebar from './components/PrimarySidebar'
+import ProtectedRoute from './app/ProtectedRoute'
+import Unauthorized from './app/Unauthorized'
+import { useAuth } from './contexts/AuthContext'
+import { getLastRoute, logout, persistLastRoute } from './services/auth.service'
+import NotificationsPanel from './components/panels/NotificationsPanel'
+import TodoPanel from './components/panels/TodoPanel'
+import FeedPanel, { FEED_FILTERS, type FeedFilter } from './components/panels/FeedPanel'
+import SearchPanel from './components/panels/SearchPanel'
+import { getNotificationState as fetchNotificationState, listNotifications as fetchNotifications } from './services/notifications.service'
+import { loadNotificationState, saveNotificationState } from './utils/notificationsState'
+import { getUserAvatarUrl, getUserInitials } from './utils/avatar'
+import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, presenceStatuses, setStoredPresenceStatus, type PresenceStatus } from './utils/presence'
+import { getMyPresence, putMyPresence } from './services/presence.service'
+import { canAccessItsmNav, getDefaultItsmRoute } from './security/policy'
+
+const Login = React.lazy(() => import('./app/Login'))
+const Dashboard = React.lazy(() => import('./components/Dashboard'))
+const TicketsView = React.lazy(() => import('./modules/tickets/components/TicketsView'))
+const TicketTimeline = React.lazy(() => import('./modules/tickets/components/TicketTimeline'))
+const AssetsView = React.lazy(() => import('./modules/assets/components/AssetsView'))
+const AssetDetailView = React.lazy(() => import('./modules/assets/components/AssetDetailView'))
+const UsersView = React.lazy(() => import('./modules/users/components/UsersView'))
+const UserDetailView = React.lazy(() => import('./modules/users/components/UserDetailView'))
+const SuppliersView = React.lazy(() => import('./modules/suppliers/components/SuppliersView'))
+const SupplierDetailView = React.lazy(() => import('./modules/suppliers/components/SupplierDetailView'))
+const AccountsView = React.lazy(() => import('./components/AccountsView'))
+const ReportsView = React.lazy(() => import('./components/ReportsView'))
+const PromptLibraryView = React.lazy(() => import('./components/PromptLibraryView'))
+const AdminView = React.lazy(() => import('./components/AdminView'))
+const AccountSecurityView = React.lazy(() => import('./components/AccountSecurityView'))
+const PortalHome = React.lazy(() => import('./components/portal/PortalHome'))
+const PortalTickets = React.lazy(() => import('./components/portal/PortalTickets'))
+const PortalAssets = React.lazy(() => import('./components/portal/PortalAssets'))
+const PortalNewTicket = React.lazy(() => import('./components/portal/PortalNewTicket'))
+
+const shellChunkPrefetchers: Array<() => Promise<unknown>> = [
+  () => import('./modules/tickets/components/TicketsView'),
+  () => import('./modules/tickets/components/TicketTimeline'),
+  () => import('./modules/assets/components/AssetsView'),
+  () => import('./modules/users/components/UsersView'),
+  () => import('./modules/suppliers/components/SuppliersView'),
+  () => import('./components/AdminView'),
+]
+
+const emptyPagination = {
+  page: 1,
+  totalPages: 1,
+  totalRows: 0,
+  rangeStart: 0,
+  rangeEnd: 0,
+}
+
+const navLabels: Record<string, string> = {
+  dashboard: 'Dashboard',
+  tickets: 'Tickets',
+  assets: 'Assets',
+  users: 'Users',
+  suppliers: 'Suppliers',
+  accounts: 'Accounts',
+  reports: 'Reports',
+  prompts: 'Prompt Library',
+  admin: 'Admin',
+}
+const navPaths: Record<string, string> = {
+  dashboard: '/dashboard',
+  tickets: '/tickets',
+  assets: '/assets',
+  users: '/users',
+  suppliers: '/supplier',
+  accounts: '/accounts',
+  reports: '/reports',
+  prompts: '/prompt-library',
+  admin: '/admin',
+}
+
+function getNavFromPath(pathname: string) {
+  if (pathname.startsWith('/tickets')) return 'tickets'
+  if (pathname.startsWith('/assets')) return 'assets'
+  if (pathname.startsWith('/users')) return 'users'
+  if (pathname.startsWith('/supplier')) return 'suppliers'
+  if (pathname.startsWith('/accounts')) return 'accounts'
+  if (pathname.startsWith('/reports')) return 'reports'
+  if (pathname.startsWith('/prompt-library')) return 'prompts'
+  if (pathname.startsWith('/admin')) return 'admin'
+  return 'dashboard'
+}
+
+function toNotificationId(value: any): number | null {
+  const id = Number(value)
+  if (!Number.isFinite(id) || id <= 0) return null
+  return id
+}
+
+function shouldShowNotification(item: any) {
+  const action = String(item?.action || '').toLowerCase()
+  const entity = String(item?.entity || '').toLowerCase()
+  const isMaintenance = entity === 'sla' || action.includes('maintenance') || action.includes('sla')
+  if (isMaintenance) return true
+  if (entity !== 'ticket') return false
+  if (action.includes('view') || action.includes('list') || action.includes('access_denied') || action.includes('delete')) return false
+  return true
+}
+
+type ThemeMode = 'system' | 'light' | 'dark'
+const THEME_MODE_KEY = 'itsm-theme-mode'
+
+function resolveThemeMode(mode: ThemeMode): 'light' | 'dark' {
+  if (mode !== 'system') return mode
+  if (typeof window === 'undefined') return 'light'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function applyThemeMode(mode: ThemeMode) {
+  if (typeof document === 'undefined') return
+  document.documentElement.setAttribute('data-theme', resolveThemeMode(mode))
+}
+
+function formatClockTime(date = new Date()) {
+  return new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+function LiveClock() {
+  const [time, setTime] = useState(() => formatClockTime())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setTime(formatClockTime())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  return <>{time}</>
+}
+
+function RouteLoadingFallback({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={compact ? 'app-route-fallback app-route-fallback-compact' : 'app-route-fallback'} role="status" aria-live="polite">
+      <span className="app-route-fallback-spinner" aria-hidden="true" />
+      <span>Loading...</span>
+    </div>
+  )
+}
+
+function MainShell() {
+  type NotificationToast = { id: number; title: string; sub: string; kind: 'ticket' | 'maintenance' }
+  const [activeNav, setActiveNav] = useState('dashboard')
+  const { user } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showPresenceMenu, setShowPresenceMenu] = useState(false)
+  const [showAppearanceMenu, setShowAppearanceMenu] = useState(false)
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = typeof window !== 'undefined' ? window.localStorage.getItem(THEME_MODE_KEY) : null
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system'
+  })
+  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
+  const presenceHydratedRef = React.useRef(false)
+  const lastRemotePresenceRef = React.useRef<PresenceStatus | null>(null)
+  const [activePanel, setActivePanel] = useState<null | 'search' | 'notifications' | 'todo' | 'feed'>(null)
+  const [feedFilter, setFeedFilter] = useState<FeedFilter>('All Activity')
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
+  const [notificationPopups, setNotificationPopups] = useState<NotificationToast[]>([])
+  const lastSeenNotificationIdRef = React.useRef<number>(0)
+  const notificationInitRef = React.useRef(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [tabToolbarSearch, setTabToolbarSearch] = useState('')
+  const [usersPage, setUsersPage] = useState(1)
+  const [usersPagination, setUsersPagination] = useState(emptyPagination)
+  const [assetsPage, setAssetsPage] = useState(1)
+  const [assetsPagination, setAssetsPagination] = useState(emptyPagination)
+  const [suppliersPage, setSuppliersPage] = useState(1)
+  const [suppliersPagination, setSuppliersPagination] = useState(emptyPagination)
+  const [adminPage, setAdminPage] = useState(1)
+  const [adminPagination, setAdminPagination] = useState(emptyPagination)
+  const panelWidth = activePanel ? 360 : (showProfileMenu ? 300 : 0)
+  const profileRef = React.useRef<HTMLDivElement | null>(null)
+  const profilePanelRef = React.useRef<HTMLDivElement | null>(null)
+  const panelRef = React.useRef<HTMLDivElement | null>(null)
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    setActiveNav(getNavFromPath(location.pathname))
+  }, [location.pathname])
+
+  useEffect(() => {
+    if (!user) return
+    const route = `${location.pathname || ''}${location.search || ''}`
+    persistLastRoute(route)
+  }, [user, location.pathname, location.search])
+
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (showProfileMenu) {
+        const insideTrigger = profileRef.current && profileRef.current.contains(target)
+        const insidePanel = profilePanelRef.current && profilePanelRef.current.contains(target)
+        if (!insideTrigger && !insidePanel) {
+          setShowProfileMenu(false)
+          setShowPresenceMenu(false)
+          setShowAppearanceMenu(false)
+        }
+      }
+      if (activePanel && panelRef.current && !panelRef.current.contains(target)) {
+        const button = (target as HTMLElement).closest?.('[data-panel-toggle]')
+        if (!button) {
+          setActivePanel(null)
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showProfileMenu, activePanel])
+
+  useEffect(() => {
+    applyThemeMode(themeMode)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(THEME_MODE_KEY, themeMode)
+    }
+    if (themeMode !== 'system' || typeof window === 'undefined') return
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const handleChange = () => applyThemeMode('system')
+    media.addEventListener?.('change', handleChange)
+    return () => media.removeEventListener?.('change', handleChange)
+  }, [themeMode])
+
+  useEffect(() => {
+    setStoredPresenceStatus(presenceStatus)
+    if (!presenceHydratedRef.current || !user?.id) return
+    if (lastRemotePresenceRef.current === presenceStatus) return
+    putMyPresence(presenceStatus)
+      .then((res) => {
+        lastRemotePresenceRef.current = normalizePresenceStatus(res?.status)
+      })
+      .catch(() => undefined)
+  }, [presenceStatus, user?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    const hydratePresence = async () => {
+      presenceHydratedRef.current = false
+      lastRemotePresenceRef.current = null
+      const local = getStoredPresenceStatus()
+      setPresenceStatus(local)
+      if (!user?.id) {
+        presenceHydratedRef.current = true
+        return
+      }
+      try {
+        const res = await getMyPresence()
+        if (cancelled) return
+        const next = normalizePresenceStatus(res?.status)
+        lastRemotePresenceRef.current = next
+        setPresenceStatus(next)
+        setStoredPresenceStatus(next)
+      } catch {
+        // fallback to local value on API failure
+      } finally {
+        if (!cancelled) presenceHydratedRef.current = true
+      }
+    }
+    hydratePresence()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    const syncPresence = () => setPresenceStatus(getStoredPresenceStatus())
+    window.addEventListener('storage', syncPresence)
+    window.addEventListener(PRESENCE_CHANGED_EVENT, syncPresence as EventListener)
+    return () => {
+      window.removeEventListener('storage', syncPresence)
+      window.removeEventListener(PRESENCE_CHANGED_EVENT, syncPresence as EventListener)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (activePanel === 'search' && searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+  }, [activePanel])
+
+  useEffect(() => {
+    let cancelled = false
+    const syncNotificationState = async () => {
+      if (!user) return
+      try {
+        const remote = await fetchNotificationState()
+        if (cancelled) return
+        const next = {
+          readIds: Array.isArray(remote?.readIds) ? remote.readIds.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0) : [],
+          deletedIds: Array.isArray(remote?.deletedIds) ? remote.deletedIds.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0) : [],
+          clearedAt: Number.isFinite(Number(remote?.clearedAt)) ? Number(remote.clearedAt) : undefined,
+        }
+        saveNotificationState(user, next)
+        window.dispatchEvent(new CustomEvent('notifications-state-changed'))
+      } catch {
+        // ignore remote state sync failures
+      }
+    }
+    syncNotificationState()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  useEffect(() => {
+    let mounted = true
+    const refreshUnreadCount = async () => {
+      if (!user) {
+        if (mounted) setUnreadNotificationCount(0)
+        return
+      }
+      try {
+        const rows: any[] = await fetchNotifications({ limit: 120 })
+        const state = loadNotificationState(user)
+        const visible = (Array.isArray(rows) ? rows : []).filter((n: any) => {
+          if (!shouldShowNotification(n)) return false
+          const id = toNotificationId(n?.id)
+          if (!id) return false
+          if (state.deletedIds.includes(id)) return false
+          if (!state.clearedAt) return true
+          const createdMs = n?.createdAt ? new Date(String(n.createdAt)).getTime() : 0
+          return !Number.isFinite(createdMs) || createdMs > state.clearedAt
+        })
+        const unread = visible.filter((n: any) => {
+          const id = toNotificationId(n?.id)
+          return !id || !state.readIds.includes(id)
+        }).length
+        if (mounted) setUnreadNotificationCount(unread)
+
+        const sorted = visible
+          .slice()
+          .sort((a: any, b: any) => (toNotificationId(a?.id) || 0) - (toNotificationId(b?.id) || 0))
+        const maxId = sorted.length ? (toNotificationId(sorted[sorted.length - 1]?.id) || 0) : 0
+
+        if (!notificationInitRef.current) {
+          notificationInitRef.current = true
+          lastSeenNotificationIdRef.current = maxId
+          return
+        }
+
+        const fresh = sorted.filter((n: any) => (toNotificationId(n?.id) || 0) > lastSeenNotificationIdRef.current)
+        if (fresh.length > 0 && mounted) {
+          const queued = fresh.map((item: any, index: number) => {
+            const id = toNotificationId(item?.id) || (Date.now() + index)
+            const ticketId = String(item?.ticketId || item?.meta?.ticketId || '')
+            const action = String(item?.action || '').toLowerCase()
+            const entity = String(item?.entity || '').toLowerCase()
+            const isMaintenance = entity === 'sla' || action.includes('maintenance') || action.includes('sla')
+            const kind: NotificationToast['kind'] = isMaintenance ? 'maintenance' : 'ticket'
+            const title = isMaintenance
+              ? 'Maintenance update'
+              : action.includes('create')
+                ? 'New ticket logged'
+                : 'Ticket updated'
+            const sub = isMaintenance ? `Action: ${String(item?.action || 'update')}` : (ticketId ? `ID:${ticketId}` : `Action: ${String(item?.action || 'update')}`)
+            return { id, title, sub, kind }
+          })
+          setNotificationPopups((prev) => [...prev, ...queued].slice(-6))
+        }
+        lastSeenNotificationIdRef.current = maxId
+      } catch {
+        if (mounted) setUnreadNotificationCount(0)
+      }
+    }
+    refreshUnreadCount()
+    const timer = window.setInterval(refreshUnreadCount, 30000)
+    const onStateChange = () => refreshUnreadCount()
+    window.addEventListener('notifications-state-changed', onStateChange as EventListener)
+    return () => {
+      mounted = false
+      window.clearInterval(timer)
+      window.removeEventListener('notifications-state-changed', onStateChange as EventListener)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (!notificationPopups.length) return
+    const timerId = window.setTimeout(() => {
+      setNotificationPopups((prev) => prev.slice(1))
+    }, 5000)
+    return () => window.clearTimeout(timerId)
+  }, [notificationPopups])
+
+  useEffect(() => {
+    if (!user) return
+    if (location.pathname.startsWith('/admin') && !canAccessItsmNav(user, 'admin')) {
+      navigate(getDefaultItsmRoute(user), { replace: true })
+      return
+    }
+    if (location.pathname.startsWith('/users') && !canAccessItsmNav(user, 'users')) {
+      navigate(getDefaultItsmRoute(user), { replace: true })
+      return
+    }
+    if (
+      location.pathname.startsWith('/dashboard') &&
+      !canAccessItsmNav(user, 'dashboard')
+    ) {
+      navigate(getDefaultItsmRoute(user), { replace: true })
+    }
+  }, [user, location.pathname, navigate])
+
+  useEffect(() => {
+    if (!user) return
+    let timeoutId: number | undefined
+    let idleId: number | undefined
+    const prefetch = () => {
+      shellChunkPrefetchers.forEach((loadChunk) => {
+        void loadChunk()
+      })
+    }
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      idleId = (window as any).requestIdleCallback(prefetch, { timeout: 1200 })
+      return () => {
+        if (idleId !== undefined && 'cancelIdleCallback' in window) (window as any).cancelIdleCallback(idleId)
+      }
+    }
+    timeoutId = window.setTimeout(prefetch, 500)
+    return () => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+    }
+  }, [user?.id])
+
+  const handleNavSelect = (id: string) => {
+    setActiveNav(id)
+    if (id === 'dashboard') {
+      navigate('/dashboard')
+      return
+    }
+    if (id === 'suppliers') {
+      navigate('/supplier')
+      return
+    }
+    if (id === 'reports') {
+      navigate('/reports')
+      return
+    }
+    navigate(`/${id}`)
+  }
+
+  const breadcrumbItems = useMemo(() => {
+    if (location.pathname.startsWith('/tickets/')) {
+      const id = decodeURIComponent(location.pathname.split('/')[2] || '')
+      return [
+        { label: 'Tickets', path: '/tickets' },
+        { label: id || 'Details', path: location.pathname },
+      ]
+    }
+    if (location.pathname.startsWith('/assets/')) {
+      const id = decodeURIComponent(location.pathname.split('/')[2] || '')
+      return [
+        { label: 'Assets', path: '/assets' },
+        { label: id || 'Details', path: location.pathname },
+      ]
+    }
+    if (location.pathname.startsWith('/agents/')) {
+      const id = decodeURIComponent(location.pathname.split('/')[2] || '')
+      return [
+        { label: 'Agents', path: '/admin' },
+        { label: id || 'Details', path: location.pathname },
+      ]
+    }
+    if (location.pathname.startsWith('/users/')) {
+      const id = decodeURIComponent(location.pathname.split('/')[2] || '')
+      return [
+        { label: 'Users', path: '/users' },
+        { label: id || 'Details', path: location.pathname },
+      ]
+    }
+    if (location.pathname.startsWith('/supplier/')) {
+      const id = decodeURIComponent(location.pathname.split('/')[2] || '')
+      return [
+        { label: 'Suppliers', path: '/supplier' },
+        { label: id || 'Details', path: location.pathname },
+      ]
+    }
+    if (location.pathname.startsWith('/admin')) {
+      return [
+        { label: 'Admin', path: '/admin' },
+        { label: 'Settings', path: '/admin' },
+      ]
+    }
+    if (location.pathname.startsWith('/security')) {
+      return [{ label: 'Account Security', path: '/security' }]
+    }
+    const activeKey = activeNav === 'tickets' ? 'tickets' : (activeNav || 'dashboard')
+    return [{ label: navLabels[activeKey] || 'Dashboard', path: navPaths[activeKey] || '/dashboard' }]
+  }, [activeNav, location.pathname])
+
+  const isTicketsRoute = location.pathname.startsWith('/tickets')
+  const isDashboardRoute = location.pathname.startsWith('/dashboard')
+  const isReportsRoute = location.pathname.startsWith('/reports')
+  const isUsersListRoute = location.pathname === '/users'
+  const isUsersDetailRoute = location.pathname.startsWith('/users/')
+  const isAgentsDetailRoute = location.pathname.startsWith('/agents/')
+  const isAccountsListRoute = location.pathname === '/accounts'
+  const isAssetsListRoute = location.pathname === '/assets'
+  const isAssetDetailRoute = location.pathname.startsWith('/assets/')
+  const isSuppliersListRoute = location.pathname === '/supplier'
+  const isAdminListRoute = location.pathname === '/admin'
+  const isSecurityRoute = location.pathname.startsWith('/security')
+  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute && !isAdminListRoute && !isAccountsListRoute && !isSecurityRoute
+  const toolbarPagination =
+    isUsersListRoute || isAccountsListRoute ? usersPagination :
+    isAssetsListRoute ? assetsPagination :
+    isSuppliersListRoute ? suppliersPagination :
+    isAdminListRoute ? adminPagination :
+    null
+
+  useEffect(() => {
+    if (isUsersListRoute || isAccountsListRoute) {
+      setUsersPage(1)
+    }
+    if (isAssetsListRoute) {
+      setAssetsPage(1)
+    }
+    if (isSuppliersListRoute) {
+      setSuppliersPage(1)
+    }
+    if (isAdminListRoute) {
+      setAdminPage(1)
+    }
+  }, [tabToolbarSearch, isUsersListRoute, isAccountsListRoute, isAssetsListRoute, isSuppliersListRoute, isAdminListRoute])
+
+  const toolbarTarget =
+    isAgentsDetailRoute ? 'admin' :
+    (isUsersListRoute || isUsersDetailRoute) ? 'users' :
+    isAccountsListRoute ? 'accounts' :
+    isAssetsListRoute ? 'assets' :
+    isSuppliersListRoute ? 'suppliers' :
+    isAdminListRoute ? 'admin' :
+    null
+  const sharedToolbarClass =
+    toolbarTarget === 'assets' ? 'assets-tool-bar' :
+    toolbarTarget === 'users' ? 'users-tool-bar' :
+    toolbarTarget === 'accounts' ? 'accounts-tool-bar' :
+    toolbarTarget === 'suppliers' ? 'suppliers-tool-bar' :
+    toolbarTarget === 'admin' ? 'admin-tool-bar' :
+    'tickets-tool-bar'
+  const activePresence = presenceStatuses.find((item) => item.value === presenceStatus) || presenceStatuses[0]
+  const presenceDotClass = activePresence.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'
+  const userInitials = getUserInitials(user, 'G')
+  const userAvatarUrl = getUserAvatarUrl(user)
+  const rememberedRoute = String(getLastRoute() || '').trim()
+  const shellDefaultRoute = rememberedRoute && rememberedRoute.startsWith('/') && rememberedRoute !== '/login'
+    && rememberedRoute !== '/'
+    ? rememberedRoute
+    : getDefaultItsmRoute(user)
+
+  return (
+    <div className="app-root">
+      <PrimarySidebar activeNav={activeNav} setActiveNav={handleNavSelect} auth={user} />
+      <div id="ticket-left-panel" className="ticket-left-panel" />
+      <div className="nav-top-bar">
+        <div className="nav-top-bar-left">
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            {breadcrumbItems.map((item, index) => (
+              <React.Fragment key={`${item.label}-${index}`}>
+                <button
+                  type="button"
+                  className="breadcrumb-link"
+                  onClick={() => navigate(item.path)}
+                >
+                  {item.label}
+                </button>
+                {index < breadcrumbItems.length - 1 && <span className="breadcrumb-sep">{'>'}</span>}
+              </React.Fragment>
+            ))}
+          </nav>
+        </div>
+        <div className="nav-top-bar-right">
+          <div className="app-pill-btn app-time-pill" role="status" aria-live="polite">
+            <LiveClock />
+          </div>
+          <button
+            className="app-pill-btn"
+            onClick={() => {
+              if (!location.pathname.startsWith('/tickets')) {
+                sessionStorage.setItem('openNewTicket', '1')
+                navigate('/tickets')
+                return
+              }
+              window.dispatchEvent(new CustomEvent('open-new-ticket'))
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            New Ticket
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'search' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Search"
+            onClick={() => setActivePanel(activePanel === 'search' ? null : 'search')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'todo' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="To-Do"
+            onClick={() => setActivePanel(activePanel === 'todo' ? null : 'todo')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="4" y="5" width="16" height="15" rx="2" />
+              <path d="M8 9h8M8 13h8M8 17h5" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'feed' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Feed"
+            onClick={() => setActivePanel(activePanel === 'feed' ? null : 'feed')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M4 6h16M4 12h16M4 18h10" />
+            </svg>
+          </button>
+          <button
+            className={`app-icon-btn ${activePanel === 'notifications' ? 'app-icon-btn-active' : ''}`}
+            data-panel-toggle
+            aria-label="Notifications"
+            onClick={() => setActivePanel(activePanel === 'notifications' ? null : 'notifications')}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M6 17h12l-1.5-2.5V11a4.5 4.5 0 0 0-9 0v3.5L6 17z" />
+              <path d="M10 19a2 2 0 0 0 4 0" />
+            </svg>
+            {unreadNotificationCount > 0 ? (
+              <span className="app-icon-badge">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>
+            ) : null}
+          </button>
+          <div className="profile-menu-anchor" ref={profileRef}>
+            <button
+              className="profile-avatar-btn"
+              aria-label="Profile menu"
+              onClick={() => {
+                setShowProfileMenu((v) => !v)
+                setShowPresenceMenu(false)
+                setShowAppearanceMenu(false)
+              }}
+              style={{ ['--presence-color' as any]: activePresence.color }}
+            >
+              {userAvatarUrl ? <img src={userAvatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : userInitials}
+              <span className={`profile-avatar-presence-dot ${presenceDotClass}`} />
+            </button>
+          </div>
+        </div>
+      </div>
+      {notificationPopups.length ? (
+        <div className="app-notification-stack" aria-live="polite" aria-atomic="false">
+          {notificationPopups.slice(0, 1).map((toast) => (
+            <div className={`app-notification-popup ${toast.kind}`} key={toast.id}>
+              <button
+                className="app-notification-popup-close"
+                onClick={() => setNotificationPopups((prev) => prev.slice(1))}
+                aria-label="Close"
+              >
+                x
+              </button>
+              <div className="app-notification-popup-title">
+                <span className="app-notification-popup-note">Note:</span>
+                <span>{toast.title}</span>
+              </div>
+              <div className="app-notification-popup-sub">{toast.sub}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <main className="main-area" style={panelWidth ? { marginRight: panelWidth } : undefined}>
+        {showProfileMenu && (
+          <div className="profile-panel" ref={profilePanelRef}>
+            <div className="profile-panel-header">
+              <button className="profile-panel-close" onClick={() => { setShowProfileMenu(false); setShowPresenceMenu(false); setShowAppearanceMenu(false) }} aria-label="Close">
+                ×
+              </button>
+            </div>
+            <div className="profile-panel-body">
+              <div className="profile-panel-user">
+                <div className="profile-panel-avatar unified-user-avatar">
+                  {userAvatarUrl ? <img src={userAvatarUrl} alt={user?.name || 'User'} className="unified-user-avatar-image" /> : userInitials}
+                  <span
+                    className={`profile-panel-status-dot ${presenceDotClass}`}
+                    style={{ ['--presence-color' as any]: activePresence.color }}
+                  />
+                </div>
+                <div className="profile-panel-user-main">
+                  <div className="profile-panel-name">{user?.name || 'User'}</div>
+                  <div className="profile-panel-email">{user?.email || 'user@example.com'}</div>
+                  <div className="profile-panel-status-wrap">
+                    <button className="profile-panel-status-btn" onClick={() => setShowPresenceMenu((v) => !v)}>
+                      <span
+                        className={`profile-panel-status-indicator ${presenceDotClass}`}
+                        style={{ ['--presence-color' as any]: activePresence.color }}
+                      />
+                      {presenceStatus}
+                    </button>
+                    {showPresenceMenu && (
+                      <div className="profile-panel-status-menu">
+                        {presenceStatuses.map((item) => (
+                          <button
+                            key={item.value}
+                            className={`profile-panel-status-option${item.value === presenceStatus ? ' active' : ''}`}
+                            onClick={() => {
+                              setPresenceStatus(item.value)
+                              setShowPresenceMenu(false)
+                            }}
+                          >
+                            <span
+                              className={`profile-panel-status-indicator ${item.style === 'ring' ? 'presence-dot-ring' : 'presence-dot-solid'}`}
+                              style={{ ['--presence-color' as any]: item.color }}
+                            />
+                            <span className="profile-panel-status-option-main">
+                              <span className="profile-panel-status-option-title">{item.value}</span>
+                            </span>
+                            <span className="profile-panel-status-option-check" aria-hidden="true">
+                              {item.value === presenceStatus ? '✓' : ''}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="profile-panel-links">
+                <button
+                  className="profile-panel-link-item"
+                  onClick={() => {
+                    setShowProfileMenu(false)
+                    setShowPresenceMenu(false)
+                    setShowAppearanceMenu(false)
+                    navigate('/security')
+                  }}
+                >
+                  <span className="profile-panel-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M12 3a4 4 0 0 1 4 4v2h1a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h1V7a4 4 0 0 1 4-4Z" />
+                      <path d="M9 9V7a3 3 0 0 1 6 0v2" />
+                    </svg>
+                  </span>
+                  <span>Account &amp; Password</span>
+                </button>
+                <div className="profile-panel-link-item-wrap">
+                  <button
+                    className="profile-panel-link-item"
+                    onClick={() => {
+                      setShowAppearanceMenu((prev) => !prev)
+                      setShowPresenceMenu(false)
+                    }}
+                    aria-expanded={showAppearanceMenu}
+                  >
+                    <span className="profile-panel-link-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" />
+                      </svg>
+                    </span>
+                    <span>Appearance</span>
+                    <span className="profile-panel-link-chevron" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="m9 6 6 6-6 6" />
+                      </svg>
+                    </span>
+                  </button>
+                  {showAppearanceMenu && (
+                    <div className="profile-appearance-menu">
+                      {([
+                        { value: 'system', label: 'System Default' },
+                        { value: 'light', label: 'Light' },
+                        { value: 'dark', label: 'Dark' },
+                      ] as const).map((option) => (
+                        <button
+                          key={option.value}
+                          className={`profile-appearance-option${themeMode === option.value ? ' active' : ''}`}
+                          onClick={() => setThemeMode(option.value)}
+                        >
+                          <span className={`profile-appearance-preview ${option.value}`} aria-hidden="true">
+                            <span />
+                          </span>
+                          <span className="profile-appearance-label">{option.label}</span>
+                          <span className="profile-appearance-check" aria-hidden="true">
+                            {themeMode === option.value ? '\u2713' : ''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="profile-panel-link-item"
+                  onClick={() => {
+                    setShowProfileMenu(false)
+                    setShowAppearanceMenu(false)
+                    navigate('/portal/home')
+                  }}
+                >
+                  <span className="profile-panel-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <rect x="3" y="4" width="18" height="16" rx="2" />
+                      <path d="M7 8h10M7 12h10M7 16h6" />
+                    </svg>
+                  </span>
+                  <span>View support portal</span>
+                </button>
+                <button className="profile-panel-link-item profile-panel-link-logout" onClick={() => logout()}>
+                  <span className="profile-panel-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                      <path d="M10 17l5-5-5-5" />
+                      <path d="M15 12H3" />
+                    </svg>
+                  </span>
+                  <span>Log out</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {activePanel && (
+          <div className="app-panel" ref={panelRef}>
+            <div className="app-panel-header">
+              <div className="app-panel-title">
+                {activePanel === 'search' && 'Search'}
+                {activePanel === 'notifications' && 'Notifications'}
+                {activePanel === 'todo' && 'To-Do'}
+                {activePanel === 'feed' && 'Feed'}
+              </div>
+              <div className="app-panel-header-controls">
+                {activePanel === 'notifications' ? (
+                  <>
+                    <button
+                      className="panel-icon-btn"
+                      aria-label="Mark all read"
+                      onClick={() => window.dispatchEvent(new CustomEvent('notifications-mark-all-read'))}
+                    >
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                      Read all
+                    </button>
+                    <button
+                      className="panel-icon-btn"
+                      aria-label="Delete all"
+                      onClick={() => window.dispatchEvent(new CustomEvent('notifications-delete-all'))}
+                    >
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="M19 6l-1 14H6L5 6" />
+                      </svg>
+                      Delete all
+                    </button>
+                  </>
+                ) : null}
+                {activePanel === 'feed' ? (
+                  <select value={feedFilter} onChange={(e) => setFeedFilter(e.target.value as FeedFilter)}>
+                    {FEED_FILTERS.map((option) => (
+                      <option key={option}>{option}</option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+              <button className="app-panel-close" onClick={() => setActivePanel(null)} aria-label="Close panel">
+                ×
+              </button>
+            </div>
+            <div className="app-panel-body">
+              {activePanel === 'search' && (
+                <>
+                  <div className="app-panel-search">
+                    <input
+                      ref={searchInputRef}
+                      placeholder="Search tickets, assets, users, suppliers..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <button className="app-panel-search-btn" aria-label="Search">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="M20 20l-3.5-3.5" />
+                      </svg>
+                    </button>
+                  </div>
+                  <SearchPanel query={searchQuery} />
+                </>
+              )}
+              {activePanel === 'notifications' && <NotificationsPanel />}
+              {activePanel === 'todo' && <TodoPanel />}
+              {activePanel === 'feed' && <FeedPanel filter={feedFilter} />}
+            </div>
+          </div>
+        )}
+        {showSharedToolbar && (
+          <div className={`${sharedToolbarClass} shared-list-toolbar`}>
+            <div className="tool-bar-left">
+              {isAssetDetailRoute && (
+                <button
+                  className="table-icon-btn"
+                  title="Back to Assets"
+                  aria-label="Back to Assets"
+                  onClick={() => navigate('/assets')}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              )}
+              {isUsersDetailRoute && (
+                <button
+                  className="table-icon-btn"
+                  title="Back to Users"
+                  aria-label="Back to Users"
+                  onClick={() => navigate('/users')}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              )}
+              {isAgentsDetailRoute && (
+                <button
+                  className="table-icon-btn"
+                  title="Back to Agents"
+                  aria-label="Back to Agents"
+                  onClick={() => navigate('/admin')}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="15 18 9 12 15 6" />
+                  </svg>
+                </button>
+              )}
+              <button
+                className="table-icon-btn toolbar-left-panel-toggle"
+                title="Toggle Left Panel"
+                aria-label="Toggle Left Panel"
+                onClick={() => {
+                  if (!toolbarTarget) return
+                  window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'toggle-left-panel', target: toolbarTarget } }))
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="4" y1="7" x2="20" y2="7" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="4" y1="17" x2="20" y2="17" />
+                </svg>
+              </button>
+              <div className="global-search">
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={tabToolbarSearch}
+                  onChange={(e) => setTabToolbarSearch(e.target.value)}
+                />
+                <span className="search-icon">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="11" cy="11" r="7" />
+                    <line x1="16.5" y1="16.5" x2="21" y2="21" />
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <div className="tool-bar-right">
+              {isAdminListRoute ? (
+                <>
+                  <div className="admin-settings-footer-meta">
+                    <span>Last updated by Admin • 2 mins ago</span>
+                    <span>Platform version 3.8.2</span>
+                  </div>
+                  <div className="admin-settings-footer-actions">
+                    <button
+                      className="admin-settings-ghost"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'admin-cancel', target: 'admin' } }))
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="admin-settings-primary"
+                      onClick={() => {
+                        window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'admin-save', target: 'admin' } }))
+                      }}
+                    >
+                      Save Changes
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {toolbarPagination ? (
+                    <span className="pagination">
+                      {`${toolbarPagination.rangeStart}-${toolbarPagination.rangeEnd} of ${toolbarPagination.totalRows}`}
+                    </span>
+                  ) : null}
+                  {toolbarPagination && (
+                    <div className="toolbar-pagination-group">
+                      <button
+                        className="users-page-btn"
+                        onClick={() => {
+                          if (isUsersListRoute || isAccountsListRoute) setUsersPage((p) => Math.max(1, p - 1))
+                          else if (isAssetsListRoute) setAssetsPage((p) => Math.max(1, p - 1))
+                          else if (isSuppliersListRoute) setSuppliersPage((p) => Math.max(1, p - 1))
+                          else if (isAdminListRoute) setAdminPage((p) => Math.max(1, p - 1))
+                        }}
+                        disabled={toolbarPagination.page <= 1}
+                        aria-label="Previous page"
+                      >
+                        {'<'}
+                      </button>
+                      <button className="users-page-btn active" aria-label="Current page">
+                        {toolbarPagination.page}
+                      </button>
+                      <button
+                        className="users-page-btn"
+                        onClick={() => {
+                          if (isUsersListRoute || isAccountsListRoute) setUsersPage((p) => Math.min(usersPagination.totalPages, p + 1))
+                          else if (isAssetsListRoute) setAssetsPage((p) => Math.min(assetsPagination.totalPages, p + 1))
+                          else if (isSuppliersListRoute) setSuppliersPage((p) => Math.min(suppliersPagination.totalPages, p + 1))
+                          else if (isAdminListRoute) setAdminPage((p) => Math.min(adminPagination.totalPages, p + 1))
+                        }}
+                        disabled={toolbarPagination.page >= toolbarPagination.totalPages}
+                        aria-label="Next page"
+                      >
+                        {'>'}
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    className="table-icon-btn"
+                    title="Refresh"
+                    aria-label="Refresh"
+                    onClick={() => {
+                      if (!toolbarTarget) return
+                      window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'refresh', target: toolbarTarget } }))
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="23 4 23 10 17 10" />
+                      <polyline points="1 20 1 14 7 14" />
+                      <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                  </button>
+                  <button
+                    className="table-primary-btn"
+                    onClick={() => {
+                      if (!toolbarTarget) return
+                      window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'new', target: toolbarTarget } }))
+                    }}
+                  >
+                    + New
+                  </button>
+                  <button
+                    className="table-icon-btn"
+                    title="Filter"
+                    aria-label="Filter"
+                    onClick={() => {
+                      if (!toolbarTarget) return
+                      window.dispatchEvent(new CustomEvent('shared-toolbar-action', { detail: { action: 'filter', target: toolbarTarget } }))
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                    </svg>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
+          <Route path="/dashboard" element={<div className="work-main"><Dashboard /></div>} />
+          <Route path="/" element={<Navigate to={shellDefaultRoute} replace />} />
+          <Route
+            path="/tickets"
+            element={
+              <>
+                <TicketsView />
+                <div style={{ marginTop: 24 }}>
+                  <TicketTimeline />
+                </div>
+              </>
+            }
+          />
+          <Route
+            path="/tickets/:ticketId"
+            element={
+              <>
+                <TicketsView />
+                <div style={{ marginTop: 24 }}>
+                  <TicketTimeline />
+                </div>
+              </>
+            }
+          />
+          <Route
+            path="/assets"
+            element={
+              <div className="work-main">
+                <AssetsView
+                  toolbarSearch={tabToolbarSearch}
+                  controlledPage={assetsPage}
+                  onPageChange={setAssetsPage}
+                  onPaginationMetaChange={setAssetsPagination}
+                />
+              </div>
+            }
+          />
+          <Route path="/assets/:assetId" element={<div className="work-main"><AssetDetailView /></div>} />
+          <Route
+            path="/supplier"
+            element={
+              <div className="work-main">
+                <SuppliersView
+                  toolbarSearch={tabToolbarSearch}
+                  controlledPage={suppliersPage}
+                  onPageChange={setSuppliersPage}
+                  onPaginationMetaChange={setSuppliersPagination}
+                />
+              </div>
+            }
+          />
+          <Route path="/supplier/:supplierId" element={<div className="work-main"><SupplierDetailView /></div>} />
+          <Route
+            path="/users"
+            element={
+              <div className="work-main">
+                <UsersView
+                  toolbarSearch={tabToolbarSearch}
+                  controlledPage={usersPage}
+                  onPageChange={setUsersPage}
+                  onPaginationMetaChange={setUsersPagination}
+                />
+              </div>
+            }
+          />
+          <Route path="/users/:userId" element={<div className="work-main"><UserDetailView /></div>} />
+          <Route path="/agents/:userId" element={<div className="work-main"><UserDetailView mode="agents" /></div>} />
+          <Route
+            path="/accounts"
+            element={
+              <div className="work-main">
+                <AccountsView />
+              </div>
+            }
+          />
+          <Route path="/reports" element={<div className="work-main"><ReportsView /></div>} />
+          <Route
+            path="/prompt-library"
+            element={<div className="work-main"><PromptLibraryView /></div>}
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminView
+                toolbarSearch={tabToolbarSearch}
+                controlledPage={adminPage}
+                onPageChange={setAdminPage}
+                onPaginationMetaChange={setAdminPagination}
+              />
+            }
+          />
+          <Route path="/security" element={<AccountSecurityView />} />
+          <Route path="*" element={<div className="work-main"><Dashboard /></div>} />
+          </Routes>
+        </Suspense>
+      </main>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <Suspense fallback={<RouteLoadingFallback compact />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/auth/Account/ConfirmEmail" element={<Login />} />
+        <Route path="/reset-password" element={<Login />} />
+        <Route path="/portal/login" element={<Navigate to="/login" replace />} />
+        <Route path="/portal/dashboard" element={<PortalHome />} />
+        <Route path="/portal/tickets" element={<PortalTickets />} />
+        <Route path="/portal/assets" element={<PortalAssets />} />
+        <Route path="/portal/new-ticket" element={<PortalNewTicket />} />
+        <Route path="/unauthorized" element={<Unauthorized />} />
+        <Route
+          path="/portal/home"
+          element={
+            <ProtectedRoute>
+              <PortalHome />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <MainShell />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </Suspense>
+  )
+}
+
+
+
+

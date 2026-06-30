@@ -1,0 +1,6641 @@
+import React, { useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
+import { useNavigate, useParams } from 'react-router-dom'
+import * as ticketService from '../modules/tickets/services/ticket.service'
+import * as supplierService from '../modules/suppliers/services/supplier.service'
+import * as ticketSvc from '../modules/tickets/services/ticket.service'
+import * as assetService from '../modules/assets/services/asset.service'
+import * as userService from '../modules/users/services/user.service'
+import { listSlaConfigs } from '../services/sla.service'
+import { useAuth } from '../contexts/AuthContext'
+import { getRowsPerPage } from '../utils/pagination'
+import { loadLeftPanelConfig, type QueueRule, type TicketQueueConfig } from '../utils/leftPanelConfig'
+import { PRESENCE_CHANGED_EVENT, getStoredPresenceStatus, normalizePresenceStatus, toPresenceClass, type PresenceStatus } from '../utils/presence'
+import { AVATAR_CHANGED_EVENT, getUserAvatarUrl, getUserInitials } from '../utils/avatar'
+import { PageSkeleton } from './Skeleton'
+
+const PLATFORM_FROM_MAIL = String((import.meta as any).env?.VITE_PLATFORM_BASE_MAIL || '').trim()
+const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+const EMAIL_TEMPLATE_STORAGE_KEY = 'admin.mail.templates.v1'
+const EMAIL_SIGNATURE_STORAGE_KEY = 'admin.mail.signatures.v1'
+const MAIL_BANNER_STORAGE_KEY = 'admin.mail.banners.v1'
+
+function formatDateTime(value: any) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const year = date.getFullYear()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${month}/${day}/${year} ${hours}:${minutes}`
+}
+
+type LocalAttachment = {
+  key: string
+  file: File
+}
+
+type ProgressFilterType =
+  | 'All Actions'
+  | 'Conversation & Internal'
+  | 'Conversation'
+  | 'Internal Conversations'
+  | 'Staff'
+  | 'Public ( User View)'
+  | 'Private'
+
+type TimelineEntry = {
+  author: string
+  text: string
+  time: string
+  action?: string
+  fromStatus?: string
+  toStatus?: string
+  internal?: boolean
+  changedById?: number | null
+  kind?: 'conversation' | 'internal' | 'private' | 'sla' | 'asset' | 'user' | 'system' | 'public'
+}
+
+type SupplierOption = {
+  id: number
+  companyName?: string | null
+  companyMail?: string | null
+  contactPerson?: string | null
+  contactName?: string | null
+  contactEmail?: string | null
+  contactEmail2?: string | null
+  contactEmail3?: string | null
+  contactEmail4?: string | null
+  contactEmail5?: string | null
+}
+
+type EmailSignatureRecord = {
+  id: string
+  userId: string
+  userLabel: string
+  signatureHtml: string
+  active: boolean
+}
+
+type MailBannerRecord = {
+  id: string
+  title: string
+  message: string
+  tone: 'info' | 'success' | 'warning' | 'danger'
+  active: boolean
+}
+
+type EmailTemplateRecord = {
+  id: string
+  name: string
+  buttonKey: string
+  body: string
+  active: boolean
+}
+
+export type Incident = {
+  id: string
+  slaTimeLeft: string
+  sla?: any
+  subject: string
+  description?: string
+  category: string
+  subcategory?: string
+  issueDetail?: string
+  resolution?: string
+  priority: 'Low' | 'Medium' | 'High' | 'Critical'
+  status: string
+  type: string
+  endUser: string
+  clientCompany?: string
+  dateReported: string
+  lastAction: string
+  lastActionTime: string
+  assetTag?: string
+  staff?: string
+  assignedAgentId?: string
+  assignedAgentName?: string
+  workflow?: string
+  team?: string
+  teamId?: string | number | null
+  additionalAgents?: string[]
+  requesterId?: number
+  createdFrom?: string
+  createdAt?: string
+  updatedAt?: string
+  closedAt?: string
+  closedByName?: string
+}
+
+export default function TicketsView() {
+  const { user } = useAuth()
+  const { ticketId } = useParams()
+  const navigate = useNavigate()
+  const queueRoot = typeof document !== 'undefined' ? document.getElementById('ticket-left-panel') : null
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [ticketsLoading, setTicketsLoading] = useState(true)
+  const [ticketsLoadedOnce, setTicketsLoadedOnce] = useState(false)
+  const [filterType, setFilterType] = useState('Open Tickets')
+  const [queueFilter, setQueueFilter] = useState<{ type: 'all' | 'unassigned' | 'supplier' | 'agent' | 'team' | 'teamUnassigned' | 'teamAgent' | 'ticketType' | 'status' | 'myList'; agentId?: string; agentName?: string; value?: string; team?: string }>({ type: 'all' })
+  const [queueView, setQueueView] = useState<'all' | 'team' | 'staff' | 'type' | 'status' | 'myLists'>('team')
+  const [expandedTeams, setExpandedTeams] = useState<string[]>([])
+  const [showFilterMenu, setShowFilterMenu] = useState(false)
+  const [showSearchBar, setShowSearchBar] = useState(false)
+  const [page, setPage] = useState(1)
+  const rowsPerPage = getRowsPerPage()
+  const [selectAll, setSelectAll] = useState(false)
+  const [selectedTickets, setSelectedTickets] = useState<string[]>([])
+  const [bulkStatus, setBulkStatus] = useState('')
+  const [bulkTeam, setBulkTeam] = useState('')
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [globalSearch, setGlobalSearch] = useState('')
+  const [showNewIncidentModal, setShowNewIncidentModal] = useState(false)
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([])
+  const [selectedTicket, setSelectedTicket] = useState<Incident | null>(null)
+  const [showDetailView, setShowDetailView] = useState(false)
+  const [endUser, setEndUser] = useState<any>(null)
+  const [ticketAsset, setTicketAsset] = useState<any>(null)
+  const [assetList, setAssetList] = useState<any[]>([])
+  const [assetQuery, setAssetQuery] = useState('')
+  const [assetAssignId, setAssetAssignId] = useState<number | ''>('')
+  const [slaNowMs, setSlaNowMs] = useState(() => Date.now())
+  const [activeDetailTab, setActiveDetailTab] = useState('Progress')
+  const [progressFilter, setProgressFilter] = useState<ProgressFilterType>('Conversation & Internal')
+  const progressFilterInitializedRef = React.useRef(false)
+  const [isEditingSubject, setIsEditingSubject] = useState(false)
+  const [subjectDraft, setSubjectDraft] = useState('')
+  const subjectInputRef = useRef<HTMLInputElement | null>(null)
+  const subjectEditWrapRef = useRef<HTMLInputElement | null>(null)
+  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null)
+  const [actionDetail, setActionDetail] = useState<any | null>(null)
+  const [showProgressFilterMenu, setShowProgressFilterMenu] = useState(false)
+  const [progressExpanded, setProgressExpanded] = useState(true)
+  const [progressAtEnd, setProgressAtEnd] = useState(false)
+  const [isCompactDetailLayout, setIsCompactDetailLayout] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth
+    return viewportWidth <= 1360
+  })
+  const [showActionComposer, setShowActionComposer] = useState(false)
+  const [showInternalNoteEditor, setShowInternalNoteEditor] = useState(false)
+  const [internalNoteVisibility, setInternalNoteVisibility] = useState<'internal' | 'private'>('private')
+  const [internalNoteContext, setInternalNoteContext] = useState<'note' | 'escalate'>('note')
+  const [slaPolicies, setSlaPolicies] = useState<any[]>([])
+  const [slaApplying, setSlaApplying] = useState(false)
+  const [slaPolicyMenuOpen, setSlaPolicyMenuOpen] = useState(false)
+  const [slaPriorityMenuOpen, setSlaPriorityMenuOpen] = useState(false)
+  const [selectedSlaPolicyName, setSelectedSlaPolicyName] = useState('')
+  const [composerAttachments, setComposerAttachments] = useState<LocalAttachment[]>([])
+  const [internalNoteAttachments, setInternalNoteAttachments] = useState<LocalAttachment[]>([])
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false)
+  const [composerBodyHtml, setComposerBodyHtml] = useState('')
+  const [composerBodyText, setComposerBodyText] = useState('')
+  const [composerMediaAccept, setComposerMediaAccept] = useState('image/*,video/*,audio/*')
+  const [showSendReview, setShowSendReview] = useState(false)
+  const [internalNoteMediaAccept, setInternalNoteMediaAccept] = useState('image/*,video/*,audio/*')
+  const composerFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const composerMediaInputRef = React.useRef<HTMLInputElement | null>(null)
+  const internalNoteFileInputRef = React.useRef<HTMLInputElement | null>(null)
+  const internalNoteMediaInputRef = React.useRef<HTMLInputElement | null>(null)
+  const composerEditorRef = React.useRef<HTMLDivElement | null>(null)
+  const internalNoteEditorRef = React.useRef<HTMLDivElement | null>(null)
+  const composerMediaUrlsRef = React.useRef<string[]>([])
+  const internalNoteMediaUrlsRef = React.useRef<string[]>([])
+  const slaPolicyMenuRef = React.useRef<HTMLDivElement | null>(null)
+  const slaPriorityMenuRef = React.useRef<HTMLDivElement | null>(null)
+  const progressFilterMenuRef = React.useRef<HTMLDivElement | null>(null)
+  const progressListRef = React.useRef<HTMLDivElement | null>(null)
+  const statusMenuRef = React.useRef<HTMLDivElement | null>(null)
+  const [composerMenuOpen, setComposerMenuOpen] = useState(false)
+  const [showCcField, setShowCcField] = useState(false)
+  const [showBccField, setShowBccField] = useState(false)
+  const [composerFullscreen, setComposerFullscreen] = useState(false)
+  const [showFontMenu, setShowFontMenu] = useState(false)
+  const [showAlignMenu, setShowAlignMenu] = useState(false)
+  const [showOrderedMenu, setShowOrderedMenu] = useState(false)
+  const [showUnorderedMenu, setShowUnorderedMenu] = useState(false)
+  const [showQuoteMenu, setShowQuoteMenu] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [linkForm, setLinkForm] = useState({ url: '', text: '' })
+  const [showImageModal, setShowImageModal] = useState(false)
+  const [imageForm, setImageForm] = useState({ url: '' })
+  const [showTablePicker, setShowTablePicker] = useState(false)
+  const [tableSize, setTableSize] = useState({ rows: 3, cols: 3 })
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [showCannedMenu, setShowCannedMenu] = useState(false)
+  const [showCannedModal, setShowCannedModal] = useState(false)
+  const [cannedForm, setCannedForm] = useState({ name: '', html: '' })
+  const [actionStateByTicket, setActionStateByTicket] = useState<Record<string, { accepted: boolean; ackSent: boolean; supplierLogged: boolean }>>({})
+  const [composerMode, setComposerMode] = useState<
+    'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
+  >('emailUser')
+  const [composerForm, setComposerForm] = useState({
+    to: '',
+    cc: '',
+    bcc: '',
+    subject: '',
+    body: '',
+    actionStatus: 'With User',
+    nextUpdateDate: '',
+    nextUpdateTime: '',
+    issue: 'Category1',
+    issueDetail: 'Category2',
+    currentAction: '',
+    nextAction: '',
+    asset: '',
+    supplier: '',
+    supplierRef: '',
+    approvalTeam: 'Management Team',
+    approvalPriority: 'P2',
+  })
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([])
+  const [internalNoteForm, setInternalNoteForm] = useState({
+    body: '',
+    status: 'In Progress',
+    team: 'Automated Alerts',
+    staff: '',
+    timeHours: '00',
+    timeMinutes: '01',
+  })
+  const [escalateForm, setEscalateForm] = useState({ teamId: '', staffId: '' })
+
+  const openInternalNoteEditor = (mode: 'internal' | 'private') => {
+    setInternalNoteContext('note')
+    setInternalNoteVisibility(mode)
+    setShowInternalNoteEditor(true)
+  }
+  const [agents, setAgents] = useState<any[]>([])
+  const [myPresenceStatus, setMyPresenceStatus] = useState<PresenceStatus>(() => getStoredPresenceStatus())
+  const [, setAvatarRefreshTick] = useState(0)
+  const [queueCollapsed, setQueueCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.innerWidth <= 1100
+  })
+  const [ticketMyListRules, setTicketMyListRules] = useState<QueueRule[]>(() => loadLeftPanelConfig().ticketsMyLists)
+  const [ticketQueues, setTicketQueues] = useState<TicketQueueConfig[]>(() => loadLeftPanelConfig().ticketQueues)
+  const [newIncidentForm, setNewIncidentForm] = useState({
+    ticketType: 'Incident',
+    teamId: '',
+    cc: '',
+    subject: '',
+    description: '',
+    asset: '',
+    priority: '' as const,
+    classification: '',
+    staffId: '',
+    startDate: '',
+    endDate: '',
+  })
+
+  const formatCompanyFromDomain = (email: string) => {
+    const raw = String(email || '').trim().toLowerCase()
+    if (!raw || !raw.includes('@')) return ''
+    const domain = raw.split('@')[1]?.trim() || ''
+    if (!domain) return ''
+    const parts = domain.split('.').filter(Boolean)
+    if (parts.length === 0) return ''
+    const base = parts.length >= 2 ? parts[parts.length - 2] : parts[0]
+    const blocked = new Set(['gmail', 'yahoo', 'outlook', 'hotmail', 'icloud', 'protonmail', 'aol', 'live'])
+    if (!base || blocked.has(base)) return ''
+    return base.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  const deriveRequesterCompany = (requester: any, fallbackEmail?: string) => {
+    const rawCompany = String(
+      requester?.company ||
+      requester?.client ||
+      requester?.companyName ||
+      requester?.organization ||
+      requester?.orgName ||
+      requester?.accountName ||
+      requester?.account?.name ||
+      requester?.account?.companyName ||
+      requester?.tenant ||
+      ''
+    ).trim()
+    if (rawCompany) return rawCompany
+    const email = String(requester?.email || fallbackEmail || '').trim()
+    return formatCompanyFromDomain(email)
+  }
+
+  const inferInboundEndUser = (ticketData: any) => {
+    const requester = ticketData?.requester
+    if (requester && (requester.name || requester.email || requester.username)) {
+      return {
+        id: requester.id,
+        role: requester.role,
+        name: requester.name || requester.username || requester.email || 'End User',
+        username: requester.username || requester.userName || requester.name || '',
+        email: requester.email || '',
+        phone: requester.phone || '',
+        site: requester.site || '',
+        accountManager: requester.accountManager || requester.reportingManager || '',
+        avatarUrl: requester.avatarUrl || requester.profilePic || requester.avatar || '',
+        company: deriveRequesterCompany(requester, requester?.email),
+      }
+    }
+
+    const body = String(ticketData?.description || '')
+    const fromLine = body.match(/^\s*From:\s*(.+)\s*$/im)?.[1]?.trim() || ''
+    if (!fromLine) return null
+
+    const emailMatch = fromLine.match(/([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)
+    const email = emailMatch?.[1] || ''
+    const namePart = fromLine.replace(/<[^>]+>/g, '').replace(email, '').replace(/["']/g, '').trim()
+    const username = email ? email.split('@')[0] : ''
+    return {
+      name: namePart || username || email || 'End User',
+      username: username || undefined,
+      email: email || undefined,
+      phone: undefined,
+      site: undefined,
+      accountManager: undefined,
+      company: formatCompanyFromDomain(email),
+    }
+  }
+
+  const generateActionId = (seed: string) => {
+    let hash = 0
+    for (let i = 0; i < seed.length; i += 1) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(i)
+      hash |= 0
+    }
+    return String(Math.abs(hash))
+  }
+
+  const inferCreatedFrom = (ticketData: any) => {
+    const explicitSource = String(ticketData?.createdFrom || ticketData?.source || '').trim().toLowerCase()
+    if (explicitSource.includes('portal')) return 'User portal'
+    if (explicitSource.includes('itsm') || explicitSource.includes('platform')) return 'Support Tech Desk Platform'
+
+    if (Number(ticketData?.requesterId || 0) > 0 && String(ticketData?.assigneeId || '').trim() === '') {
+      return 'User portal'
+    }
+
+    const requesterRole = String(ticketData?.requester?.role || ticketData?.requesterRole || '').trim().toUpperCase()
+    if (requesterRole === 'USER') return 'User portal'
+    if (requesterRole) return 'Support Tech Desk Platform'
+    return 'Support Tech Desk Platform'
+  }
+
+  const formatTimelineTime = (raw: any) => {
+    if (!raw) return new Date().toLocaleString()
+    const d = new Date(raw)
+    return Number.isNaN(d.getTime()) ? String(raw) : d.toLocaleString()
+  }
+
+  const toLocalDateTime = (raw: any) => {
+    if (!raw) return '-'
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return '-'
+    return d.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+
+  const toTimestamp = (raw: any): number | null => {
+    if (!raw) return null
+    const d = new Date(raw)
+    const ms = d.getTime()
+    return Number.isNaN(ms) ? null : ms
+  }
+
+  const formatSlaClock = (remainingMs: number) => {
+    const negative = remainingMs < 0
+    const abs = Math.abs(Math.floor(remainingMs / 1000))
+    const hh = Math.floor(abs / 3600)
+    const mm = Math.floor((abs % 3600) / 60)
+    const core = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+    return negative ? `-${core}` : core
+  }
+
+  const formatElapsedClock = (elapsedMs: number) => {
+    const totalMinutes = Math.max(0, Math.floor(elapsedMs / 60_000))
+    const hours = Math.floor(totalMinutes / 60)
+    const minutes = totalMinutes % 60
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+  }
+
+  const getSlaElapsedColor = (elapsedPercent: number) => {
+    const p = Math.max(0, Number(elapsedPercent || 0))
+    if (p <= 0) return '#008000'
+    if (p < 30) return '#008000'
+    if (p < 50) return '#9ACD32'
+    if (p < 70) return '#FFA500'
+    if (p < 90) return '#FF6A00'
+    if (p < 100) return '#FF0000'
+    return '#8B0000'
+  }
+
+  const applySlaPriority = async (priority: 'Critical' | 'High' | 'Medium' | 'Low') => {
+    if (!selectedTicket) return
+    try {
+      setSlaApplying(true)
+      await ticketService.updateTicket(selectedTicket.id, { priority })
+      const latest: any = await ticketService.getTicket(selectedTicket.id)
+      setSelectedTicket((prev) =>
+        prev
+          ? {
+              ...prev,
+              priority: (latest?.priority || priority) as Incident['priority'],
+              sla: latest?.sla || prev.sla,
+              slaTimeLeft: latest?.slaTimeLeft || latest?.sla?.resolution?.remainingLabel || prev.slaTimeLeft,
+            }
+          : prev
+      )
+      setIncidents((prev) =>
+        prev.map((i) =>
+          i.id === selectedTicket.id
+            ? {
+                ...i,
+                priority: (latest?.priority || priority) as Incident['priority'],
+                sla: latest?.sla || i.sla,
+                slaTimeLeft: latest?.slaTimeLeft || latest?.sla?.resolution?.remainingLabel || i.slaTimeLeft,
+              }
+            : i
+        )
+      )
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to update SLA')
+    } finally {
+      setSlaApplying(false)
+    }
+  }
+
+  const canonicalPriorityForRank = (rank: number): 'Critical' | 'High' | 'Medium' | 'Low' => {
+    if (rank === 1) return 'Critical'
+    if (rank === 2) return 'High'
+    if (rank === 3) return 'Medium'
+    return 'Low'
+  }
+
+  const rankFromPriorityLabel = (value: any): number => {
+    const v = String(value || '').trim().toLowerCase()
+    if (v === 'critical' || v === 'p1') return 1
+    if (v === 'high' || v === 'p2') return 2
+    if (v === 'medium' || v === 'p3') return 3
+    if (v === 'low' || v === 'p4') return 4
+    return 4
+  }
+
+  const handlePolicySelectFromPill = (policyName: string) => {
+    setSlaPolicyMenuOpen(false)
+    setSelectedSlaPolicyName(String(policyName || ''))
+    setSlaPriorityMenuOpen(true)
+  }
+
+  React.useEffect(() => {
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (slaPolicyMenuRef.current && !slaPolicyMenuRef.current.contains(target)) {
+        setSlaPolicyMenuOpen(false)
+      }
+      if (slaPriorityMenuRef.current && !slaPriorityMenuRef.current.contains(target)) {
+        setSlaPriorityMenuOpen(false)
+      }
+      if (progressFilterMenuRef.current && !progressFilterMenuRef.current.contains(target)) {
+        setShowProgressFilterMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setSlaNowMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  React.useEffect(() => {
+    const syncAvatar = () => setAvatarRefreshTick((v) => v + 1)
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'itsm.user.avatar.map.v1') syncAvatar()
+    }
+    window.addEventListener(AVATAR_CHANGED_EVENT, syncAvatar as EventListener)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(AVATAR_CHANGED_EVENT, syncAvatar as EventListener)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
+
+  const resolveHistoryAuthor = (historyEntry: any, ticketData: any) => {
+    const changedById = Number(historyEntry?.changedById || 0)
+    if (changedById > 0) {
+      const match = agents.find((a: any) => Number(a?.id) === changedById)
+      if (match) return getAgentDisplayName(match)
+      return `User #${changedById}`
+    }
+    const note = String(historyEntry?.note || '').toLowerCase()
+    const isInboundReply = note.includes('inbound email reply received') || note.includes('\nfrom:')
+    if (!isInboundReply) return 'Platform Field'
+    const requester = inferInboundEndUser(ticketData)
+    if (requester?.name || requester?.email || requester?.username) {
+      return String(requester.name || requester.email || requester.username)
+    }
+    return 'Platform Field'
+  }
+
+  const isEmailRaisedTicket = (ticketData: any) => {
+    const sourceRaw = String(ticketData?.createdFrom || ticketData?.source || '').toLowerCase()
+    if (sourceRaw.includes('email') || sourceRaw.includes('mail')) return true
+
+    const description = String(ticketData?.description || '').toLowerCase()
+    if (description.includes('inbound email') || description.includes('mailbox:') || description.includes('\nfrom:')) return true
+
+    const historyItems = Array.isArray(ticketData?.history) ? ticketData.history : []
+    return historyItems.some((h: any) => String(h?.note || '').toLowerCase().includes('inbound email'))
+  }
+
+  const getCreatedTimelineAction = (ticketData: any): 'Opened' | 'New' => {
+    if (isEmailRaisedTicket(ticketData)) return 'New'
+    const createdFrom = String(inferCreatedFrom(ticketData) || '').trim().toLowerCase()
+    if (createdFrom.includes('user portal')) return 'New'
+    return 'Opened'
+  }
+
+  const resolveTimelineAction = (opts: { noteRaw?: string; note?: string; fromStatus?: string; toStatus?: string; internal?: boolean; kind?: string; createdAction?: 'Opened' | 'New' }) => {
+    const noteRaw = String(opts.noteRaw || '').toLowerCase()
+    const note = String(opts.note || '').toLowerCase()
+    const fromStatus = String(opts.fromStatus || '').trim()
+    const toStatus = String(opts.toStatus || '').trim()
+    const internal = Boolean(opts.internal)
+    const kind = String(opts.kind || '').toLowerCase()
+
+    if (note.includes('ticket created')) return opts.createdAction || 'Opened'
+    if (note.includes('response sla marked as responded')) return 'Mark As Responded'
+    if (note.includes('asset assigned')) return 'Asset Assigned'
+    if (note.includes('asset unassigned')) return 'Asset Unassigned'
+    if (noteRaw.startsWith('[email]')) return 'Email+Note'
+    if (note.includes('inbound email reply received')) return 'Conversation'
+    if (internal && note.startsWith('private:')) return 'Private Note'
+    if (internal) return 'Internal Note'
+    if (fromStatus || toStatus) {
+      const toKey = toStatus.toLowerCase()
+      if (toKey === 'acknowledged') return 'Accept Ticket'
+      if (toKey === 'closed') return 'Close Ticket'
+      if (toStatus) return toStatus
+    }
+    if (kind === 'conversation') return 'First Response'
+    if (kind === 'system') return 'Updated'
+    return 'Updated'
+  }
+
+  const hydrateTimelineFromTicket = (ticketData: any) => {
+    const ticketKey = String(ticketData?.ticketId || ticketData?.id || '')
+    if (!ticketKey) return
+
+    const requester = inferInboundEndUser(ticketData)
+    const initialAuthor = String(requester?.name || requester?.email || requester?.username || 'Platform Field')
+    const initialText = String(ticketData?.subject || ticketData?.description || 'Ticket created').trim()
+    const initialTime = formatTimelineTime(ticketData?.createdAt)
+    const createdAction = getCreatedTimelineAction(ticketData)
+
+    const historyItems = Array.isArray(ticketData?.history) ? ticketData.history : []
+    const historyComments = historyItems
+      .map((h: any) => {
+        const noteRaw = String(h?.note || '').trim()
+        let note = noteRaw.replace(/^\[EMAIL\]\s*/i, '').trim()
+        const fromStatus = String(h?.fromStatus || '').trim()
+        const toStatus = String(h?.toStatus || '').trim()
+        const fromKey = fromStatus.toLowerCase()
+        const toKey = toStatus.toLowerCase()
+        const isAcceptTransition = fromKey === 'new' && (toKey === 'in progress' || toKey === 'assigned')
+        const fallback = fromStatus || toStatus ? `Status changed: ${fromStatus || '-'} -> ${toStatus || '-'}` : 'Ticket updated'
+        if (isAcceptTransition) {
+          const acceptedBy = resolveHistoryAuthor(h, ticketData) || getCurrentAgentName() || 'Agent'
+          note = `Accepted by ${acceptedBy}`
+        }
+        const internal = Boolean(h?.internal)
+        const kind = noteRaw.toLowerCase().startsWith('[email]')
+          ? 'conversation'
+          : classifyTimelineKind(note || fallback, internal)
+        const rawActionId = h?.id || h?.historyId || h?.eventId || ''
+        const actionId = rawActionId ? String(rawActionId) : generateActionId(`${ticketKey}|${h?.createdAt || ''}|${note || fallback}`)
+        return {
+          author: resolveHistoryAuthor(h, ticketData),
+          text: note || fallback,
+          time: formatTimelineTime(h?.createdAt),
+          timeMs: toTimestamp(h?.createdAt),
+          action: isAcceptTransition ? 'Accept Ticket' : resolveTimelineAction({ noteRaw, note: note || fallback, fromStatus, toStatus, internal, kind, createdAction }),
+          fromStatus,
+          toStatus,
+          internal,
+          changedById: Number(h?.changedById || 0) || null,
+          kind,
+          actionId,
+        }
+      })
+      .filter((e: any) => String(e.text || '').trim().length > 0)
+
+    const merged = [
+      {
+        author: initialAuthor,
+        text: `Ticket created: ${initialText}`,
+        time: initialTime,
+        timeMs: toTimestamp(ticketData?.createdAt),
+        action: createdAction,
+        internal: false,
+        changedById: null,
+        kind: 'public' as const,
+        actionId: generateActionId(`${ticketKey}|created|${initialTime}|${initialText}`),
+      },
+      ...historyComments,
+    ]
+
+    const seen = new Set<string>()
+    const deduped = merged.filter((e) => {
+    const key = `${e.author}|${e.action || ''}|${e.text}|${e.time}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+
+    const orderedForIds = deduped
+      .slice()
+      .sort((a: any, b: any) => {
+        const ta = typeof a.timeMs === 'number' ? a.timeMs : Number(a.timeMs || 0)
+        const tb = typeof b.timeMs === 'number' ? b.timeMs : Number(b.timeMs || 0)
+        if (!ta && !tb) return 0
+        if (!ta) return 1
+        if (!tb) return -1
+        return ta - tb
+      })
+
+    const idLookup = new Map<string, string>()
+    orderedForIds.forEach((entry: any, index: number) => {
+      const key = `${entry.author}|${entry.action || ''}|${entry.text}|${entry.time}`
+      idLookup.set(key, String(index + 1))
+    })
+
+    const finalTimeline = deduped.map((entry: any) => {
+      const key = `${entry.author}|${entry.action || ''}|${entry.text}|${entry.time}`
+      const { timeMs, ...rest } = entry
+      return {
+        ...rest,
+        actionId: idLookup.get(key) || String(entry.actionId || ''),
+      }
+    })
+
+    setTicketComments((prev) => ({
+      ...prev,
+      [ticketKey]: finalTimeline,
+    }))
+  }
+
+  const loadTickets = async () => {
+    if (!ticketsLoadedOnce) setTicketsLoading(true)
+    try {
+      const resolveLastAction = (ticket: any) => {
+        const toTime = (value: any) => {
+          if (!value) return ''
+          const d = new Date(value)
+          if (Number.isNaN(d.getTime())) return ''
+          return d.toISOString()
+        }
+        const history = Array.isArray(ticket?.history) ? ticket.history : []
+        const lastHistory = history.slice().sort((a: any, b: any) => {
+          const atA = new Date(a?.createdAt || a?.time || 0).getTime()
+          const atB = new Date(b?.createdAt || b?.time || 0).getTime()
+          return atB - atA
+        })[0]
+        const lastActionLabel = String(
+          ticket?.lastAction ||
+          ticket?.lastActionLabel ||
+          lastHistory?.action ||
+          lastHistory?.note ||
+          ''
+        ).trim()
+        const lastActionTime = toTime(
+          ticket?.lastActionTime ||
+          ticket?.lastActionAt ||
+          lastHistory?.createdAt ||
+          lastHistory?.time ||
+          ticket?.updatedAt ||
+          ticket?.lastUpdatedAt
+        )
+        const label = lastActionLabel || (lastActionTime ? 'Updated' : '')
+        return { label, time: lastActionTime }
+      }
+      const data: any = await ticketService.listTickets({ page: 1, pageSize: 200 })
+      const items = Array.isArray(data) ? data : (data?.items || [])
+      const mapped = items.map((t: any) => {
+        const lastActionInfo = resolveLastAction(t)
+        const requester = t.requester || {}
+        const requesterEmail = requester?.email || t.requesterEmail || ''
+        const clientCompany = deriveRequesterCompany(requester, requesterEmail)
+        return ({
+        id: t.ticketId || String(t.id),
+        slaTimeLeft: t.slaTimeLeft || t?.sla?.resolution?.remainingLabel || '--:--',
+        sla: t.sla || null,
+        subject: t.subject || t.description || '',
+        category: t.category || '',
+        issueDetail: t.issueDetail || t.subcategory || t.subCategory || t.resolutionCategory || '',
+        resolution: t.resolution || t.resolutionText || t.closureNotes || '',
+        priority: t.priority || 'Low',
+        status: String(t.status || '').toLowerCase() === 'resolved' ? 'Closed' : t.status,
+        type: t.type,
+        endUser: requester?.name || requester?.email || '',
+        clientCompany,
+        dateReported: t.createdAt || '',
+        lastAction: lastActionInfo.label,
+        lastActionTime: lastActionInfo.time,
+        assetTag: t.asset?.assetTag || t.asset?.tag || t.asset?.serial || t.assetTag || '',
+        staff: t.assignedTo?.name || t.assignee?.name || t.staff?.name || t.staff || '',
+        assignedAgentId: t.assignedTo?.id || t.assignee?.id,
+        assignedAgentName: t.assignedTo?.name || t.assignee?.name,
+        workflow: t.workflow || undefined,
+        team: t.team || t.category || undefined,
+        requesterId: t.requesterId || t.requester?.id || undefined,
+        createdFrom: inferCreatedFrom(t),
+        createdAt: t.createdAt || undefined,
+        updatedAt: t.updatedAt || undefined,
+        closedAt: t.closedAt || undefined,
+        closedByName: t.closedBy?.name || t.closedByName || undefined,
+        })
+      })
+      setIncidents(mapped)
+    } catch (err) {
+      console.warn('Failed to fetch tickets:', err)
+      setIncidents([])
+    } finally {
+      if (!ticketsLoadedOnce) {
+        setTicketsLoading(false)
+        setTicketsLoadedOnce(true)
+      }
+    }
+  }
+
+  // Hydrate from backend tickets API
+  React.useEffect(() => {
+    loadTickets()
+  }, [])
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      loadTickets()
+    }, 15000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  React.useEffect(() => {
+    if (showDetailView) {
+      loadAssetsForTicket('')
+    }
+  }, [showDetailView])
+
+  React.useEffect(() => {
+    const id = ticketId ? decodeURIComponent(ticketId) : ''
+    if (!id) {
+      setShowDetailView(false)
+      return
+    }
+    const existing = incidents.find((i) => String(i.id) === String(id))
+    if (existing) {
+      setSelectedTicket(existing)
+      if (existing.endUser) {
+        const raw = String(existing.endUser).trim()
+        setEndUser({
+          name: raw.includes('@') ? raw.split('@')[0] : raw,
+          username: raw.includes('@') ? raw.split('@')[0] : raw,
+          email: raw.includes('@') ? raw : undefined,
+        })
+      }
+      setShowDetailView(true)
+    }
+    ticketService.getTicket(id).then((d: any) => {
+      const resolveLastAction = (ticket: any) => {
+        const toTime = (value: any) => {
+          if (!value) return ''
+          const date = new Date(value)
+          if (Number.isNaN(date.getTime())) return ''
+          return date.toISOString()
+        }
+        const history = Array.isArray(ticket?.history) ? ticket.history : []
+        const lastHistory = history.slice().sort((a: any, b: any) => {
+          const atA = new Date(a?.createdAt || a?.time || 0).getTime()
+          const atB = new Date(b?.createdAt || b?.time || 0).getTime()
+          return atB - atA
+        })[0]
+        const lastActionLabel = String(
+          ticket?.lastAction ||
+          ticket?.lastActionLabel ||
+          lastHistory?.action ||
+          lastHistory?.note ||
+          ''
+        ).trim()
+        const lastActionTime = toTime(
+          ticket?.lastActionTime ||
+          ticket?.lastActionAt ||
+          lastHistory?.createdAt ||
+          lastHistory?.time ||
+          ticket?.updatedAt ||
+          ticket?.lastUpdatedAt
+        )
+        const label = lastActionLabel || (lastActionTime ? 'Updated' : '')
+        return { label, time: lastActionTime }
+      }
+        const lastActionInfo = resolveLastAction(d)
+        const requester = d?.requester || {}
+        const requesterEmail = requester?.email || d?.requesterEmail || ''
+        const clientCompany = deriveRequesterCompany(requester, requesterEmail)
+      const mapped: Incident = {
+        id: d.ticketId || String(d.id || id),
+          slaTimeLeft: d.slaTimeLeft || d?.sla?.resolution?.remainingLabel || '--:--',
+          sla: d.sla || null,
+          subject: d.subject || d.description || 'Ticket',
+        category: d.category || '',
+        issueDetail: d.issueDetail || d.subcategory || d.subCategory || d.resolutionCategory || '',
+          resolution: d.resolution || d.resolutionText || d.closureNotes || '',
+          priority: d.priority || 'Low',
+          status: d.status || 'New',
+          type: d.type || 'Incident',
+          endUser: requester?.name || requester?.email || '',
+          clientCompany,
+          dateReported: d.createdAt || '',
+          lastAction: lastActionInfo.label,
+          lastActionTime: lastActionInfo.time,
+          assetTag: d.asset?.assetTag || d.asset?.tag || d.asset?.serial || d.assetTag || '',
+        staff: d.assignedTo?.name || d.assignee?.name || d.staff?.name || d.staff || '',
+        assignedAgentId: d.assignedTo?.id || d.assignee?.id,
+        assignedAgentName: d.assignedTo?.name || d.assignee?.name,
+        workflow: d.workflow || undefined,
+        team: d.team || d.category || undefined,
+        requesterId: d.requesterId || d.requester?.id || undefined,
+        createdFrom: inferCreatedFrom(d),
+        createdAt: d.createdAt || undefined,
+        updatedAt: d.updatedAt || undefined,
+        closedAt: d.closedAt || undefined,
+        closedByName: d.closedBy?.name || d.closedByName || undefined,
+      }
+      setSelectedTicket(mapped)
+      syncSelectedTicketInList(mapped.id, {
+        category: mapped.category,
+        issueDetail: mapped.issueDetail,
+        resolution: mapped.resolution,
+        closedAt: mapped.closedAt,
+        closedByName: mapped.closedByName,
+      })
+      setEndUser(inferInboundEndUser(d))
+      hydrateTimelineFromTicket(d)
+      setShowDetailView(true)
+    }).catch(() => {
+      if (existing) return
+      setSelectedTicket({
+        id: id,
+        slaTimeLeft: '--:--',
+        sla: null,
+        subject: 'Ticket',
+        category: '',
+        issueDetail: '',
+        resolution: '',
+        priority: 'Low',
+        status: 'New',
+          type: 'Incident',
+          endUser: '',
+          clientCompany: '',
+          createdFrom: 'Support Tech Desk Platform',
+          dateReported: new Date().toLocaleString(),
+          lastAction: '',
+          lastActionTime: '',
+        })
+      setShowDetailView(true)
+    })
+  }, [ticketId])
+  React.useEffect(() => {
+    const syncPresence = () => setMyPresenceStatus(getStoredPresenceStatus())
+    const syncPresenceFromEvent = (event: Event) => {
+      const detailValue = (event as CustomEvent<{ value?: string }>)?.detail?.value
+      if (detailValue) {
+        setMyPresenceStatus(normalizePresenceStatus(detailValue))
+        return
+      }
+      syncPresence()
+    }
+    window.addEventListener('storage', syncPresence)
+    window.addEventListener(PRESENCE_CHANGED_EVENT, syncPresenceFromEvent as EventListener)
+    return () => {
+      window.removeEventListener('storage', syncPresence)
+      window.removeEventListener(PRESENCE_CHANGED_EVENT, syncPresenceFromEvent as EventListener)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    const loadAgents = () => {
+      userService.listUsers({ limit: 500 }).then((users) => {
+        setAgents(Array.isArray(users) ? users : [])
+      }).catch(() => {
+        setAgents([])
+      })
+    }
+    loadAgents()
+    const onRbacUpdated = () => loadAgents()
+    window.addEventListener('rbac-permissions-updated', onRbacUpdated)
+    return () => window.removeEventListener('rbac-permissions-updated', onRbacUpdated)
+  }, [])
+
+  React.useEffect(() => {
+    const loadSuppliers = async () => {
+      try {
+        const data = await supplierService.listSuppliers({})
+        setSupplierOptions(Array.isArray(data) ? data : [])
+      } catch (e) {
+        setSupplierOptions([])
+      }
+    }
+    loadSuppliers()
+  }, [])
+
+  React.useEffect(() => {
+    if (composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') {
+      setComposerForm((prev) => ({ ...prev, actionStatus: 'With Supplier' }))
+    }
+  }, [composerMode])
+
+  React.useEffect(() => {
+    if (String(user?.role || '').toUpperCase() !== 'ADMIN') {
+      setSlaPolicies([])
+      return
+    }
+    listSlaConfigs()
+      .then((rows: any) => setSlaPolicies(Array.isArray(rows) ? rows : []))
+      .catch(() => setSlaPolicies([]))
+  }, [user?.role])
+
+  React.useEffect(() => {
+    if (!showDetailView || !selectedTicket?.id || agents.length === 0) return
+    ticketService.getTicket(selectedTicket.id).then((d: any) => {
+      hydrateTimelineFromTicket(d)
+    }).catch(() => undefined)
+  }, [agents.length, showDetailView, selectedTicket?.id])
+
+  React.useEffect(() => {
+    const expandedCls = 'tickets-queue-expanded'
+    const collapsedCls = 'tickets-queue-collapsed'
+    if (!queueCollapsed) {
+      document.body.classList.add(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    } else {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.add(collapsedCls)
+    }
+    return () => {
+      document.body.classList.remove(expandedCls)
+      document.body.classList.remove(collapsedCls)
+    }
+  }, [queueCollapsed])
+
+  React.useEffect(() => {
+    if (!queueRoot) return
+    if (queueCollapsed) {
+      queueRoot.style.display = 'none'
+      queueRoot.style.width = '0px'
+      queueRoot.style.pointerEvents = 'none'
+    } else {
+      queueRoot.style.display = ''
+      queueRoot.style.width = ''
+      queueRoot.style.pointerEvents = ''
+    }
+    return () => {
+      queueRoot.style.display = ''
+      queueRoot.style.width = ''
+      queueRoot.style.pointerEvents = ''
+    }
+  }, [queueCollapsed, queueRoot])
+
+  React.useEffect(() => {
+    document.body.classList.add('tickets-view-active')
+    return () => {
+      document.body.classList.remove('tickets-view-active')
+    }
+  }, [])
+  React.useEffect(() => {
+    const handler = () => {
+      const cfg = loadLeftPanelConfig()
+      setTicketMyListRules(cfg.ticketsMyLists)
+      setTicketQueues(cfg.ticketQueues)
+    }
+    window.addEventListener('left-panel-config-updated', handler as EventListener)
+    return () => window.removeEventListener('left-panel-config-updated', handler as EventListener)
+  }, [])
+
+  React.useEffect(() => {
+    const pending = sessionStorage.getItem('openNewTicket')
+    if (pending) {
+      sessionStorage.removeItem('openNewTicket')
+      setShowNewIncidentModal(true)
+    }
+    const handler = () => setShowNewIncidentModal(true)
+    window.addEventListener('open-new-ticket', handler as EventListener)
+    return () => window.removeEventListener('open-new-ticket', handler as EventListener)
+  }, [])
+
+  React.useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ action?: string; target?: string }>).detail
+      if (!detail || detail.target !== 'tickets') return
+      if (detail.action === 'new') {
+        setShowNewIncidentModal(true)
+      }
+      if (detail.action === 'filter') {
+        setShowSearchBar((v) => {
+          const next = !v
+          if (!next) clearColumnFilters()
+          return next
+        })
+      }
+    }
+    window.addEventListener('shared-toolbar-action', handler as EventListener)
+    return () => window.removeEventListener('shared-toolbar-action', handler as EventListener)
+  }, [])
+
+  React.useEffect(() => {
+    const handler = (ev: any) => {
+      const q = String(ev?.detail?.query ?? '')
+      setGlobalSearch(q)
+      if (queueCollapsed) {
+        setShowSearchBar(false)
+      }
+    }
+    window.addEventListener('global-search', handler as EventListener)
+    return () => window.removeEventListener('global-search', handler as EventListener)
+  }, [queueCollapsed])
+
+  React.useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 1100) {
+        setQueueCollapsed(true)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const categoryOptions = {
+    Hardware: [
+      'Laptop',
+      'Headset',
+      'Keyboard',
+      'Mouse',
+      'Monitor',
+      'PC',
+      'Powercord',
+      'VGA cable',
+      'HDMI cable'
+    ],
+    'Hardware>Laptop': ['Adaptor', 'Adaptor Cable'],
+    Infrastructure: ['Power', 'Data Connection', 'Router', 'Server', 'Printer'],
+    'Infrastructure>Power': ['Switch', 'Socket']
+  }
+  const defaultTicketTypeOptions = [
+    'Incident',
+    'Service request',
+    'Task',
+    'New starter',
+    'Problem',
+    'Offboarding request',
+    'New Assets',
+  ]
+  const defaultWorkflowOptions = [
+    'Fault Workflow',
+    'Incident Management Workflow',
+    'Service Request Workflow',
+    'Task Workflow',
+    'Problem Workflow',
+    'Offboarding Request Workflow',
+    'Onboarding Request Workflow',
+    'Purchase and Rental Workflow',
+    'Change Workflow',
+  ]
+
+  const createTicketTypeOptions = [
+    'Incident',
+    'Service request',
+    'Task',
+    'New starter',
+    'Problem',
+    'Offboarding request',
+    'New Assets',
+  ]
+  const createTeamOptions = React.useMemo(
+    () =>
+      ticketQueues
+        .filter((queue) => {
+          if (!Array.isArray(queue.visibilityRoles) || queue.visibilityRoles.length === 0) return true
+          return queue.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+        })
+        .filter((queue) => {
+          const label = String(queue.label || '').trim().toLowerCase()
+          return label !== 'helpdesk' && label !== 'service request'
+        })
+        .map((queue) => ({ key: String(queue.id || '').trim(), label: String(queue.label || '').trim() }))
+        .filter((team) => team.key && team.label),
+    [ticketQueues, user?.role]
+  )
+  const classificationOptions = ['', 'Hardware', 'Software', 'Access', 'Network', 'General']
+  const selectedCreateType = String(newIncidentForm.ticketType || '').trim().toLowerCase()
+  const isIncidentType = selectedCreateType === 'incident'
+  const isServiceRequestType = selectedCreateType === 'service request'
+  const isTaskType = selectedCreateType === 'task'
+  const isNewStarterType = selectedCreateType === 'new starter'
+  const isProblemType = selectedCreateType === 'problem'
+  const isOffboardingType = selectedCreateType === 'offboarding request'
+  const isNewAssetsType = selectedCreateType === 'new assets'
+  const supportTeamOption = React.useMemo(
+    () => createTeamOptions.find((team) => team.label.toLowerCase().includes('support')) || createTeamOptions[0] || null,
+    [createTeamOptions]
+  )
+  const hrTeamOption = React.useMemo(
+    () => createTeamOptions.find((team) => team.label.toLowerCase().includes('hr')) || null,
+    [createTeamOptions]
+  )
+  const selectedCreateTeamLabel = createTeamOptions.find((team) => team.key === newIncidentForm.teamId)?.label || ''
+  const taskStaffOptions = React.useMemo(() => {
+    return agents
+      .map((agent) => ({
+        id: String(agent?.id || ''),
+        label: String(agent?.name || agent?.email || agent?.username || '').trim(),
+      }))
+      .filter((option) => option.id && option.label)
+  }, [agents])
+
+  React.useEffect(() => {
+    if ((isIncidentType || isTaskType || isServiceRequestType || isProblemType || isOffboardingType || isNewAssetsType) && !String(newIncidentForm.teamId || '').trim() && supportTeamOption?.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
+      return
+    }
+    if (isServiceRequestType && supportTeamOption?.key && newIncidentForm.teamId !== supportTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
+      return
+    }
+    if (isOffboardingType && hrTeamOption?.key && newIncidentForm.teamId !== hrTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: hrTeamOption.key }))
+      return
+    }
+    if (isProblemType && supportTeamOption?.key && newIncidentForm.teamId !== supportTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
+      return
+    }
+    if (isNewAssetsType && supportTeamOption?.key && newIncidentForm.teamId !== supportTeamOption.key) {
+      setNewIncidentForm((prev) => ({ ...prev, teamId: supportTeamOption.key }))
+      return
+    }
+    if (isNewStarterType) {
+      const starterTemplate =
+        'New Starter Name,\nJob Title,\nStart Date,\nLine Manager,\nSoftware Access Required,\nGoogle workspace account,\nGoogle Drive Access Required,\nAdd To Google Drive User Group(s),\nHardware Required'
+      const updates: any = {}
+      const preferredTeam = hrTeamOption?.key || supportTeamOption?.key || ''
+      if (preferredTeam && newIncidentForm.teamId !== preferredTeam) updates.teamId = preferredTeam
+      if (!String(newIncidentForm.description || '').trim()) updates.description = starterTemplate
+      if (Object.keys(updates).length > 0) setNewIncidentForm((prev) => ({ ...prev, ...updates }))
+    }
+  }, [isIncidentType, isTaskType, isServiceRequestType, isNewStarterType, isProblemType, isOffboardingType, isNewAssetsType, newIncidentForm.teamId, newIncidentForm.description, supportTeamOption, hrTeamOption])
+  const defaultStatusOptions = ['New', 'Acknowledged', 'In Progress', 'With User', 'With Supplier', 'Awaiting Approval', 'On Hold', 'Closed']
+  const defaultResolutionOptions = ['Not set', '3rd Party', 'AutoRecover', 'Internal Repair', 'Repaired']
+  const createdFromOptions = ['User portal', 'Support Tech Desk Platform']
+
+  const uniqueOptions = (values: Array<string | null | undefined>) =>
+    Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)))
+
+  const ticketTypeWorkflowMap: Record<string, string> = {
+    incident: 'Fault Workflow',
+    'service request': 'Service Request Workflow',
+    task: 'Task Workflow',
+    'new starter': 'Onboarding Request Workflow',
+    problem: 'Problem Workflow',
+    'offboarding request': 'Offboarding Request Workflow',
+    'new assets': 'Purchase and Rental Workflow',
+  }
+  const getWorkflowForType = (type: string) => {
+    const key = String(type || '').trim().toLowerCase()
+    return ticketTypeWorkflowMap[key] || 'Incident Management Workflow'
+  }
+
+  const [ticketWorkflowValue, setTicketWorkflowValue] = useState('Incident Management Workflow')
+  const [ticketTeamValue, setTicketTeamValue] = useState('')
+  const [createdFromValue, setCreatedFromValue] = useState('Support Tech Desk Platform')
+  const [additionalStaffValue, setAdditionalStaffValue] = useState('')
+  const [issueValue, setIssueValue] = useState('')
+  const [issueDetailValue, setIssueDetailValue] = useState('')
+  const [resolutionValue, setResolutionValue] = useState('Not set')
+  const [editingTicketField, setEditingTicketField] = useState<string | null>(null)
+  const [editingEndUserField, setEditingEndUserField] = useState<null | 'name' | 'email' | 'phone' | 'site' | 'accountManager'>(null)
+  const [endUserDraft, setEndUserDraft] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    site: '',
+    accountManager: '',
+  })
+  const [searchValues, setSearchValues] = useState({
+    viewing: '',
+    id: '',
+    slaTimeLeft: '',
+    team: '',
+    subject: '',
+    category: '',
+    assetTag: '',
+    priority: '',
+    status: '',
+    type: '',
+    endUser: '',
+    lastAction: '',
+    dateReported: '',
+    staff: '',
+    issueDetail: '',
+    resolution: '',
+    dateClosed: ''
+  })
+  // per-column minimum widths (px) and snap step
+  const columnMinWidths: Record<string, number> = {
+    checkbox: 40,
+    status: 80,
+    id: 80,
+    team: 120,
+    subject: 180,
+    sla: 140,
+    assetTag: 120,
+    priority: 80,
+    type: 100,
+    endUser: 140,
+    lastAction: 120,
+    date: 120,
+    staff: 120,
+    category: 120,
+    issueDetail: 140,
+    resolution: 140,
+    dateClosed: 130
+  }
+  const widthSnap = 10
+  // table container width (start exactly fitting columns; expand only when needed)
+  const baseColWidths = {
+    checkbox: 40,
+    status: 100,
+    id: 100,
+    team: 140,
+    subject: 220,
+    sla: 160,
+    assetTag: 140,
+    priority: 100,
+    type: 100,
+    endUser: 160,
+    lastAction: 150,
+    date: 140,
+    staff: 140,
+    category: 160,
+    issueDetail: 160,
+    resolution: 150,
+    dateClosed: 150
+  }
+  const colsCount = Object.keys(baseColWidths).length
+  const gapTotal = (colsCount - 1) * 10 // match CSS grid gap
+  const paddingHorizontal = 32 // left+right padding from .table-header/.table-row (16px each)
+  const initialTableWidth = Math.ceil(Object.values(baseColWidths).reduce((s, v) => s + (v as number), 0) + gapTotal + paddingHorizontal)
+  const [tableWidth, setTableWidth] = useState<number>(initialTableWidth)
+  const tableRef = React.useRef<HTMLDivElement | null>(null)
+  // per-column widths used for gridTemplateColumns.
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
+    checkbox: baseColWidths.checkbox,
+    status: baseColWidths.status,
+    id: baseColWidths.id,
+    team: baseColWidths.team,
+    subject: baseColWidths.subject,
+    sla: baseColWidths.sla,
+    assetTag: baseColWidths.assetTag,
+    priority: baseColWidths.priority,
+    type: baseColWidths.type,
+    endUser: baseColWidths.endUser,
+    lastAction: baseColWidths.lastAction,
+    date: baseColWidths.date,
+    staff: baseColWidths.staff,
+    category: baseColWidths.category,
+    issueDetail: baseColWidths.issueDetail,
+    resolution: baseColWidths.resolution,
+    dateClosed: baseColWidths.dateClosed
+  })
+  const [resizingColumn, setResizingColumn] = useState<string | null>(null)
+  const [resizeStartX, setResizeStartX] = useState(0)
+  const [resizeStartWidth, setResizeStartWidth] = useState(0)
+
+  const filterOptions = [
+    'All Tickets',
+    'Closed Tickets',
+    'Open Tickets'
+  ]
+  const progressFilterOptions: ProgressFilterType[] = [
+    'All Actions',
+    'Conversation & Internal',
+    'Conversation',
+    'Internal Conversations',
+    'Staff',
+    'Public ( User View)',
+    'Private',
+  ]
+  const progressFilterIcons: Record<ProgressFilterType, string> = {
+    'All Actions': 'eye',
+    'Conversation & Internal': 'message-circle',
+    'Conversation': 'messages-square',
+    'Internal Conversations': 'corner-up-left',
+    'Staff': 'user',
+    'Public ( User View)': 'eye',
+    'Private': 'eye-off',
+  }
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedTickets([])
+      setSelectAll(false)
+    } else {
+      setSelectedTickets(incidents.map(i => i.id))
+      setSelectAll(true)
+    }
+  }
+
+  const handleSelectTicket = (ticketId: string) => {
+    setSelectedTickets(prev => {
+      if (prev.includes(ticketId)) {
+        return prev.filter(id => id !== ticketId)
+      } else {
+        return [...prev, ticketId]
+      }
+    })
+  }
+  const handleCreateIncident = () => {
+    const typeValue = String(newIncidentForm.ticketType || '').trim()
+    const subjectValue = String(newIncidentForm.subject || '').trim()
+    const descriptionValue = String(newIncidentForm.description || '').trim()
+    const requiresTeam =
+      isIncidentType ||
+      isTaskType ||
+      isServiceRequestType ||
+      isProblemType ||
+      isOffboardingType ||
+      isNewAssetsType
+    if (!typeValue || !subjectValue || !descriptionValue) {
+      alert('Please fill in all required fields: Ticket Type, Subject, and Description')
+      return
+    }
+    if ((isIncidentType || isTaskType || isNewStarterType) && !String(newIncidentForm.priority || '').trim()) {
+      alert('Priority is required for this ticket type')
+      return
+    }
+    if (requiresTeam && !String(newIncidentForm.teamId || '').trim()) {
+      alert('Team is required for this ticket type')
+      return
+    }
+    if (isTaskType) {
+      if (!String(newIncidentForm.staffId || '').trim()) {
+        alert('Staff is required for Task tickets')
+        return
+      }
+      if (!String(newIncidentForm.startDate || '').trim() || !String(newIncidentForm.endDate || '').trim()) {
+        alert('Start Date and End Date are required for Task tickets')
+        return
+      }
+    }
+
+    const teamIdValue = String(newIncidentForm.teamId || '').trim()
+    const workflowValue = getWorkflowForType(typeValue)
+    const teamLabelValue = createTeamOptions.find((team) => team.key === teamIdValue)?.label || ''
+    const staffLabelValue = taskStaffOptions.find((staff) => staff.id === String(newIncidentForm.staffId || ''))?.label || ''
+    const metaLines: string[] = []
+    if (String(newIncidentForm.cc || '').trim()) metaLines.push(`CC: ${String(newIncidentForm.cc).trim()}`)
+    if (String(newIncidentForm.asset || '').trim()) metaLines.push(`Assets: ${String(newIncidentForm.asset).trim()}`)
+    if (isIncidentType && String(newIncidentForm.classification || '').trim()) metaLines.push(`Classifications: ${String(newIncidentForm.classification).trim()}`)
+    if (teamLabelValue) metaLines.push(`Team: ${teamLabelValue}`)
+    if (isTaskType && staffLabelValue) metaLines.push(`Staff: ${staffLabelValue}`)
+    if (isTaskType && String(newIncidentForm.startDate || '').trim()) metaLines.push(`Start Date: ${String(newIncidentForm.startDate).trim()}`)
+    if (isTaskType && String(newIncidentForm.endDate || '').trim()) metaLines.push(`End Date: ${String(newIncidentForm.endDate).trim()}`)
+    let finalDescription = descriptionValue
+    if (metaLines.length > 0) {
+      for (const line of metaLines) {
+        finalDescription = `${finalDescription}\n${line}`
+      }
+    }
+
+    // call backend createTicket
+    (async () => {
+      try {
+        const payload = {
+          type: typeValue,
+          workflow: workflowValue,
+          priority: String(newIncidentForm.priority || '').trim() || undefined,
+          category: teamLabelValue || selectedCreateTeamLabel || undefined,
+          description: finalDescription,
+          subject: subjectValue,
+          createdFrom: 'Support Tech Desk Platform',
+          requesterId: user?.id ? Number(user.id) : undefined,
+          requesterEmail: user?.email || undefined,
+          assigneeId: isTaskType && String(newIncidentForm.staffId || '').trim() ? Number(newIncidentForm.staffId) : undefined,
+          teamId: teamIdValue || undefined,
+        }
+        const created: any = await ticketService.createTicket(payload)
+        const newId = created.ticketId || `#${String(created.id).padStart(6,'0')}`
+        const newIncident: Incident = {
+          id: newId,
+          slaTimeLeft: '00:00',
+          subject: created.subject || created.description || subjectValue,
+          category: created.category || teamLabelValue || '',
+          priority: (created.priority || newIncidentForm.priority || 'Low') as Incident['priority'],
+          status: created.status || 'New',
+          type: created.type,
+          workflow: created.workflow || workflowValue,
+          endUser: '',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'Support Tech Desk Platform',
+          dateReported: new Date(created.createdAt).toLocaleString(),
+          lastAction: 'Created',
+          lastActionTime: new Date().toISOString()
+        }
+
+        setIncidents([newIncident, ...incidents])
+        setShowNewIncidentModal(false)
+        setNewIncidentForm({ ticketType: 'Incident', teamId: '', cc: '', subject: '', description: '', asset: '', priority: '', classification: '', staffId: '', startDate: '', endDate: '' })
+        // Refresh from DB to ensure persisted view is accurate
+        await loadTickets()
+      } catch (e) {
+        alert('Failed to create ticket')
+        // fallback to local demo behavior
+        const lastId = incidents[0]?.id
+        const numericPart = typeof lastId === 'string' ? parseInt(lastId.replace(/[^0-9]/g, ''), 10) : (typeof lastId === 'number' ? lastId : 0)
+        const nextNum = (numericPart || 0) + 1
+        const newId = '#' + String(nextNum).padStart(6, '0')
+        const newIncident: Incident = {
+          id: newId,
+          slaTimeLeft: '00:00',
+          subject: subjectValue,
+          category: teamLabelValue || '',
+          priority: (newIncidentForm.priority || 'Low') as Incident['priority'],
+          status: 'New',
+          type: typeValue,
+          workflow: workflowValue,
+          endUser: '',
+          createdFrom: user?.role === 'USER' ? 'User portal' : 'Support Tech Desk Platform',
+          dateReported: new Date().toLocaleString(),
+          lastAction: 'Created',
+          lastActionTime: new Date().toISOString()
+        }
+        setIncidents([newIncident, ...incidents])
+        setShowNewIncidentModal(false)
+        setNewIncidentForm({ ticketType: 'Incident', teamId: '', cc: '', subject: '', description: '', asset: '', priority: '', classification: '', staffId: '', startDate: '', endDate: '' })
+      }
+    })()
+  }
+  const handleSearchChange = (column: string, value: string) => {
+    setSearchValues(prev => ({
+      ...prev,
+      [column]: value
+    }))
+  }
+
+  const clearColumnFilters = () => {
+    setSearchValues({
+      viewing: '',
+      id: '',
+      slaTimeLeft: '',
+      team: '',
+      subject: '',
+      category: '',
+      assetTag: '',
+      priority: '',
+      status: '',
+      type: '',
+      endUser: '',
+      lastAction: '',
+      dateReported: '',
+      staff: '',
+      issueDetail: '',
+      resolution: '',
+      dateClosed: ''
+    })
+  }
+
+  const statusClass = (s: string) => s.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-]/g, '')
+  const hasInboundUpdate = (incident: Incident) => {
+    const label = String(incident.lastAction || '').toLowerCase()
+    if (!label) return false
+    return label.includes('inbound email reply received')
+      || label.includes('inbound email')
+      || label.includes('email reply received')
+  }
+
+  const handleTicketClick = (ticket: Incident) => {
+    setSelectedTicket(ticket)
+    setShowDetailView(true)
+    navigate(`/tickets/${encodeURIComponent(ticket.id)}`)
+
+    // fetch full ticket details (including requester/end-user) from backend if available
+    import('../modules/tickets/services/ticket.service').then(svc => {
+      svc.getTicket(ticket.id).then((d: any) => {
+        // backend returns ticket with requester included as `requester`
+        setEndUser(inferInboundEndUser(d))
+        setTicketAsset(d.asset || null)
+        setAssetAssignId(d.asset?.id || '')
+        hydrateTimelineFromTicket(d)
+        // merge any additional ticket fields (e.g., updated status)
+        setSelectedTicket(prev => prev ? {
+          ...prev,
+          status: d.status || prev.status,
+          createdFrom: inferCreatedFrom(d),
+          dateReported: d.createdAt ? new Date(d.createdAt).toLocaleString() : prev.dateReported,
+          createdAt: d.createdAt || prev.createdAt,
+          updatedAt: d.updatedAt || prev.updatedAt,
+          closedAt: d.closedAt || prev.closedAt,
+          closedByName: d.closedBy?.name || d.closedByName || prev.closedByName,
+        } : prev)
+      }).catch(() => {
+        // ignore failures; keep demo state
+      })
+    })
+  }
+
+  // Timeline entries keyed by ticket id
+  const [ticketComments, setTicketComments] = useState<Record<string, TimelineEntry[]>>({})
+
+  const getCurrentAgentName = () => {
+    if (!user) return 'You'
+    return user.name || user.email || user.username || user.id || 'You'
+  }
+
+  const getAgentDisplayName = (a: any) => {
+    const name = a?.name || ''
+    if (name.trim()) return name
+    const username = a?.username || a?.userName || ''
+    if (String(username || '').trim()) return String(username).trim()
+    const email = String(a?.email || '').trim()
+    if (email) {
+      const local = email.split('@')[0] || email
+      const first = local.split(/[._-]/).filter(Boolean)[0] || local
+      return first ? first[0].toUpperCase() + first.slice(1) : email
+    }
+    return 'User'
+  }
+
+  const getAgentPresenceClass = (agent: any): 'available' | 'away' | 'dnd' | 'offline' => {
+    const agentId = String(agent?.id || '').trim()
+    const agentEmail = String(agent?.email || '').trim().toLowerCase()
+    const agentName = String(getAgentDisplayName(agent) || '').trim().toLowerCase()
+    const meId = String(user?.id || '').trim()
+    const meEmail = String(user?.email || '').trim().toLowerCase()
+    const meName = String(user?.name || '').trim().toLowerCase()
+    const isMe =
+      (agentId && meId && agentId === meId) ||
+      (agentEmail && meEmail && agentEmail === meEmail) ||
+      (agentName && meName && agentName === meName)
+    if (isMe) return toPresenceClass(myPresenceStatus)
+
+    const raw = String(agent?.presenceStatus || agent?.status || '').trim().toLowerCase()
+    if (!raw) return 'available'
+    if (raw.includes('do not disturb') || raw.includes('dnd') || raw.includes('busy')) return 'dnd'
+    if (raw.includes('away')) return 'away'
+    if (raw.includes('inactive') || raw.includes('offline') || raw.includes('disabled')) return 'offline'
+    if (raw.includes('active') || raw.includes('available') || raw.includes('online')) return 'available'
+    return 'available'
+  }
+
+  const shouldShowQueuePresenceDot = (_presenceClass: 'available' | 'away' | 'dnd' | 'offline') => true
+
+  const findAgentRecord = (agentKey: string, label?: string) => {
+    const key = String(agentKey || '').trim().toLowerCase()
+    const displayLabel = String(label || '').trim().toLowerCase()
+    return (
+      agents.find((a) => String(a?.id || '').trim().toLowerCase() === key) ||
+      agents.find((a) => String(getAgentDisplayName(a) || '').trim().toLowerCase() === key) ||
+      agents.find((a) => displayLabel && String(getAgentDisplayName(a) || '').trim().toLowerCase() === displayLabel) ||
+      null
+    )
+  }
+
+  const renderQueueAgentAvatar = (agent: any, fallbackLabel?: string) => {
+    const displayName = String(getAgentDisplayName(agent) || fallbackLabel || 'User').trim()
+    const merged = {
+      ...(agent || {}),
+      name: displayName,
+      email: String(agent?.email || '').trim(),
+    }
+    const meId = String(user?.id || '').trim()
+    const meName = String(user?.name || '').trim().toLowerCase()
+    const meEmail = String(user?.email || '').trim().toLowerCase()
+    const mergedName = String(merged?.name || '').trim().toLowerCase()
+    const mergedEmail = String(merged?.email || '').trim().toLowerCase()
+    const mergedId = String(merged?.id || '').trim()
+    const isMe = Boolean(
+      (meId && mergedId && meId === mergedId) ||
+      (meName && mergedName && meName === mergedName) ||
+      (meEmail && mergedEmail && meEmail === mergedEmail)
+    )
+    const avatarUrl = isMe ? getUserAvatarUrl(user) : getUserAvatarUrl(merged)
+    const initials = getUserInitials(merged, getInitials(displayName))
+    return (
+      <span className={`queue-avatar-content${avatarUrl ? '' : ' fallback-visible'}`}>
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={displayName}
+            className="queue-avatar-image"
+            onError={(e) => {
+              e.currentTarget.parentElement?.classList.add('fallback-visible')
+            }}
+          />
+        ) : null}
+        <span className="queue-avatar-fallback">{initials}</span>
+      </span>
+    )
+  }
+
+  const classifyTimelineKind = (text: string, internal = false, explicitKind?: TimelineEntry['kind']): TimelineEntry['kind'] => {
+    if (explicitKind) return explicitKind
+    const t = String(text || '').toLowerCase()
+    if (t.includes('[email]') || t.includes('inbound email reply received') || t.includes('email user') || t.includes('note + email') || t.includes('email supplier')) {
+      return 'conversation'
+    }
+    if (t.includes('response sla') || t.includes('resolution sla') || t.includes('sla')) return 'sla'
+    if (t.includes('asset assigned') || t.includes('asset unassigned')) return 'asset'
+    if (t.includes('user name') || t.includes('email address') || t.includes('phone number') || t.includes('reporting manager') || t.includes('site')) return 'user'
+    if (internal && (t.includes('private') || t.startsWith('internal:'))) return 'private'
+    if (internal) return 'internal'
+    if (t.includes('status changed') || t.includes('accepted by') || t.includes('acknowledge')) return 'system'
+    return 'public'
+  }
+
+  const addTicketComment = (
+    ticketId: string,
+    text: string,
+    meta?: { internal?: boolean; kind?: TimelineEntry['kind']; changedById?: number | null }
+  ) => {
+    const now = new Date().toLocaleString()
+    const author = getCurrentAgentName()
+    const internal = Boolean(meta?.internal)
+    const kind = classifyTimelineKind(text, internal, meta?.kind)
+    const changedById = Number(meta?.changedById || user?.id || 0) || null
+    setTicketComments(prev => ({
+      ...prev,
+      [ticketId]: [ ...(prev[ticketId] || []), { author, text, time: now, internal, kind, changedById } ]
+    }))
+  }
+
+  const handleTriage = () => {
+    if (!selectedTicket) return
+    // Perform backend transition and update UI
+    (async () => {
+      try {
+        const res = await ticketService.transitionTicket(selectedTicket.id, 'In Progress')
+        const updated = incidents.map(i => i.id === selectedTicket.id ? { ...i, status: res.status } : i)
+        setIncidents(updated)
+        setSelectedTicket(prev => prev ? { ...prev, status: res.status } : prev)
+        addTicketComment(selectedTicket.id, 'Ticket triaged and set to In Progress')
+      } catch (err: any) {
+        // fallback: optimistic update if backend fails for connectivity
+        console.warn('Triage transition failed', err)
+        alert(err?.response?.data?.error || err?.message || 'Failed to triage ticket')
+      }
+    })()
+  }
+
+  const isIncidentOrFault = (t?: string) => {
+    const v = (t || '').toLowerCase()
+    return v === 'incident' || v === 'fault'
+  }
+  const normalizeTicketTypeKey = (value?: string) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+  const getNonIncidentWorkflowButtons = () => {
+    if (!selectedTicket) return []
+    const typeKey = normalizeTicketTypeKey(selectedTicket.type)
+    const status = String(selectedTicket.status || '')
+    const statusKey = status.toLowerCase()
+    const actionState = getTicketActionState(selectedTicket)
+    const acceptedDone = actionState.accepted || statusKey !== 'new'
+    const acknowledgedDone = actionState.ackSent || (acceptedDone && statusKey !== 'acknowledged')
+    const buttons: { label: string; onClick: () => void; className?: string }[] = [{ label: 'Back', onClick: closeDetail }]
+    const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
+    if (acknowledgedDone && !responseMarked) buttons.push({ label: 'Mark as responsed', onClick: handleMarkAsResponsed })
+    const go = (to: string, note?: string) => () => applyStatus(to, note || `Status updated to ${to}`)
+    const addCommonButtons = () => {
+      if (statusKey === 'new' && !actionState.accepted) buttons.push({ label: 'Accept', onClick: handleAccept })
+      if (acceptedDone && !actionState.ackSent) buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
+      if (acceptedDone) buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
+      if (acknowledgedDone && !actionState.supplierLogged) {
+        buttons.push({ label: 'Log to Supplier', onClick: () => openComposer('logSupplier') })
+      } else if (acknowledgedDone) {
+        buttons.push({ label: 'Email Supplier', onClick: () => openComposer('emailSupplier') })
+        buttons.push({ label: 'Call Back Supplier', onClick: () => openComposer('callbackSupplier') })
+      }
+      buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+      if (acceptedDone) buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
+      buttons.push({ label: 'Escalate', onClick: handleEscalate })
+      if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
+    }
+
+    addCommonButtons()
+
+    if (statusKey === 'closed') {
+      buttons.push({ label: 'Re-open', onClick: go('In Progress', 'Re-opened') })
+      return buttons
+    }
+    if (statusKey === 'rejected') {
+      buttons.push({ label: 'Re-open', onClick: go('In Progress', 'Re-opened') })
+      buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'servicerequest') {
+      if (statusKey === 'new') {
+        buttons.push({ label: 'Request Approval', onClick: go('Awaiting Approval') })
+        buttons.push({ label: 'Start', onClick: go('In Progress') })
+      } else if (statusKey === 'awaiting approval') {
+        buttons.push({ label: 'Approve', onClick: go('In Progress') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'in progress') {
+        buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      }
+      return buttons
+    }
+
+    if (typeKey === 'changerequestassetreplacement' || typeKey === 'changerequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Verify Asset', onClick: go('Under Verification') })
+      else if (statusKey === 'under verification') buttons.push({ label: 'Request Approval', onClick: go('Awaiting Approval') })
+      else if (statusKey === 'awaiting approval') {
+        buttons.push({ label: 'Approve', onClick: go('Approved') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'approved') buttons.push({ label: 'Start', onClick: go('In Progress') })
+      else if (statusKey === 'in progress') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'accessrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Request Approval', onClick: go('Manager Approval') })
+      else if (statusKey === 'manager approval') {
+        buttons.push({ label: 'Approve', onClick: go('IT Approval') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'it approval') buttons.push({ label: 'Start', onClick: go('Provisioning') })
+      else if (statusKey === 'provisioning') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'newstarterrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Request HR Confirmation', onClick: go('HR Confirmation') })
+      else if (statusKey === 'hr confirmation') buttons.push({ label: 'Start IT Setup', onClick: go('IT Setup') })
+      else if (statusKey === 'it setup') buttons.push({ label: 'Mark Ready', onClick: go('Ready for Joining') })
+      else if (statusKey === 'ready for joining') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'leaverrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Request HR Confirmation', onClick: go('HR Confirmation') })
+      else if (statusKey === 'hr confirmation') buttons.push({ label: 'Revoke Access', onClick: go('Access Revoked') })
+      else if (statusKey === 'access revoked') buttons.push({ label: 'Complete Offboarding', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'task') {
+      if (statusKey === 'assigned') buttons.push({ label: 'Start', onClick: go('In Progress') })
+      else if (statusKey === 'in progress') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'softwarerequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Request Approval', onClick: go('Manager Approval') })
+      else if (statusKey === 'manager approval') {
+        buttons.push({ label: 'Approve', onClick: go('Budget Approval') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'budget approval') buttons.push({ label: 'Start', onClick: go('Procurement') })
+      else if (statusKey === 'procurement') buttons.push({ label: 'Install Software', onClick: go('Installation') })
+      else if (statusKey === 'installation') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'hrrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Start', onClick: go('HR Review') })
+      else if (statusKey === 'hr review') {
+        buttons.push({ label: 'Approve', onClick: go('In Progress') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'in progress') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (typeKey === 'peripheralrequest') {
+      if (statusKey === 'new') buttons.push({ label: 'Check Stock', onClick: go('Stock Check') })
+      else if (statusKey === 'stock check') buttons.push({ label: 'Request Approval', onClick: go('Approval') })
+      else if (statusKey === 'approval') {
+        buttons.push({ label: 'Approve', onClick: go('Issued') })
+        buttons.push({ label: 'Reject', onClick: go('Rejected') })
+      } else if (statusKey === 'issued') buttons.push({ label: 'Mark Completed', onClick: go('Completed') })
+      else if (statusKey === 'completed') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (statusKey === 'in progress') buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+    if (statusKey === 'awaiting approval') {
+      buttons.push({ label: 'Approve', onClick: go('In Progress') })
+      buttons.push({ label: 'Reject', onClick: go('Rejected') })
+    }
+    return buttons
+  }
+
+  const getSupplierDisplayName = (supplier: SupplierOption) => {
+    return String(
+      supplier.companyName ||
+      supplier.contactName ||
+      supplier.contactPerson ||
+      supplier.companyMail ||
+      supplier.contactEmail ||
+      `Supplier #${supplier.id}`
+    ).trim()
+  }
+
+  const resolveSupplierEmail = (supplier?: SupplierOption | null) => {
+    if (!supplier) return ''
+    const candidates = [
+      supplier.companyMail,
+      supplier.contactEmail,
+      supplier.contactEmail2,
+      supplier.contactEmail3,
+      supplier.contactEmail4,
+      supplier.contactEmail5,
+    ]
+    return String(candidates.find((value) => String(value || '').trim()) || '').trim()
+  }
+
+  const closeDetail = () => {
+    setShowDetailView(false)
+    navigate('/tickets')
+  }
+
+  const getTicketActionState = (ticket: Incident | null) => {
+    if (!ticket) return { accepted: false, ackSent: false, supplierLogged: false }
+    const key = ticket.id
+    const base = actionStateByTicket[key] || { accepted: false, ackSent: false, supplierLogged: false }
+    const status = String(ticket.status || '').toLowerCase()
+    const normalizedStatus = status === 'resolved' ? 'closed' : status
+    const inferredAccepted = normalizedStatus !== 'new'
+    const inferredAck = ['in progress', 'closed', 'with supplier', 'awaiting approval'].includes(normalizedStatus)
+    const inferredSupplier = normalizedStatus.includes('supplier')
+    return {
+      accepted: base.accepted || inferredAccepted,
+      ackSent: base.ackSent || inferredAck,
+      supplierLogged: base.supplierLogged || inferredSupplier,
+    }
+  }
+
+  const updateTicketStatusLocal = (ticketId: string, status: string) => {
+    setIncidents((prev) => prev.map((i) => (i.id === ticketId ? { ...i, status } : i)))
+    setSelectedTicket((prev) => (prev ? { ...prev, status } : prev))
+  }
+
+  const markTicketActionState = (ticketId: string, patch: Partial<{ accepted: boolean; ackSent: boolean; supplierLogged: boolean }>) => {
+    setActionStateByTicket((prev) => ({
+      ...prev,
+      [ticketId]: {
+        accepted: prev[ticketId]?.accepted || false,
+        ackSent: prev[ticketId]?.ackSent || false,
+        supplierLogged: prev[ticketId]?.supplierLogged || false,
+        ...patch,
+      },
+    }))
+  }
+
+  const getComposerHeading = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail' = composerMode
+  ) => {
+    if (mode === 'acknowledge') return 'Acknowledge'
+    if (mode === 'emailUser') return 'Email End User'
+    if (mode === 'logSupplier') return 'Log With Supplier'
+    if (mode === 'emailSupplier') return 'Email Supplier'
+    if (mode === 'callbackSupplier') return 'Call Back Supplier'
+    if (mode === 'approval') return 'Requesting Approval'
+    if (mode === 'close') return 'Close Ticket'
+    return 'Note + Email'
+  }
+
+  const getEndUserAutoRecipient = () => {
+    const email = String(endUser?.email || '').trim()
+    if (email) return email
+    const fallback = String(selectedTicket?.endUser || '').trim()
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fallback)) return fallback
+    return ''
+  }
+
+  const htmlToPlainText = (html: string) => {
+    if (typeof window === 'undefined') return html
+    const container = document.createElement('div')
+    container.innerHTML = html
+    return String(container.textContent || container.innerText || '').trim()
+  }
+
+  const escapeHtml = (value: string) => (
+    String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+  )
+
+  const sanitizePreviewUrl = (raw: string, tagName: string) => {
+    const value = String(raw || '').trim()
+    if (!value) return ''
+    if (value.startsWith('#') || value.startsWith('/')) return value
+    const lower = value.toLowerCase()
+    if (tagName === 'img' && lower.startsWith('data:image/')) return value
+    if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('mailto:') || lower.startsWith('tel:')) {
+      return value
+    }
+    return ''
+  }
+
+  const sanitizePreviewHtml = (rawHtml: string) => {
+    const raw = String(rawHtml || '')
+    if (!raw.trim()) return ''
+    if (typeof window === 'undefined') return escapeHtml(raw)
+
+    const template = document.createElement('template')
+    template.innerHTML = raw
+    const allowedTags = new Set(['a', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul'])
+    const blockedTags = new Set(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'form', 'input', 'button', 'textarea', 'select', 'svg', 'math'])
+    const allowedAttrs = new Set(['href', 'src', 'alt', 'title', 'target', 'rel', 'colspan', 'rowspan'])
+
+    const sanitizeNode = (node: Node) => {
+      const children = Array.from(node.childNodes)
+      for (const child of children) sanitizeNode(child)
+
+      if (node.nodeType !== Node.ELEMENT_NODE) return
+      const element = node as HTMLElement
+      const tagName = element.tagName.toLowerCase()
+
+      if (blockedTags.has(tagName)) {
+        element.remove()
+        return
+      }
+
+      if (!allowedTags.has(tagName)) {
+        const fragment = document.createDocumentFragment()
+        while (element.firstChild) fragment.appendChild(element.firstChild)
+        element.replaceWith(fragment)
+        return
+      }
+
+      for (const attr of Array.from(element.attributes)) {
+        const name = attr.name.toLowerCase()
+        const value = String(attr.value || '')
+        if (name.startsWith('on')) {
+          element.removeAttribute(attr.name)
+          continue
+        }
+        if (!allowedAttrs.has(name)) {
+          element.removeAttribute(attr.name)
+          continue
+        }
+        if (name === 'href' || name === 'src') {
+          const safeUrl = sanitizePreviewUrl(value, tagName)
+          if (!safeUrl) {
+            element.removeAttribute(attr.name)
+            continue
+          }
+          element.setAttribute(attr.name, safeUrl)
+        }
+      }
+
+      if (tagName === 'a' && element.getAttribute('href')) {
+        element.setAttribute('target', '_blank')
+        element.setAttribute('rel', 'noopener noreferrer')
+      }
+    }
+
+    sanitizeNode(template.content)
+    return template.innerHTML
+  }
+
+  const formatTemplateDate = (raw: string) => {
+    if (!raw) return '-'
+    const d = new Date(raw)
+    if (Number.isNaN(d.getTime())) return raw
+    return d.toLocaleDateString()
+  }
+
+  const getApprovalTemplate = () => {
+    if (!selectedTicket) return ''
+    const approverName = composerForm.approvalTeam || 'Approver'
+    const requesterName = String(endUser?.name || selectedTicket.endUser || 'Requester').trim() || 'Requester'
+    const department = String(selectedTicket.team || selectedTicket.category || '-').trim() || '-'
+    const requestType = String(selectedTicket.type || 'Service').trim() || 'Service'
+    const priority = String(selectedTicket.priority || '-').trim() || '-'
+    const shortDescription = String(selectedTicket.subject || '-').trim() || '-'
+    const businessJustification = String(selectedTicket.issueDetail || '-').trim() || '-'
+    const impactDetails = String(selectedTicket.resolution || '-').trim() || '-'
+    const plannedStartDate = formatTemplateDate(selectedTicket.createdAt || '')
+    const plannedEndDate = '-'
+
+    return `Dear ${approverName},
+
+Approval is required for the following request:
+
+Ticket ID: ${selectedTicket.id}
+Request Type: ${requestType}
+Requested By: ${requesterName}
+Department: ${department}
+Priority: ${priority}
+
+Description:
+${shortDescription}
+
+Business Justification:
+${businessJustification}
+
+Impact:
+${impactDetails}
+
+Planned Start Date: ${plannedStartDate}
+Planned End Date: ${plannedEndDate}
+
+Kindly review and approve or reject this request at your earliest convenience.
+
+You may respond by:
+- Clicking Approve in the system
+- Clicking Reject in the system
+- Replying to this email with "Approved" or "Rejected"
+
+If rejected, please provide a reason for tracking purposes.
+
+Thank you for your prompt action.
+
+Regards,
+Service Desk
+Support Tech Desk
+
+---
+Quick Approval Template
+
+Hi ${approverName},
+
+Please review the below request:
+
+Ticket ID: ${selectedTicket.id}
+Requested By: ${requesterName}
+Request: ${shortDescription}
+
+Kindly reply with:
+YES - to approve
+NO - to reject
+
+If rejecting, please mention the reason.
+
+Thank you,
+Service Desk Team
+
+---
+System Notification Version
+
+Subject: Approval Pending - Ticket #${selectedTicket.id}
+
+You have a pending approval request.
+
+Ticket: #${selectedTicket.id}
+Requester: ${requesterName}
+Priority: ${priority}
+Summary: ${shortDescription}
+
+Click below to proceed:
+[Approve] [Reject]`
+  }
+
+  const loadStoredList = <T,>(key: string, fallback: T): T => {
+    if (typeof window === 'undefined') return fallback
+    try {
+      const raw = window.localStorage.getItem(key)
+      if (!raw) return fallback
+      const parsed = JSON.parse(raw)
+      return parsed as T
+    } catch {
+      return fallback
+    }
+  }
+
+  const resolveComposerTemplateAction = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
+  ) => {
+    if (mode === 'acknowledge') return 'Acknowledge'
+    if (mode === 'emailUser') return 'Email User'
+    if (mode === 'logSupplier') return 'Log to Supplier'
+    if (mode === 'emailSupplier') return 'Email Supplier'
+    if (mode === 'callbackSupplier') return 'Call Back Supplier'
+    if (mode === 'approval') return 'Requesting Approval'
+    if (mode === 'close') return 'Close'
+    return 'Note + Email'
+  }
+
+  const applyTemplateTokens = (rawBody: string) => {
+    const requesterName = String(endUser?.name || selectedTicket?.endUser || 'User').trim() || 'User'
+    const assetId = String((selectedTicket as any)?.asset?.assetId || (selectedTicket as any)?.asset?.id || '').trim() || '-'
+    const assetSite = String((selectedTicket as any)?.asset?.site || (ticketAsset as any)?.site || '-').trim() || '-'
+    const ticketId = String(selectedTicket?.id || '').trim() || '-'
+    const status = String(selectedTicket?.status || '-').trim() || '-'
+    const type = String(selectedTicket?.type || '-').trim() || '-'
+    const category = String(selectedTicket?.category || '-').trim() || '-'
+    const section = String(selectedTicket?.team || '-').trim() || '-'
+    const subject = String(selectedTicket?.subject || selectedTicket?.description || '-').trim() || '-'
+    const byKey: Record<string, string> = {
+      user_name: requesterName,
+      username: requesterName,
+      user: requesterName,
+      recipient: requesterName,
+      recipientname: requesterName,
+      asset_id: assetId,
+      ticket_id: ticketId,
+      ticketid: ticketId,
+      faultid: ticketId,
+      subject,
+      status,
+      assettag: assetId,
+      assetsite: assetSite,
+      category2: category,
+      category3: category,
+      section,
+      tickettype: type,
+    }
+    return String(rawBody || '')
+      .replace(/\[\$\s*ticket\s*id\s*\$\]/gi, ticketId)
+      .replace(/\[\$\s*tickcet\s*id\s*\$\]/gi, ticketId)
+      .replace(/\$\s*ticket\s*id\s*\$/gi, ticketId)
+      .replace(/\$\s*tickcet\s*id\s*\$/gi, ticketId)
+      .replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/gi, (_, key: string) => byKey[String(key || '').toLowerCase()] ?? `{{${key}}}`)
+      .replace(/\$([A-Za-z_][A-Za-z0-9_ ]*[A-Za-z0-9_])\$/g, (full, key: string) => {
+        const normalized = String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+        return byKey[normalized] ?? full
+      })
+      .replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (full, key: string) => byKey[String(key || '').toLowerCase()] ?? full)
+  }
+
+  const getComposerTemplateBody = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
+  ) => {
+    const templates = loadStoredList<EmailTemplateRecord[]>(EMAIL_TEMPLATE_STORAGE_KEY, [])
+    if (!Array.isArray(templates) || templates.length === 0) return ''
+    const actionKey = resolveComposerTemplateAction(mode).toLowerCase()
+    const match = templates.find((t) => {
+      const key = String(t?.buttonKey || '').trim().toLowerCase()
+      return Boolean(t?.active) && key === actionKey
+    })
+    if (!match) return ''
+    return applyTemplateTokens(String(match.body || ''))
+  }
+
+  const toComposerEditorHtml = (body: string) => {
+    const raw = String(body || '')
+    if (!raw.trim()) return ''
+    const hasHtmlTags = /<[a-z][\s\S]*>/i.test(raw)
+    if (hasHtmlTags) return raw
+    return `<div>${escapeHtml(raw).replace(/\n/g, '<br/>')}</div>`
+  }
+
+  const buildMailPreviewHtml = () => {
+    const signatureList = loadStoredList<EmailSignatureRecord[]>(EMAIL_SIGNATURE_STORAGE_KEY, [])
+    const userId = user?.id ? String(user.id) : ''
+    const userRole = String(user?.role || '').trim().toUpperCase()
+    const activeSignatures = Array.isArray(signatureList) ? signatureList.filter((s) => s && s.active) : []
+    const signature = activeSignatures.find((s) => String(s.userId || '').trim() === userId)
+      || activeSignatures.find((s) => String(s.userId || '').trim().toUpperCase() === userRole)
+      || activeSignatures.find((s) => String(s.userLabel || '').trim().toUpperCase() === userRole)
+    const bodyHtml = sanitizePreviewHtml(composerBodyHtml || '<p>(Empty message)</p>')
+    const defaultSignature = 'Kind regards,\nSupport Tech Desk Support Team'
+    const rawSignature = String(signature?.signatureHtml || '').trim() || defaultSignature
+    const hasTags = /<[^>]+>/.test(rawSignature)
+    const safeSignature = sanitizePreviewHtml(hasTags ? rawSignature : rawSignature.replace(/\n/g, '<br/>'))
+    const signatureHtml = `<div>${safeSignature}</div>`
+
+    return `
+      <div>${bodyHtml}</div>
+      ${signatureHtml}
+    `
+  }
+
+  const CANNED_TEXT_STORAGE_KEY = 'composer.canned_texts.v1'
+  const loadCannedTexts = () => loadStoredList<{ id: string; name: string; html: string }[]>(CANNED_TEXT_STORAGE_KEY, [])
+  const saveCannedTexts = (items: { id: string; name: string; html: string }[]) => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(CANNED_TEXT_STORAGE_KEY, JSON.stringify(items))
+  }
+
+  const insertHtmlAtCursor = (html: string) => {
+    const editor = composerEditorRef.current
+    if (!editor) return
+    editor.focus()
+    document.execCommand('insertHTML', false, html)
+    handleComposerInput(editor.innerHTML)
+  }
+
+  const readFileAsDataUrl = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result || '')
+        if (!result) reject(new Error(`Failed to read file "${file.name}"`))
+        else resolve(result)
+      }
+      reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`))
+      reader.readAsDataURL(file)
+    })
+
+  const clearComposerMediaPreviewUrls = () => {
+    composerMediaUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    composerMediaUrlsRef.current = []
+  }
+
+  const insertComposerMedia = async (files: FileList | null) => {
+    const editor = composerEditorRef.current
+    if (!editor || !files || files.length === 0) return
+    editor.focus()
+    const htmlItems = await Promise.all(Array.from(files).map(async (file) => {
+      const safeName = escapeHtml(file.name || 'media')
+      const type = String(file.type || '').toLowerCase()
+      const dataUrl = await readFileAsDataUrl(file).catch(() => '')
+      if (type.startsWith('image/')) {
+        return dataUrl
+          ? `<div><img src="${dataUrl}" alt="${safeName}" style="max-width:100%;height:auto;border-radius:8px;" /></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('video/')) {
+        return dataUrl
+          ? `<div><video controls style="max-width:100%;height:auto;border-radius:8px;"><source src="${dataUrl}" type="${type}" /></video></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('audio/')) {
+        return dataUrl
+          ? `<div><audio controls style="width:100%;"><source src="${dataUrl}" type="${type}" /></audio></div>`
+          : `<div>${safeName}</div>`
+      }
+      return `<div>${safeName}</div>`
+    }))
+    const html = htmlItems.join('<br/>')
+    document.execCommand('insertHTML', false, html)
+    handleComposerInput(editor.innerHTML)
+  }
+
+  const openComposerMediaPicker = (accept: string) => {
+    setComposerMediaAccept(accept)
+    composerMediaInputRef.current?.click()
+  }
+
+  const getClipboardFiles = (event: React.ClipboardEvent<HTMLElement>) => {
+    const files: File[] = []
+    const fromItems = Array.from(event.clipboardData?.items || [])
+    for (const item of fromItems) {
+      if (item.kind !== 'file') continue
+      const file = item.getAsFile()
+      if (file) files.push(file)
+    }
+    for (const file of Array.from(event.clipboardData?.files || [])) {
+      files.push(file)
+    }
+    const seen = new Set<string>()
+    return files.filter((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}:${file.type}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }
+
+  const handleComposerPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = getClipboardFiles(event)
+    if (!files.length) return
+    const hasStringItems = Array.from(event.clipboardData?.items || []).some((item) => item.kind === 'string')
+    if (!hasStringItems) event.preventDefault()
+    const transfer = new DataTransfer()
+    files.forEach((file) => transfer.items.add(file))
+    insertComposerMedia(transfer.files)
+    const nonImageTransfer = new DataTransfer()
+    Array.from(transfer.files).forEach((file) => {
+      if (!String(file.type || '').toLowerCase().startsWith('image/')) nonImageTransfer.items.add(file)
+    })
+    pushAttachments(nonImageTransfer.files, 'composer')
+  }
+
+  const handleComposerDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files || [])
+    if (!droppedFiles.length) return
+    event.preventDefault()
+    const transfer = new DataTransfer()
+    droppedFiles.forEach((file) => transfer.items.add(file))
+    insertComposerMedia(transfer.files)
+    const nonImageTransfer = new DataTransfer()
+    Array.from(transfer.files).forEach((file) => {
+      if (!String(file.type || '').toLowerCase().startsWith('image/')) nonImageTransfer.items.add(file)
+    })
+    pushAttachments(nonImageTransfer.files, 'composer')
+  }
+
+  const getClosestListEl = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return null
+    let node = sel.getRangeAt(0).commonAncestorContainer as HTMLElement | null
+    if (node?.nodeType === 3) node = node.parentElement
+    while (node && node !== composerEditorRef.current) {
+      if (node.tagName === 'OL' || node.tagName === 'UL') return node
+      node = node.parentElement
+    }
+    return null
+  }
+
+  const applyListStyle = (style: string) => {
+    const list = getClosestListEl()
+    if (list) (list as HTMLElement).style.listStyleType = style
+  }
+
+  const applyComposerCommand = (command: string, value?: string) => {
+    const editor = composerEditorRef.current
+    if (!editor) return
+    editor.focus()
+    if (command === 'createLink') {
+      if (!value) return
+      document.execCommand('createLink', false, value)
+      return
+    }
+    if (command === 'insertImage') {
+      if (!value) return
+      document.execCommand('insertImage', false, value)
+      return
+    }
+    if (command === 'insertText' && value) {
+      document.execCommand('insertText', false, value)
+      return
+    }
+    if (value !== undefined) {
+      document.execCommand(command, false, value)
+    } else {
+      document.execCommand(command, false)
+    }
+  }
+
+  const handleComposerInput = (html: string) => {
+    const text = htmlToPlainText(html)
+    setComposerBodyHtml(html)
+    setComposerBodyText(text)
+    setComposerForm((prev) => ({ ...prev, body: text }))
+  }
+
+  const handleInternalNoteInput = (html: string) => {
+    const text = htmlToPlainText(html)
+    setInternalNoteForm((prev) => ({ ...prev, body: text }))
+  }
+
+  const clearInternalNoteMediaPreviewUrls = () => {
+    internalNoteMediaUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+    internalNoteMediaUrlsRef.current = []
+  }
+
+  const insertInternalNoteMedia = async (files: FileList | null) => {
+    const editor = internalNoteEditorRef.current
+    if (!editor || !files || files.length === 0) return
+    editor.focus()
+    const htmlItems = await Promise.all(Array.from(files).map(async (file) => {
+      const safeName = escapeHtml(file.name || 'media')
+      const type = String(file.type || '').toLowerCase()
+      const dataUrl = await readFileAsDataUrl(file).catch(() => '')
+      if (type.startsWith('image/')) {
+        return dataUrl
+          ? `<div><img src="${dataUrl}" alt="${safeName}" style="max-width:100%;height:auto;border-radius:8px;" /></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('video/')) {
+        return dataUrl
+          ? `<div><video controls style="max-width:100%;height:auto;border-radius:8px;"><source src="${dataUrl}" type="${type}" /></video></div>`
+          : `<div>${safeName}</div>`
+      }
+      if (type.startsWith('audio/')) {
+        return dataUrl
+          ? `<div><audio controls style="width:100%;"><source src="${dataUrl}" type="${type}" /></audio></div>`
+          : `<div>${safeName}</div>`
+      }
+      return `<div>${safeName}</div>`
+    }))
+    const html = htmlItems.join('<br/>')
+    document.execCommand('insertHTML', false, html)
+    handleInternalNoteInput(editor.innerHTML)
+  }
+
+  const openInternalNoteMediaPicker = () => {
+    setInternalNoteMediaAccept('image/*')
+    internalNoteMediaInputRef.current?.click()
+  }
+
+  const openInternalNoteDocumentPicker = () => {
+    setInternalNoteMediaAccept('*/*')
+    internalNoteMediaInputRef.current?.click()
+  }
+
+  const handleInternalNotePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const files = getClipboardFiles(event)
+    if (!files.length) return
+    const hasStringItems = Array.from(event.clipboardData?.items || []).some((item) => item.kind === 'string')
+    if (!hasStringItems) event.preventDefault()
+    const transfer = new DataTransfer()
+    files.forEach((file) => transfer.items.add(file))
+    insertInternalNoteMedia(transfer.files)
+    pushAttachments(transfer.files, 'note')
+  }
+
+  const handleInternalNoteDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files || [])
+    if (!droppedFiles.length) return
+    event.preventDefault()
+    const transfer = new DataTransfer()
+    droppedFiles.forEach((file) => transfer.items.add(file))
+    insertInternalNoteMedia(transfer.files)
+    pushAttachments(transfer.files, 'note')
+  }
+
+  const toolbarIcon = (type: string) => {
+    const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8 }
+    if (type === 'fullscreen') return <svg {...common}><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+    if (type === 'font') return <svg {...common}><path d="M6 20 12 4l6 16M8.5 14h7" /></svg>
+    if (type === 'align') return <svg {...common}><path d="M4 6h16M4 10h12M4 14h16M4 18h12" /></svg>
+    if (type === 'ordered') return <svg {...common}><path d="M5 7h1M5 12h1M5 17h1M9 7h11M9 12h11M9 17h11" /></svg>
+    if (type === 'unordered') return <svg {...common}><circle cx="5" cy="7" r="1.2" fill="currentColor" stroke="none" /><circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="5" cy="17" r="1.2" fill="currentColor" stroke="none" /><path d="M9 7h11M9 12h11M9 17h11" /></svg>
+    if (type === 'quote') return <svg {...common}><path d="M9 8H6v4h3v4H5V8a4 4 0 0 1 4-4M19 8h-3v4h3v4h-4V8a4 4 0 0 1 4-4" /></svg>
+    if (type === 'link') return <svg {...common}><path d="M10 13a5 5 0 0 1 0-7l1.5-1.5a5 5 0 1 1 7 7L17 13" /><path d="M14 11a5 5 0 0 1 0 7L12.5 19.5a5 5 0 1 1-7-7L7 11" /></svg>
+    if (type === 'image') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="1.5" /><circle cx="10" cy="10" r="1.5" /><path d="m6 17 4-4 3 3 3-4 2 2" /></svg>
+    if (type === 'video') return <svg {...common}><rect x="3" y="6" width="14" height="12" rx="2" /><path d="m10 10 4 2-4 2z" /><path d="m17 10 4-2v8l-4-2z" /></svg>
+    if (type === 'audio') return <svg {...common}><path d="M5 10v4h4l5 4V6l-5 4z" /><path d="M18 9a4 4 0 0 1 0 6" /><path d="M20 7a7 7 0 0 1 0 10" /></svg>
+    if (type === 'doc') return <svg {...common}><path d="M7 3h7l5 5v13H7z" /><path d="M14 3v5h5" /><path d="M10 13h6M10 17h6" /></svg>
+    if (type === 'table') return <svg {...common}><rect x="4" y="5" width="16" height="14" rx="1.5" /><path d="M4 10h16M4 14h16M10 5v14M14 5v14" /></svg>
+    if (type === 'emoji') return <svg {...common}><circle cx="12" cy="12" r="9" /><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none" /><circle cx="15" cy="10" r="1" fill="currentColor" stroke="none" /><path d="M8 15c1 1.5 2.5 2 4 2s3-.5 4-2" /></svg>
+    if (type === 'canned') return <svg {...common}><path d="M4 5h16v11H7l-3 3z" /><path d="M8 9h8M8 12h5" /></svg>
+    if (type === 'line') return <svg {...common}><path d="M4 12h16" /></svg>
+    if (type === 'clear') return <svg {...common}><path d="M4 20h10" /><path d="m7 4 10 10" /><path d="m14 4-7 7" /><path d="m17 14 3 3" /></svg>
+    return <svg {...common}><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none" /></svg>
+  }
+
+  const buildReplySubject = (ticket: any) => {
+    const ticketLabel = String(ticket?.id || '').trim()
+    const raw = String(ticket?.subject || 'Ticket Update').trim()
+    const withoutRe = raw.replace(/^re:\s*/i, '').trim()
+    const withoutTicketTags = withoutRe.replace(/\[(?:STD|TB)#\d+\]/gi, ' ').replace(/\s+/g, ' ').trim()
+    const base = withoutTicketTags || 'Ticket Update'
+    return `Re: ${base} [${ticketLabel}]`
+  }
+
+  const openComposer = (
+    mode: 'acknowledge' | 'emailUser' | 'logSupplier' | 'emailSupplier' | 'callbackSupplier' | 'approval' | 'close' | 'noteEmail'
+  ) => {
+    if (!selectedTicket) return
+    setComposerMode(mode)
+    const defaultStatus =
+      mode === 'logSupplier' || mode === 'emailSupplier' || mode === 'callbackSupplier'
+        ? 'With Supplier'
+        : String(selectedTicket.status || 'With User')
+    const toDefault = mode === 'emailUser' || mode === 'acknowledge' || mode === 'close' || mode === 'noteEmail'
+      ? getEndUserAutoRecipient()
+      : ''
+    const subjectDefault = buildReplySubject(selectedTicket)
+
+    const templateBody = getComposerTemplateBody(mode)
+    const defaultBody = templateBody || (mode === 'approval' ? getApprovalTemplate() : '')
+    const defaultBodyHtml = toComposerEditorHtml(defaultBody)
+    const defaultBodyText = defaultBodyHtml ? htmlToPlainText(defaultBodyHtml) : ''
+
+    setComposerForm((prev) => ({
+      ...prev,
+      to: toDefault,
+      cc: '',
+      bcc: '',
+      subject: subjectDefault,
+      body: defaultBodyText,
+      actionStatus: defaultStatus,
+      currentAction: '',
+      nextAction: '',
+      asset: '',
+    }))
+    setComposerBodyHtml(defaultBodyHtml)
+    setComposerBodyText(defaultBodyText)
+    if (composerEditorRef.current) composerEditorRef.current.innerHTML = defaultBodyHtml
+    setComposerAttachments([])
+    clearComposerMediaPreviewUrls()
+    setShowCcField(false)
+    setShowBccField(false)
+    setComposerMenuOpen(false)
+    setShowActionComposer(true)
+    window.requestAnimationFrame(() => {
+      if (composerEditorRef.current) composerEditorRef.current.innerHTML = defaultBodyHtml
+    })
+  }
+
+  const getActionButtons = () => {
+    if (!selectedTicket) return []
+    if (!isIncidentOrFault(selectedTicket.type)) return getNonIncidentWorkflowButtons()
+    if (user?.role === 'USER') {
+      return [{ label: 'Back', onClick: closeDetail }]
+    }
+
+    const status = (selectedTicket.status || '').toLowerCase()
+    const actionState = getTicketActionState(selectedTicket)
+    const acceptedDone = actionState.accepted || status !== 'new'
+    const acknowledgedDone = actionState.ackSent || (acceptedDone && status !== 'acknowledged')
+    const responseMarked = Boolean((selectedTicket as any)?.sla?.response?.completedAt) && Number((selectedTicket as any)?.sla?.response?.completedById || 0) > 0
+    const buttons: { label: string; onClick: () => void; className?: string }[] = []
+
+    buttons.push({ label: 'Back', onClick: closeDetail })
+    if (acknowledgedDone && !responseMarked) buttons.push({ label: 'Mark as responsed', onClick: handleMarkAsResponsed })
+
+    if (status === 'closed') {
+      buttons.push({ label: 'Re-open', onClick: () => applyStatus('In Progress', 'Re-opened') })
+      buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+      buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
+      return buttons
+    }
+
+    if (status === 'new' && !actionState.accepted) {
+      buttons.push({ label: 'Accept', onClick: handleAccept })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+      buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (status === 'acknowledged' && !actionState.ackSent) {
+      buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
+      buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+      buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+      return buttons
+    }
+
+    if (acceptedDone && !actionState.ackSent) buttons.push({ label: 'Acknowledge', onClick: () => openComposer('acknowledge') })
+    buttons.push({ label: 'Email User', onClick: () => openComposer('emailUser') })
+
+    if (acknowledgedDone && !actionState.supplierLogged) {
+      buttons.push({ label: 'Log to Supplier', onClick: () => openComposer('logSupplier') })
+    } else if (acknowledgedDone) {
+      buttons.push({ label: 'Email Supplier', onClick: () => openComposer('emailSupplier') })
+      buttons.push({ label: 'Call Back Supplier', onClick: () => openComposer('callbackSupplier') })
+    }
+
+    buttons.push({ label: 'Internal note', onClick: () => openInternalNoteEditor('internal') })
+    buttons.push({ label: 'Private note', onClick: () => openInternalNoteEditor('private') })
+    buttons.push({ label: 'Note + Email', onClick: () => openComposer('noteEmail') })
+    buttons.push({ label: 'Escalate', onClick: handleEscalate })
+    if (acknowledgedDone) buttons.push({ label: 'Requesting Approval', onClick: () => openComposer('approval') })
+    buttons.push({ label: 'Close', onClick: () => openComposer('close') })
+    return buttons
+  }
+
+  const renderUnassignedAvatar = () => (
+    <div className="queue-avatar queue-avatar-dark">
+      <svg className="queue-avatar-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M4 20c1.6-4 14.4-4 16 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </div>
+  )
+
+  const actionIconMap: Record<string, string> = {
+    Back: 'arrow-left',
+    Accept: 'circle-check-big',
+    Acknowledge: 'check',
+    'Internal note': 'sticky-note',
+    'Private note': 'sticky-note',
+    Close: 'circle-x',
+    'Email User': 'mail',
+    'Log to Supplier': 'package',
+    Approval: 'clipboard-check',
+    'Requesting Approval': 'clipboard-check',
+    'Request Approval': 'clipboard-check',
+    'Note + Email': 'mail-plus',
+    Escalate: 'arrow-up',
+    'Call Back Supplier': 'phone-call',
+    'Re-open': 'rotate-ccw',
+    Start: 'play',
+    Approve: 'thumbs-up',
+    Reject: 'x-circle',
+    'Verify Asset': 'shield-check',
+    'Start IT Setup': 'settings',
+    'Mark Ready': 'badge-check',
+    'Request HR Confirmation': 'user-check',
+    'Revoke Access': 'user-x',
+    'Complete Offboarding': 'user-minus',
+    'Install Software': 'download',
+    'Mark Completed': 'check-check',
+    'Check Stock': 'package-search',
+    Reclose: 'lock',
+    'Email Supplier': 'send',
+    'Recall to Approval': 'refresh-ccw',
+    'Waiting for Approval': 'clipboard-check',
+    'In Progress': 'refresh-ccw',
+    Acknowledged: 'check',
+    'Mark as responsed': 'badge-check',
+  }
+
+  const isOpenStatus = (status: string) => {
+    const s = (status || '').toLowerCase()
+    const normalized = s === 'resolved' ? 'closed' : s
+    return normalized !== 'closed'
+  }
+
+  // Compute queue counts early before queueSidebar JSX uses them
+  const openIncidents = incidents.filter((i) => isOpenStatus(i.status))
+  const visibleTicketQueues = ticketQueues.filter((q) => {
+    if (!Array.isArray(q.visibilityRoles) || q.visibilityRoles.length === 0) return true
+    return q.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+  }).filter((q) => {
+    const label = String(q.label || '').trim().toLowerCase()
+    // Remove legacy/dev pseudo-queues from rendering.
+    return label !== 'helpdesk' && label !== 'service request'
+  }).sort((a, b) => {
+    const labelA = String(a.label || '').trim().toLowerCase()
+    const labelB = String(b.label || '').trim().toLowerCase()
+    const priority = (label: string) => {
+      if (label.includes('support')) return 0
+      if (label.includes('hr')) return 1
+      if (label.includes('management')) return 2
+      return 3
+    }
+    const prA = priority(labelA)
+    const prB = priority(labelB)
+    if (prA !== prB) return prA - prB
+    return labelA.localeCompare(labelB)
+  })
+  const mapTeam = (incident: Incident): { team: string; forcedUnassigned: boolean } => {
+    const category = String(incident.category || '').trim()
+    const matchedQueue = visibleTicketQueues.find(
+      (queue) => queue.label.trim().toLowerCase() === category.toLowerCase()
+    )
+    if (matchedQueue) return { team: matchedQueue.label, forcedUnassigned: false }
+    // Unknown/new categories are not forced into a hardcoded team.
+    const fallbackLabel = String(visibleTicketQueues[0]?.label || '').trim()
+    return { team: fallbackLabel || 'Unassigned', forcedUnassigned: true }
+  }
+  const countUnassigned = openIncidents.filter((i) => !i.assignedAgentId && !i.assignedAgentName).length
+  const countWithSupplier = openIncidents.filter((i) => {
+    const s = (i.status || '').toLowerCase()
+    return s.includes('supplier')
+  }).length
+  const teamBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
+    const t = mapTeam(i).team
+    acc[t] = (acc[t] || 0) + 1
+    return acc
+  }, {})
+  const teamGroups = (() => {
+    const groups: Record<string, { total: number; unassigned: number; agents: Record<string, { label: string; count: number }> }> = {}
+
+    // Always show configured ticket queues in the team panel, even when count is 0.
+    visibleTicketQueues.forEach((queue) => {
+      const key = String(queue.label || '').trim()
+      if (!key || groups[key]) return
+      groups[key] = { total: 0, unassigned: 0, agents: {} }
+    })
+    openIncidents.forEach((incident) => {
+      const mapped = mapTeam(incident)
+      const team = mapped.team
+      if (!team) return
+      if (!groups[team]) groups[team] = { total: 0, unassigned: 0, agents: {} }
+      groups[team].total += 1
+      const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
+      if (mapped.forcedUnassigned || !agentKey) {
+        groups[team].unassigned += 1
+        return
+      }
+      const label = incident.assignedAgentName || String(incident.assignedAgentId)
+      if (!groups[team].agents[agentKey]) groups[team].agents[agentKey] = { label, count: 0 }
+      groups[team].agents[agentKey].count += 1
+    })
+
+    // Include queue-scoped staff even when they have 0 tickets in the queue.
+    agents.forEach((agent: any) => {
+      const role = String(agent?.role || '').trim().toUpperCase()
+      const status = String(agent?.status || '').trim().toUpperCase()
+      const isDisabled = ['DEACTIVATED', 'DISABLED', 'INACTIVE'].includes(status)
+      const isAgentLike = role === 'AGENT' || role === 'ADMIN' || Boolean(agent?.isServiceAccount)
+      if (!isAgentLike) return
+      if (isDisabled) return
+
+      const queueIds: string[] = Array.isArray(agent?.queueIds)
+        ? agent.queueIds.map((queueId: any) => String(queueId || '').trim().toLowerCase()).filter(Boolean)
+        : []
+
+      const agentKey = String(agent?.id || agent?.email || '').trim()
+      const agentLabel = getAgentDisplayName(agent)
+      if (!agentKey || !agentLabel) return
+
+      const normalize = (value: string) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+      const matchedTeamNames = new Set<string>()
+      queueIds.forEach((queueId: string) => {
+        const queueIdNorm = normalize(queueId)
+        const matchedQueue = visibleTicketQueues.find((queue) => {
+          const queueLabel = String(queue.label || '').trim()
+          const queueKey = String((queue as any).id || '').trim()
+          const labelNorm = normalize(queueLabel)
+          const keyNorm = normalize(queueKey)
+          if (labelNorm === queueIdNorm || keyNorm === queueIdNorm) return true
+          return false
+        })
+        const teamName = matchedQueue ? String(matchedQueue.label || '').trim() : ''
+
+        if (teamName) matchedTeamNames.add(teamName)
+      })
+
+      // Fallback: if no queue mappings are set, show active staff in the default visible team.
+      if (matchedTeamNames.size === 0) {
+        const fallbackTeam = String(visibleTicketQueues[0]?.label || '').trim()
+        if (fallbackTeam) matchedTeamNames.add(fallbackTeam)
+      }
+
+      matchedTeamNames.forEach((teamName) => {
+        if (!groups[teamName]) groups[teamName] = { total: 0, unassigned: 0, agents: {} }
+        if (!groups[teamName].agents[agentKey]) groups[teamName].agents[agentKey] = { label: agentLabel, count: 0 }
+      })
+    })
+
+    return groups
+  })()
+  const typeBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
+    const t = i.type || 'Unknown'
+    acc[t] = (acc[t] || 0) + 1
+    return acc
+  }, {})
+  const statusBuckets = openIncidents.reduce<Record<string, number>>((acc, i) => {
+    const s = i.status || 'Unknown'
+    acc[s] = (acc[s] || 0) + 1
+    return acc
+  }, {})
+  const myListCounts: Record<string, number> = {
+    all: incidents.length,
+    open: openIncidents.length,
+    closed: incidents.filter((i) => String(i.status || '').toLowerCase() === 'closed').length,
+    breached: incidents.filter((i) => String(i.slaTimeLeft || '').startsWith('-')).length,
+    hold: incidents.filter((i) => {
+      const status = String(i.status || '').toLowerCase()
+      const sla = String(i.slaTimeLeft || '').toLowerCase()
+      return status.includes('hold') || sla.includes('hold')
+    }).length,
+  }
+  const queueViews = [
+    { key: 'myLists', label: 'My Lists', icon: '?' },
+    { key: 'staff', label: 'Tickets by Staff', icon: '?' },
+    { key: 'team', label: 'Tickets by Team', icon: '??' },
+    { key: 'type', label: 'Tickets by Ticket Type', icon: '??' },
+    { key: 'status', label: 'Tickets by Status', icon: '?' },
+    { key: 'all', label: 'All Tickets', icon: '?' },
+  ] as const
+  const queueViewTitle: Record<typeof queueView, string> = {
+    all: 'All Tickets',
+    team: 'Tickets by Team',
+    staff: 'Tickets by Staff',
+    type: 'Tickets by Ticket Type',
+    status: 'Tickets by Status',
+    myLists: 'My Lists',
+  }
+
+  const ticketTypeOptions = React.useMemo(
+    () => uniqueOptions([...defaultTicketTypeOptions, ...incidents.map((incident) => incident.type), selectedTicket?.type]),
+    [incidents, selectedTicket?.type]
+  )
+  const workflowOptions = React.useMemo(
+    () => uniqueOptions([...defaultWorkflowOptions, selectedTicket?.workflow]),
+    [selectedTicket?.workflow]
+  )
+  const statusOptions = React.useMemo(
+    () => uniqueOptions([...defaultStatusOptions, ...incidents.map((incident) => incident.status), selectedTicket?.status]),
+    [incidents, selectedTicket?.status]
+  )
+  const teamOptions = React.useMemo(
+    () => uniqueOptions(visibleTicketQueues.map((queue) => queue.label)),
+    [visibleTicketQueues]
+  )
+  const agentOptions = React.useMemo(
+    () =>
+      agents.map((agent) => ({
+        id: String(agent?.id || ''),
+        label: getAgentDisplayName(agent),
+      })),
+    [agents]
+  )
+  const escalationStaffOptions = React.useMemo(() => {
+    const teamKey = String(escalateForm.teamId || '').trim()
+    if (!teamKey) return []
+    const normalize = (value: string) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '')
+    const teamLabel = createTeamOptions.find((team) => team.key === teamKey)?.label || teamKey
+    const teamKeyNorm = normalize(teamKey)
+    const teamLabelNorm = normalize(teamLabel)
+
+    return agents
+      .filter((agent: any) => {
+        const role = String(agent?.role || '').trim().toUpperCase()
+        const status = String(agent?.status || '').trim().toUpperCase()
+        const isDisabled = ['DEACTIVATED', 'DISABLED', 'INACTIVE'].includes(status)
+        const isAgentLike = role === 'AGENT' || role === 'ADMIN' || Boolean(agent?.isServiceAccount)
+        if (!isAgentLike || isDisabled) return false
+        const queueIds: string[] = Array.isArray(agent?.queueIds)
+          ? agent.queueIds.map((queueId: any) => String(queueId || '').trim()).filter(Boolean)
+          : []
+        if (queueIds.length === 0) return false
+        return queueIds.some((queueId) => {
+          const queueNorm = normalize(queueId)
+          return queueNorm === teamKeyNorm || queueNorm === teamLabelNorm
+        })
+      })
+      .map((agent: any) => ({
+        id: String(agent?.id || ''),
+        label: getAgentDisplayName(agent),
+      }))
+  }, [agents, createTeamOptions, escalateForm.teamId])
+
+  React.useEffect(() => {
+    if (!escalateForm.teamId) return
+    if (escalateForm.staffId === 'unassigned') return
+    const exists = escalationStaffOptions.some((agent) => agent.id === String(escalateForm.staffId))
+    if (!exists) {
+      setEscalateForm((prev) => ({ ...prev, staffId: 'unassigned' }))
+    }
+  }, [escalateForm.teamId, escalateForm.staffId, escalationStaffOptions])
+  const issueOptions = React.useMemo(
+    () => uniqueOptions(Object.keys(categoryOptions).map((key) => key.split('>')[0])),
+    [categoryOptions]
+  )
+  const issueDetailOptions = React.useMemo(() => {
+    if (!issueValue || issueValue === 'Not set') return []
+    const direct = categoryOptions[issueValue as keyof typeof categoryOptions] || []
+    const nested = Object.entries(categoryOptions)
+      .filter(([key]) => key.startsWith(`${issueValue}>`))
+      .flatMap(([, values]) => values)
+    return uniqueOptions([...direct, ...nested, selectedTicket?.issueDetail, issueDetailValue])
+  }, [categoryOptions, issueDetailValue, issueValue, selectedTicket?.issueDetail])
+
+  const syncSelectedTicketInList = (ticketId: string, patch: Partial<Incident>) => {
+    setSelectedTicket((prev) => (prev && prev.id === ticketId ? { ...prev, ...patch } : prev))
+    setIncidents((prev) => prev.map((incident) => (incident.id === ticketId ? { ...incident, ...patch } : incident)))
+  }
+
+  const updateTicketPatch = async (patch: any, localPatch: Partial<Incident>) => {
+    if (!selectedTicket) return
+    syncSelectedTicketInList(selectedTicket.id, localPatch)
+    try {
+      const updated = await ticketService.updateTicket(selectedTicket.id, patch)
+      if (updated) {
+        const nextPatch: Partial<Incident> = {}
+        if (updated.subject !== undefined) nextPatch.subject = updated.subject
+        if (updated.summary !== undefined && updated.subject === undefined) nextPatch.subject = updated.summary
+        if (updated.category !== undefined) nextPatch.category = updated.category
+        if (updated.subcategory !== undefined) nextPatch.issueDetail = updated.subcategory
+        if (updated.resolution !== undefined) nextPatch.resolution = updated.resolution
+        if (updated.workflow !== undefined) nextPatch.workflow = updated.workflow
+        if (Object.keys(nextPatch).length > 0) {
+          syncSelectedTicketInList(selectedTicket.id, nextPatch)
+        }
+      }
+      return updated
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Failed to update ticket details')
+    }
+  }
+
+  const applyBulkStatus = async () => {
+    if (!bulkStatus || selectedTickets.length === 0) return
+    setBulkBusy(true)
+    const targets = [...selectedTickets]
+    await Promise.allSettled(targets.map((id) => ticketService.transitionTicket(id, bulkStatus)))
+    setIncidents((prev) => prev.map((i) => (targets.includes(i.id) ? { ...i, status: bulkStatus } : i)))
+    setSelectedTicket((prev) => (prev && targets.includes(prev.id) ? { ...prev, status: bulkStatus } : prev))
+    setSelectedTickets([])
+    setBulkStatus('')
+    setBulkBusy(false)
+  }
+
+  const applyBulkTeam = async () => {
+    if (!bulkTeam || selectedTickets.length === 0) return
+    setBulkBusy(true)
+    const targets = [...selectedTickets]
+    await Promise.allSettled(targets.map((id) => ticketService.updateTicket(id, { category: bulkTeam, team: bulkTeam })))
+    setIncidents((prev) => prev.map((i) => (targets.includes(i.id) ? { ...i, category: bulkTeam, team: bulkTeam } : i)))
+    setSelectedTicket((prev) => (prev && targets.includes(prev.id) ? { ...prev, category: bulkTeam, team: bulkTeam } : prev))
+    setSelectedTickets([])
+    setBulkTeam('')
+    setBulkBusy(false)
+  }
+
+  const commitSubjectEdit = async (valueOverride?: string) => {
+    if (!selectedTicket) return
+    const next = String((valueOverride ?? subjectDraft) || '').trim()
+    if (!next || next === selectedTicket.subject) {
+      setIsEditingSubject(false)
+      setSubjectDraft(selectedTicket.subject || '')
+      return
+    }
+    setIsEditingSubject(false)
+    setSubjectDraft(next)
+    syncSelectedTicketInList(selectedTicket.id, { subject: next })
+    const updated = await updateTicketPatch({ subject: next, summary: next }, { subject: next })
+    if (updated?.subject) {
+      setSubjectDraft(updated.subject)
+      syncSelectedTicketInList(selectedTicket.id, { subject: updated.subject })
+    }
+    setTicketComments((prev) => {
+      const ticketId = String(selectedTicket.id || '')
+      const timeline = prev[ticketId]
+      if (!timeline) return prev
+      const updatedTimeline = timeline.map((entry: any) => {
+        const text = String(entry?.text || '')
+        if (text.toLowerCase().startsWith('ticket created:')) {
+          return { ...entry, text: `Ticket created: ${next}` }
+        }
+        return entry
+      })
+      return { ...prev, [ticketId]: updatedTimeline }
+    })
+  }
+
+  React.useEffect(() => {
+    if (!selectedTicket) return
+    const fallbackTeam = String(
+      ticketQueues.find((queue) => {
+        if (!Array.isArray(queue.visibilityRoles) || queue.visibilityRoles.length === 0) return true
+        return queue.visibilityRoles.map((r) => String(r || '').toUpperCase()).includes(String(user?.role || '').toUpperCase())
+      })?.label || ''
+    ).trim()
+    setEditingTicketField(null)
+    setEditingEndUserField(null)
+    setCreatedFromValue(String(selectedTicket.createdFrom || inferCreatedFrom(selectedTicket)))
+    setTicketWorkflowValue(String(selectedTicket.workflow || 'Incident Management Workflow'))
+    const mappedTeamLabel = String(mapTeam(selectedTicket).team || fallbackTeam || '').trim()
+    setTicketTeamValue(String(mappedTeamLabel || ''))
+    setAdditionalStaffValue(String((selectedTicket.additionalAgents || [])[0] || 'Not set'))
+    const rawIssue = String(selectedTicket.category || '').trim()
+    const nextIssue = rawIssue && mappedTeamLabel && rawIssue.toLowerCase() === mappedTeamLabel.toLowerCase()
+      ? 'Not set'
+      : (rawIssue || 'Not set')
+    setIssueValue(nextIssue)
+    const rawIssueDetail = String(selectedTicket.issueDetail || selectedTicket.subcategory || '').trim()
+    setIssueDetailValue(nextIssue === 'Not set' ? 'Not set' : (rawIssueDetail || 'Not set'))
+    setResolutionValue(String(selectedTicket.resolution || 'Not set'))
+    setEndUserDraft({
+      name: String(endUser?.name || ''),
+      email: String(endUser?.email || ''),
+      phone: String(endUser?.phone || ''),
+      site: String(endUser?.site || ''),
+      accountManager: String(endUser?.accountManager || ''),
+    })
+  }, [endUser?.accountManager, endUser?.email, endUser?.name, endUser?.phone, endUser?.site, selectedTicket?.id, ticketQueues, user?.role])
+
+  React.useEffect(() => {
+    if (!endUser) return
+    const byId = endUser?.id ? agents.find((a: any) => Number(a?.id) === Number(endUser.id)) : null
+    const byEmail = !byId && endUser?.email
+      ? agents.find((a: any) => String(a?.email || '').trim().toLowerCase() === String(endUser.email || '').trim().toLowerCase())
+      : null
+    const match: any = byId || byEmail
+    if (!match) return
+    const next = {
+      id: endUser?.id || match.id,
+      name: endUser?.name || match.name || match.username || endUser?.email || 'End User',
+      username: endUser?.username || match.username || match.userName || '',
+      email: endUser?.email || match.email || '',
+      phone: endUser?.phone || match.phone || '',
+      site: endUser?.site || match.site || '',
+      accountManager: endUser?.accountManager || match.accountManager || match.reportingManager || '',
+      avatarUrl: endUser?.avatarUrl || match.avatarUrl || '',
+    }
+    const changed =
+      String(endUser?.id || '') !== String(next.id || '') ||
+      String(endUser?.name || '') !== String(next.name || '') ||
+      String(endUser?.username || '') !== String(next.username || '') ||
+      String(endUser?.email || '') !== String(next.email || '') ||
+      String(endUser?.phone || '') !== String(next.phone || '') ||
+      String(endUser?.site || '') !== String(next.site || '') ||
+      String(endUser?.accountManager || '') !== String(next.accountManager || '') ||
+      String(endUser?.avatarUrl || '') !== String(next.avatarUrl || '')
+    if (!changed) return
+    setEndUser((prev: any) => ({
+      ...(prev || {}),
+      ...next,
+    }))
+  }, [agents, endUser])
+  const renderQueueHeaderIcon = () => {
+    if (queueView === 'staff') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="8.5" cy="7" r="3.5" />
+          <path d="M20 8v6" />
+          <path d="M23 11h-6" />
+        </svg>
+      )
+    }
+    if (queueView === 'team') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="9" cy="7" r="3" />
+          <circle cx="17" cy="8" r="2.5" />
+          <path d="M2 20a7 7 0 0 1 14 0" />
+          <path d="M14 20a5 5 0 0 1 8 0" />
+        </svg>
+      )
+    }
+    if (queueView === 'type') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M20.6 13.4 11 23l-9-9 9.6-9.6a2 2 0 0 1 1.4-.6H20a2 2 0 0 1 2 2v7a2 2 0 0 1-.6 1.4Z" />
+          <circle cx="16" cy="8" r="1" />
+        </svg>
+      )
+    }
+    if (queueView === 'status') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 8v4" />
+          <path d="M12 16h.01" />
+        </svg>
+      )
+    }
+    if (queueView === 'myLists') {
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="8" y1="6" x2="21" y2="6" />
+          <line x1="8" y1="12" x2="21" y2="12" />
+          <line x1="8" y1="18" x2="21" y2="18" />
+          <line x1="3" y1="6" x2="3.01" y2="6" />
+          <line x1="3" y1="12" x2="3.01" y2="12" />
+          <line x1="3" y1="18" x2="3.01" y2="18" />
+        </svg>
+      )
+    }
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="11" cy="11" r="7" />
+        <line x1="16.5" y1="16.5" x2="21" y2="21" />
+      </svg>
+    )
+  }
+
+  const queueSidebar = (!queueCollapsed && queueRoot) ? createPortal(
+    <aside className="ticket-queue-sidebar">
+      <div className="queue-header">
+        <div className="queue-title-icon" aria-hidden="true">{renderQueueHeaderIcon()}</div>
+        <div className="queue-title">
+          <div className="queue-title-top">
+            <button className="queue-title-btn" onClick={() => setQueueView('all')} title="Select queue view">
+              <div className="queue-title-text">{queueViewTitle[queueView]}</div>
+            </button>
+            <button className="queue-edit-btn" onClick={() => setQueueView('all')} title="Change ticket queue">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button
+          className="queue-collapse-btn"
+          title="Hide Menu"
+          onClick={() => setQueueCollapsed(true)}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="13 18 7 12 13 6" />
+            <polyline points="19 18 13 12 19 6" />
+          </svg>
+        </button>
+      </div>
+      <div className="queue-list">
+        {queueView === 'all' && (
+          <>
+            {queueViews.map((v) => (
+              <div key={v.key} className={`queue-item${queueView === v.key ? ' queue-item-active' : ''}`} onClick={() => setQueueView(v.key)}>
+                <div className="queue-avatar">{v.icon}</div>
+                <div className="queue-name">{v.label}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'team' && (
+          <>
+            {Object.entries(teamGroups).map(([team, group]) => {
+              const isExpanded = expandedTeams.includes(team)
+              return (
+                <React.Fragment key={team}>
+                  <div
+                    className={`queue-item${queueFilter.type === 'team' && queueFilter.value === team ? ' queue-item-active' : ''}`}
+                    onClick={() => {
+                      setExpandedTeams((prev) => prev.includes(team) ? prev.filter((t) => t !== team) : [...prev, team])
+                      setQueueFilter((prev) => prev.type === 'team' && prev.value === team ? { type: 'all' } : { type: 'team', value: team })
+                    }}
+                  >
+                    <div className="queue-avatar">
+                      <span className={`queue-caret${isExpanded ? ' queue-caret-down' : ''}`}>{'>'}</span>
+                    </div>
+                    <div className="queue-name">{team}</div>
+                    <div className="queue-count">{group.total}</div>
+                  </div>
+                  {isExpanded && (
+                    <>
+                      <div
+                        className={`queue-item queue-item-child${queueFilter.type === 'teamUnassigned' && queueFilter.team === team ? ' queue-item-active' : ''}`}
+                        onClick={() => {
+                          setQueueFilter((prev) => prev.type === 'teamUnassigned' && prev.team === team ? { type: 'all' } : { type: 'teamUnassigned', team })
+                        }}
+                      >
+                        {renderUnassignedAvatar()}
+                        <div className="queue-name">Unassigned</div>
+                        <div className="queue-count">{group.unassigned}</div>
+                      </div>
+                      {Object.entries(group.agents).map(([agentKey, agent]) => (
+                        <div
+                          key={`${team}-${agentKey}`}
+                          className={`queue-item queue-item-child${queueFilter.type === 'teamAgent' && queueFilter.team === team && queueFilter.value === agentKey ? ' queue-item-active' : ''}`}
+                          onClick={() => {
+                            setQueueFilter((prev) =>
+                              prev.type === 'teamAgent' && prev.team === team && prev.value === agentKey
+                                ? { type: 'all' }
+                                : { type: 'teamAgent', team, value: agentKey }
+                            )
+                          }}
+                        >
+                          {(() => {
+                            const record = findAgentRecord(agentKey, agent.label)
+                            const presenceClass = getAgentPresenceClass(record || { id: agentKey, name: agent.label })
+                            return (
+                          <div className="queue-avatar queue-avatar-with-presence unified-user-avatar">
+                            {renderQueueAgentAvatar(record || { id: agentKey, name: agent.label }, agent.label)}
+                            {shouldShowQueuePresenceDot(presenceClass) ? (
+                              <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                            ) : null}
+                          </div>
+                            )
+                          })()}
+                          <div className="queue-name">{agent.label}</div>
+                          <div className="queue-count">{agent.count}</div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </React.Fragment>
+              )
+            })}
+          </>
+        )}
+        {queueView === 'staff' && (
+          <>
+            <div className={`queue-item${queueFilter.type === 'unassigned' ? ' queue-item-active' : ''}`} onClick={() => setQueueFilter((prev) => prev.type === 'unassigned' ? { type: 'all' } : { type: 'unassigned' })}>
+              {renderUnassignedAvatar()}
+              <div className="queue-name">Unassigned</div>
+              <div className="queue-count">{countUnassigned}</div>
+            </div>
+            {agents.map((a) => (
+              <div
+                key={`agent-${a.id}`}
+                className={`queue-item${queueFilter.type === 'agent' && String(queueFilter.agentId || '') === String(a.id) ? ' queue-item-active' : ''}`}
+                onClick={() => {
+                  const displayName = getAgentDisplayName(a)
+                  setQueueFilter((prev) => prev.type === 'agent' && String(prev.agentId || '') === String(a.id) ? { type: 'all' } : { type: 'agent', agentId: String(a.id), agentName: displayName })
+                }}
+              >
+                <div className="queue-avatar queue-avatar-with-presence unified-user-avatar">
+                  {renderQueueAgentAvatar(a, getAgentDisplayName(a))}
+                  {(() => {
+                    const presenceClass = getAgentPresenceClass(a)
+                    return shouldShowQueuePresenceDot(presenceClass) ? (
+                      <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                    ) : null
+                  })()}
+                </div>
+                <div className="queue-name">{getAgentDisplayName(a)}</div>
+                <div className="queue-count">
+                  {openIncidents.filter((i) => {
+                    const byId = String(i.assignedAgentId || '') === String(a.id)
+                    const byName = i.assignedAgentName && getAgentDisplayName(a) && i.assignedAgentName === getAgentDisplayName(a)
+                    return byId || byName
+                  }).length}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'type' && (
+          <>
+            {Object.entries(typeBuckets).map(([type, count]) => (
+              <div
+                key={type}
+                className={`queue-item${queueFilter.type === 'ticketType' && queueFilter.value === type ? ' queue-item-active' : ''}`}
+                onClick={() => setQueueFilter((prev) => prev.type === 'ticketType' && prev.value === type ? { type: 'all' } : { type: 'ticketType', value: type })}
+              >
+                <div className="queue-avatar">{type.trim()[0]?.toUpperCase() || 'T'}</div>
+                <div className="queue-name">{type}</div>
+                <div className="queue-count">{count}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'status' && (
+          <>
+            {Object.entries(statusBuckets).map(([status, count]) => (
+              <div
+                key={status}
+                className={`queue-item${queueFilter.type === 'status' && queueFilter.value === status ? ' queue-item-active' : ''}`}
+                onClick={() => setQueueFilter((prev) => prev.type === 'status' && prev.value === status ? { type: 'all' } : { type: 'status', value: status })}
+              >
+                <div className="queue-avatar">{status.trim()[0]?.toUpperCase() || 'S'}</div>
+                <div className="queue-name">{status}</div>
+                <div className="queue-count">{count}</div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'myLists' && (
+          <>
+            {ticketMyListRules.map((rule) => (
+              <div
+                key={rule.id}
+                className={`queue-item${queueFilter.type === 'myList' && queueFilter.value === rule.id ? ' queue-item-active' : ''}`}
+                onClick={() => setQueueFilter((prev) => prev.type === 'myList' && prev.value === rule.id ? { type: 'all' } : { type: 'myList', value: rule.id })}
+              >
+                <div className="queue-avatar">{rule.label.trim()[0]?.toUpperCase() || 'M'}</div>
+                <div className="queue-name">{rule.label}</div>
+                <div className="queue-count">
+                  {rule.field === 'status' && String(rule.value).toLowerCase() === 'all'
+                    ? myListCounts.all
+                    : rule.field === 'status' && String(rule.value).toLowerCase() === 'open'
+                    ? myListCounts.open
+                    : rule.field === 'status' && String(rule.value).toLowerCase() === 'closed'
+                      ? myListCounts.closed
+                      : rule.field === 'sla'
+                        ? (String(rule.value).toLowerCase() === 'hold' ? myListCounts.hold : myListCounts.breached)
+                        : openIncidents.filter((i) => String((i as any)[rule.field] || '').toLowerCase() === String(rule.value || '').toLowerCase()).length}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+        {queueView === 'staff' && (
+          <div
+            className={`queue-item${queueFilter.type === 'supplier' ? ' queue-item-active' : ''}`}
+            onClick={() => {
+              setQueueFilter((prev) => prev.type === 'supplier' ? { type: 'all' } : { type: 'supplier' })
+            }}
+          >
+            <div className="queue-avatar queue-avatar-accent">S</div>
+            <div className="queue-name">With Supplier</div>
+            <div className="queue-count">{countWithSupplier}</div>
+          </div>
+        )}
+      </div>
+    </aside>,
+    queueRoot
+  ) : null
+
+  function getInitials(name: string) {
+    const safe = String(name || '').trim()
+    if (!safe) return 'NA'
+    const parts = safe.split(' ').filter(Boolean)
+    if (parts.length === 0) return 'NA'
+    return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase()
+  }
+
+  const sanitizeAvatarSrc = (value: unknown): string => {
+    const raw = String(value || '').trim()
+    if (!raw) return ''
+    const lower = raw.toLowerCase()
+    if (lower.startsWith('data:') && raw.length > 120000) return ''
+    if (
+      lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('blob:') ||
+      lower.startsWith('data:image/')
+    ) {
+      return raw
+    }
+    return ''
+  }
+
+  const getInboundDisplayUser = () => {
+    const name = String(endUser?.name || endUser?.username || endUser?.email || selectedTicket?.endUser || 'End User').trim()
+    const email = String(endUser?.email || '').trim().toLowerCase()
+    const username = String(endUser?.username || '').trim().toLowerCase()
+    const avatarUrl = sanitizeAvatarSrc(String(
+      endUser?.avatarUrl ||
+      endUser?.profilePic ||
+      endUser?.avatar ||
+      endUser?.photoUrl ||
+      endUser?.imageUrl ||
+      ''
+    ).trim())
+    return { name, email, username, avatarUrl }
+  }
+
+  const resolveCommentIdentity = (authorRaw: string, entry?: TimelineEntry) => {
+    const inbound = getInboundDisplayUser()
+    const author = String(authorRaw || '').trim()
+    const lower = author.toLowerCase()
+    const changedById = Number((entry as any)?.changedById || 0)
+
+    let agent: any = null
+    if (changedById > 0) {
+      agent = agents.find((a: any) => Number(a?.id) === changedById) || null
+    }
+    if (!agent && lower) {
+      agent =
+        agents.find((a: any) => String(a?.email || '').trim().toLowerCase() === lower) ||
+        agents.find((a: any) => String(getAgentDisplayName(a) || '').trim().toLowerCase() === lower) ||
+        null
+    }
+    if (!agent && lower) {
+      const meName = String(user?.name || '').trim().toLowerCase()
+      const meEmail = String(user?.email || '').trim().toLowerCase()
+      if ((meName && meName === lower) || (meEmail && meEmail === lower)) {
+        agent = user
+      }
+    }
+    if (agent) {
+      const displayName = String(getAgentDisplayName(agent) || author || 'User').trim()
+      const isMe = agent && String(agent?.id || '') === String(user?.id || '')
+      const avatarUrl = isMe ? getUserAvatarUrl(user) : getUserAvatarUrl(agent)
+      const initials = getUserInitials(agent, getInitials(displayName))
+      const presenceClass = isMe ? toPresenceClass(myPresenceStatus) : getAgentPresenceClass(agent)
+      return { name: displayName, avatarUrl, initials, isMe, presenceClass }
+    }
+
+    if (!author) {
+      return { name: inbound.name || 'End User', avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name || 'End User'), isMe: false }
+    }
+    if (lower && (lower === inbound.email || lower === inbound.username || lower === inbound.name.toLowerCase())) {
+      return { name: inbound.name, avatarUrl: inbound.avatarUrl, initials: getInitials(inbound.name), isMe: false }
+    }
+    return { name: author || 'Unknown', avatarUrl: '', initials: getInitials(author || 'Unknown'), isMe: false }
+  }
+
+  const handleAccept = () => {
+    if (!selectedTicket) return
+    const assigneeName = getCurrentAgentName()
+    const assigneeId = user?.id ? String(user.id) : assigneeName
+    const acceptStatus = isIncidentOrFault(selectedTicket.type) ? 'In Progress' : 'Assigned'
+    setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: acceptStatus, assignedAgentId: assigneeId, assignedAgentName: assigneeName } : i))
+    setSelectedTicket(prev => prev ? { ...prev, status: acceptStatus, assignedAgentId: assigneeId, assignedAgentName: assigneeName } : prev)
+    addTicketComment(selectedTicket.id, `Accepted by ${assigneeName}`)
+    markTicketActionState(selectedTicket.id, { accepted: true, ackSent: false })
+    const syncFromServer = (res: any) => {
+      if (!res) return
+      setSelectedTicket((prev) => prev ? {
+        ...prev,
+        status: res.status || prev.status,
+        sla: res.sla || prev.sla,
+        slaTimeLeft: res.slaTimeLeft || prev.slaTimeLeft,
+      } : prev)
+      setIncidents((prev) => prev.map((i) => i.id === selectedTicket.id ? {
+        ...i,
+        status: res.status || i.status,
+        sla: res.sla || i.sla,
+        slaTimeLeft: res.slaTimeLeft || i.slaTimeLeft,
+      } : i))
+    }
+    ;(async () => {
+      let canTransitionFromServerState = true
+      try {
+        const live = await ticketService.getTicket(selectedTicket.id)
+        syncFromServer(live)
+        const liveStatus = String(live?.status || '').trim().toLowerCase()
+        canTransitionFromServerState = liveStatus === 'new'
+      } catch {
+        // If live read fails, fall back to optimistic transition attempt.
+      }
+
+      try {
+        if (canTransitionFromServerState) {
+          const transitioned = await ticketService.transitionTicket(selectedTicket.id, acceptStatus)
+          syncFromServer(transitioned)
+        }
+      } catch (err) {
+        const statusCode = Number((err as any)?.response?.status || 0)
+        if (statusCode !== 400) {
+          console.warn('Accept transition failed', err)
+        }
+      }
+      if (user?.id) {
+        ticketService.updateTicket(selectedTicket.id, { assigneeId: Number(user.id) }).then(syncFromServer).catch((err) => {
+          console.warn('Assign after accept failed', err)
+        })
+      }
+    })()
+  }
+
+  const handleMarkAsResponsed = () => {
+    if (!selectedTicket) return
+    ;(async () => {
+      try {
+        const res = await ticketService.markResponded(selectedTicket.id)
+        setSelectedTicket((prev) => prev ? {
+          ...prev,
+          sla: res.sla || prev.sla,
+          slaTimeLeft: res.slaTimeLeft || prev.slaTimeLeft,
+        } : prev)
+        setIncidents((prev) => prev.map((i) => i.id === selectedTicket.id ? {
+          ...i,
+          sla: res.sla || i.sla,
+          slaTimeLeft: res.slaTimeLeft || i.slaTimeLeft,
+        } : i))
+        addTicketComment(selectedTicket.id, 'Response SLA marked as responded')
+      } catch (err: any) {
+        console.warn('Mark response SLA failed', err)
+        alert(err?.response?.data?.error || err?.message || 'Failed to mark response SLA')
+      }
+    })()
+  }
+
+  const handleEscalate = () => {
+    if (!selectedTicket) return
+    const currentTeamLabel = String(mapTeam(selectedTicket).team || '').trim()
+    const fallbackTeam = createTeamOptions[0]
+    const matchedTeam = createTeamOptions.find((team) => team.label.toLowerCase() === currentTeamLabel.toLowerCase())
+    setEscalateForm({
+      teamId: matchedTeam?.key || fallbackTeam?.key || '',
+      staffId: 'unassigned',
+    })
+    setInternalNoteContext('escalate')
+    setInternalNoteVisibility('internal')
+    setInternalNoteForm((prev) => ({ ...prev, body: '' }))
+    if (internalNoteEditorRef.current) internalNoteEditorRef.current.innerHTML = ''
+    setShowInternalNoteEditor(true)
+  }
+
+  const renderIconGlyph = (icon: string, className: string) => {
+    const glyphMap: Record<string, string> = {
+      'arrow-left': '\u2190',
+      'circle-check-big': '\u2713',
+      check: '\u2713',
+      'sticky-note': '\u270E',
+      'circle-x': '\u2715',
+      mail: '\u2709',
+      package: '\u25A3',
+      'clipboard-check': '\u2611',
+      'mail-plus': '\u2709',
+      'phone-call': '\u260E',
+      'rotate-ccw': '\u21BA',
+      play: '\u25B6',
+      'thumbs-up': '\u2713',
+      'x-circle': '\u2715',
+      'shield-check': '\u26E8',
+      settings: '\u2699',
+      'user-check': '\u2713',
+      'user-x': '\u2715',
+      'user-minus': '\u2212',
+      download: '\u2193',
+      'check-check': '\u2714',
+      'package-search': '\u2315',
+      lock: 'L',
+      send: '\u27A4',
+      'refresh-ccw': '\u21BA',
+      'badge-check': '\u2714',
+      'messages-square': '\u25A6',
+      'square-plus': '+',
+      'square-minus': '\u2212',
+      'arrow-up': '\u2191',
+      'arrow-down': '\u2193',
+    }
+    return <span className={className} aria-hidden="true">{glyphMap[icon] || '\u2022'}</span>
+  }
+
+  const renderActionIcon = (label: string) => {
+    const icon = actionIconMap[label]
+    if (!icon) return null
+    return renderIconGlyph(icon, 'action-icon')
+  }
+
+  const renderCurrentUserAvatar = (className = 'compose-avatar') => {
+    const avatarUrl = getUserAvatarUrl(user)
+    const initials = (getUserInitials(user) || getInitials(getCurrentAgentName())).slice(0, 2)
+    const presenceClass = toPresenceClass(myPresenceStatus)
+    return (
+      <div className={`${className} compose-avatar-with-presence unified-user-avatar`}>
+        {avatarUrl ? (
+          <img src={avatarUrl} alt={user?.name || 'User'} className="queue-avatar-image" />
+        ) : (
+          initials
+        )}
+        <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+      </div>
+    )
+  }
+
+  const formatAttachmentSize = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
+  const pushAttachments = (files: FileList | null, target: 'composer' | 'note') => {
+    if (!files || files.length === 0) return
+    const incoming = Array.from(files)
+    const tooLarge = incoming.find((f) => f.size > MAX_ATTACHMENT_BYTES)
+    if (tooLarge) {
+      alert(`"${tooLarge.name}" exceeds 32MB. Maximum allowed is 32MB per file.`)
+      return
+    }
+    const mapped = incoming.map((file) => ({ key: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`, file }))
+    if (target === 'composer') {
+      setComposerAttachments((prev) => [...prev, ...mapped])
+    } else {
+      setInternalNoteAttachments((prev) => [...prev, ...mapped])
+    }
+  }
+
+  const removeAttachment = (key: string, target: 'composer' | 'note') => {
+    if (target === 'composer') {
+      setComposerAttachments((prev) => prev.filter((a) => a.key !== key))
+    } else {
+      setInternalNoteAttachments((prev) => prev.filter((a) => a.key !== key))
+    }
+  }
+
+  const readFileAsBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result || '')
+        const base64 = result.includes(',') ? result.split(',')[1] : result
+        if (!base64) reject(new Error(`Failed to read file "${file.name}"`))
+        else resolve(base64)
+      }
+      reader.onerror = () => reject(new Error(`Failed to read file "${file.name}"`))
+      reader.readAsDataURL(file)
+    })
+
+  const uploadSelectedAttachments = async (ticketId: string, localFiles: LocalAttachment[]) => {
+    if (!localFiles.length) return []
+    const total = localFiles.reduce((sum, a) => sum + a.file.size, 0)
+    if (total > MAX_ATTACHMENT_BYTES) {
+      throw new Error('Total selected attachment size exceeds 32MB.')
+    }
+    setIsUploadingAttachments(true)
+    try {
+      const filesPayload = await Promise.all(
+        localFiles.map(async (a) => ({
+          name: a.file.name,
+          type: a.file.type || 'application/octet-stream',
+          size: a.file.size,
+          contentBase64: await readFileAsBase64(a.file),
+        }))
+      )
+      const uploaded = await ticketService.uploadAttachments(ticketId, { files: filesPayload })
+      return Array.isArray(uploaded?.items) ? uploaded.items : []
+    } finally {
+      setIsUploadingAttachments(false)
+    }
+  }
+
+  const applyStatus = async (toStatus: string, note?: string) => {
+    if (!selectedTicket) return
+    try {
+      const res = await ticketService.transitionTicket(selectedTicket.id, toStatus)
+      setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, status: res.status } : i))
+      setSelectedTicket(prev => prev ? { ...prev, status: res.status } : prev)
+      addTicketComment(selectedTicket.id, note || `Status updated to ${toStatus}`)
+    } catch (err: any) {
+      alert(err?.response?.data?.error || err?.message || `Failed to set status: ${toStatus}`)
+    }
+  }
+
+  const handleOpenGChat = () => {
+    if (!selectedTicket) return
+    addTicketComment(selectedTicket.id, 'Opened GChat')
+    // Open Google Chat in a new tab/window
+    window.open('https://chat.google.com/')
+  }
+
+  const handleAddNote = () => {
+    if (!selectedTicket) return
+    // Quick prompt to add a note and persist to backend if available
+    const note = window.prompt('Enter note to add to ticket:')
+    if (!note) return
+    // optimistic UI update
+    addTicketComment(selectedTicket.id, note)
+    // try to persist to backend as a private note
+    ticketService.privateNote(selectedTicket.id, { note }).catch(() => {
+      // ignore errors � kept in UI as demo
+    })
+  }
+
+  const openSendReview = () => {
+    const bodyText = composerBodyText.trim() || htmlToPlainText(composerBodyHtml)
+    if (!bodyText && composerAttachments.length === 0) {
+      alert('Please enter message')
+      return
+    }
+    setComposerBodyText(bodyText)
+    setShowSendReview(true)
+  }
+
+  const handleSendActionComposer = async () => {
+    if (!selectedTicket) return
+    const body = composerBodyText.trim() || htmlToPlainText(composerBodyHtml).trim()
+    if (!body && composerAttachments.length === 0) {
+      alert('Please enter message')
+      return
+    }
+    const resolvedBody = body || 'Media attachment update'
+
+    try {
+      const finalMailHtml = buildMailPreviewHtml()
+      const finalMailText = htmlToPlainText(finalMailHtml)
+      const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, composerAttachments)
+      const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
+      const attachmentLabel = uploadedItems.length
+        ? `\nAttachments: ${uploadedItems.map((a: any) => a.filename).join(', ')}`
+        : ''
+
+      if (composerMode === 'close') {
+        if (composerForm.to.trim()) {
+          await ticketService.respond(selectedTicket.id, {
+            message: resolvedBody,
+            sendEmail: true,
+            to: composerForm.to.trim(),
+            cc: composerForm.cc.trim() || undefined,
+            bcc: composerForm.bcc.trim() || undefined,
+            subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
+            attachmentIds,
+            html: finalMailHtml,
+            text: finalMailText,
+          })
+        } else if (attachmentIds.length) {
+          await ticketService.privateNote(selectedTicket.id, {
+            note: `Closure attachments uploaded${attachmentLabel}`,
+            attachmentIds,
+          })
+        }
+        await ticketService.transitionTicket(selectedTicket.id, 'Closed')
+        updateTicketStatusLocal(selectedTicket.id, 'Closed')
+        addTicketComment(selectedTicket.id, `Closed: ${resolvedBody}`)
+      } else if (composerMode === 'noteEmail') {
+        await ticketService.privateNote(selectedTicket.id, { note: resolvedBody, attachmentIds })
+        if (composerForm.to.trim()) {
+          await ticketService.respond(selectedTicket.id, {
+            message: resolvedBody,
+            sendEmail: true,
+            to: composerForm.to.trim(),
+            cc: composerForm.cc.trim() || undefined,
+            bcc: composerForm.bcc.trim() || undefined,
+            subject: composerForm.subject.trim() || buildReplySubject(selectedTicket),
+            attachmentIds,
+            html: finalMailHtml,
+            text: finalMailText,
+          })
+        }
+        addTicketComment(selectedTicket.id, `Note + Email: ${resolvedBody}`)
+      } else {
+        await ticketService.respond(selectedTicket.id, {
+          message: resolvedBody,
+          sendEmail: Boolean(composerForm.to.trim()),
+          to: composerForm.to.trim() || undefined,
+          cc: composerForm.cc.trim() || undefined,
+          bcc: composerForm.bcc.trim() || undefined,
+          subject: composerForm.subject.trim() || undefined,
+          attachmentIds,
+          html: composerForm.to.trim() ? finalMailHtml : undefined,
+          text: composerForm.to.trim() ? finalMailText : undefined,
+        })
+        addTicketComment(selectedTicket.id, `${getComposerHeading()}: ${resolvedBody}`)
+
+        if (composerMode === 'acknowledge') {
+          await ticketSvc.transitionTicket(selectedTicket.id, 'In Progress').catch(() => undefined)
+          updateTicketStatusLocal(selectedTicket.id, 'In Progress')
+          markTicketActionState(selectedTicket.id, { ackSent: true })
+        }
+        if (composerMode === 'approval') {
+          await ticketSvc.transitionTicket(selectedTicket.id, 'Awaiting Approval').catch(() => undefined)
+          updateTicketStatusLocal(selectedTicket.id, 'Awaiting Approval')
+        }
+        if (composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') {
+          const nextStatus = composerForm.actionStatus || 'With Supplier'
+          await ticketSvc.transitionTicket(selectedTicket.id, nextStatus).catch(() => undefined)
+          updateTicketStatusLocal(selectedTicket.id, nextStatus)
+          markTicketActionState(selectedTicket.id, { supplierLogged: true })
+        }
+      }
+      setComposerAttachments([])
+      clearComposerMediaPreviewUrls()
+      setComposerBodyHtml('')
+      setComposerBodyText('')
+      setShowActionComposer(false)
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to send action')
+    }
+  }
+
+  const handleSaveInternalNote = async () => {
+    if (!selectedTicket) return
+    if (internalNoteContext === 'escalate') {
+      await handleSaveEscalate()
+      return
+    }
+    const note = internalNoteForm.body.trim()
+    const noteTypeLabel = internalNoteVisibility === 'internal' ? 'internal note' : 'private note'
+    if (!note && internalNoteAttachments.length === 0) {
+      alert(`Please enter ${noteTypeLabel}`)
+      return
+    }
+    const normalizedText = internalNoteVisibility === 'internal'
+      ? (/^internal:/i.test(note) ? note : `Internal: ${note || 'Media attachment update'}`)
+      : (/^private:/i.test(note) ? note : `Private: ${note || 'Media attachment update'}`)
+    addTicketComment(selectedTicket.id, normalizedText, {
+      internal: true,
+      kind: internalNoteVisibility,
+      changedById: Number(user?.id || 0) || null
+    })
+    try {
+      const uploadedItems = await uploadSelectedAttachments(selectedTicket.id, internalNoteAttachments)
+      const attachmentIds = uploadedItems.map((a: any) => Number(a.id)).filter((n: number) => Number.isFinite(n))
+      await ticketService.privateNote(selectedTicket.id, { note: normalizedText, attachmentIds })
+      if (internalNoteForm.status && internalNoteForm.status !== selectedTicket.status) {
+        await ticketSvc.transitionTicket(selectedTicket.id, internalNoteForm.status).catch(() => undefined)
+        updateTicketStatusLocal(selectedTicket.id, internalNoteForm.status)
+      }
+      setInternalNoteAttachments([])
+      clearInternalNoteMediaPreviewUrls()
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to save internal note')
+    }
+    setShowInternalNoteEditor(false)
+    setInternalNoteContext('note')
+  }
+
+  async function handleSaveEscalate() {
+    if (!selectedTicket) return
+    const teamId = String(escalateForm.teamId || '').trim()
+    const staffId = String(escalateForm.staffId || '').trim()
+    if (!teamId) {
+      alert('Please select a team to escalate.')
+      return
+    }
+    const shouldAssignStaff = staffId && staffId !== 'unassigned'
+    const teamLabel = createTeamOptions.find((team) => team.key === teamId)?.label || mapTeam(selectedTicket).team || 'Unassigned'
+    const staffLabel = shouldAssignStaff
+      ? (agentOptions.find((agent) => String(agent.id) === staffId)?.label || 'Not set')
+      : 'Unassigned'
+    const note = internalNoteForm.body.trim()
+    const escalationNote = note ? `Escalate: ${note}` : `Escalated to ${teamLabel}${staffLabel ? ` | Staff: ${staffLabel}` : ''}`
+
+    try {
+      const updatePayload: any = {
+        teamId,
+        category: teamLabel,
+        team: teamLabel,
+      }
+      updatePayload.assigneeId = shouldAssignStaff ? Number(staffId) : null
+      await ticketService.updateTicket(selectedTicket.id, updatePayload)
+      if (escalationNote) {
+        await ticketService.privateNote(selectedTicket.id, { note: escalationNote }).catch(() => undefined)
+      }
+      syncSelectedTicketInList(selectedTicket.id, {
+        team: teamLabel,
+        category: teamLabel,
+        teamId,
+        assignedAgentId: shouldAssignStaff ? staffId : '',
+        assignedAgentName: shouldAssignStaff ? staffLabel : '',
+      })
+      setTicketTeamValue(teamLabel)
+      addTicketComment(selectedTicket.id, escalationNote, {
+        internal: true,
+        kind: 'internal',
+        changedById: Number(user?.id || 0) || null,
+      })
+      setInternalNoteAttachments([])
+      clearInternalNoteMediaPreviewUrls()
+      setInternalNoteForm((prev) => ({ ...prev, body: '' }))
+      setInternalNoteContext('note')
+      setShowInternalNoteEditor(false)
+    } catch (e: any) {
+      const rawError = e?.response?.data?.error ?? e?.response?.data?.message ?? e?.message ?? e
+      const message = typeof rawError === 'string'
+        ? rawError
+        : (rawError ? JSON.stringify(rawError) : 'Failed to escalate ticket')
+      alert(message)
+    }
+  }
+
+  const loadAssetsForTicket = async (q = '') => {
+    try {
+      const res = await assetService.listAssets({ page: 1, pageSize: 20, q })
+      const items = Array.isArray(res) ? res : (res?.items || [])
+      setAssetList(items)
+    } catch (e) {
+      console.warn('Failed to load assets', e)
+    }
+  }
+
+  const handleAssignAsset = async () => {
+    if (!selectedTicket) return
+    if (!assetAssignId) return alert('Select an asset')
+    try {
+      const updated = await ticketService.assignAsset(selectedTicket.id, Number(assetAssignId))
+      setTicketAsset(updated.asset || null)
+      addTicketComment(selectedTicket.id, `Asset assigned: ${updated.asset?.name || 'Asset #' + assetAssignId}`)
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to assign asset')
+    }
+  }
+
+  const handleUnassignAsset = async () => {
+    if (!selectedTicket) return
+    try {
+      await ticketService.unassignAsset(selectedTicket.id)
+      setTicketAsset(null)
+      setAssetAssignId('')
+      addTicketComment(selectedTicket.id, 'Asset unassigned')
+    } catch (e: any) {
+      alert(e?.response?.data?.error || e?.message || 'Failed to unassign asset')
+    }
+  }
+
+  const handleEditTicket = async () => {
+    if (!selectedTicket) return
+    const newSubject = window.prompt('Update subject', selectedTicket.subject)
+    if (newSubject === null) return
+    const newDescription = window.prompt('Update description', '') || undefined
+    try {
+      const updated = await ticketService.updateTicket(selectedTicket.id, { subject: newSubject, description: newDescription })
+      const updatedSubject = updated.subject || newSubject
+      setIncidents(prev => prev.map(i => i.id === selectedTicket.id ? { ...i, subject: updatedSubject } : i))
+      setSelectedTicket(prev => prev ? { ...prev, subject: updatedSubject } : prev)
+      addTicketComment(selectedTicket.id, 'Ticket updated')
+    } catch (err: any) {
+      alert('Failed to update ticket')
+    }
+  }
+
+  const openActionDetail = (entry: any) => {
+    setActionDetail(entry)
+    setActiveActionMenuId(null)
+  }
+
+  const forwardActionEntry = (entry: any) => {
+    const safeText = escapeHtml(String(entry?.text || '').trim())
+    const safeActionId = String(entry?.actionId || '-')
+    const html = `<div><strong>Forwarded action (ID: ${safeActionId})</strong></div><div>${safeText.replace(/\n/g, '<br/>')}</div>`
+    setComposerMode('noteEmail')
+    setShowActionComposer(true)
+    setComposerBodyHtml(html)
+    setComposerBodyText(htmlToPlainText(html))
+    setComposerForm((prev) => ({ ...prev, body: htmlToPlainText(html) }))
+    if (composerEditorRef.current) {
+      composerEditorRef.current.innerHTML = html
+    }
+    setActiveActionMenuId(null)
+  }
+
+  React.useEffect(() => {
+    if (!activeActionMenuId) return undefined
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (target.closest('.progress-action-menu') || target.closest('.progress-action-trigger')) return
+      setActiveActionMenuId(null)
+    }
+    window.addEventListener('mousedown', handleClick)
+    return () => window.removeEventListener('mousedown', handleClick)
+  }, [activeActionMenuId])
+
+  const handleDeleteTicket = async () => {
+    if (!selectedTicket) return
+    if (!confirm('Delete this ticket? This cannot be undone.')) return
+    try {
+      await ticketService.deleteTicket(selectedTicket.id)
+      setIncidents(prev => prev.filter(i => i.id !== selectedTicket.id))
+      closeDetail()
+      setSelectedTicket(null)
+      addTicketComment(selectedTicket.id, 'Ticket deleted')
+    } catch (err: any) {
+      alert('Failed to delete ticket')
+    }
+  }
+
+  // Listen for demo actions dispatched by the ticket demo/modal
+  React.useEffect(() => {
+    const handler = (ev: any) => {
+      const detail = ev?.detail || {}
+      const action = detail.action
+      const message = detail.message
+
+      // operate on currently selected ticket; if none, pick first incident
+      const target = selectedTicket || incidents[0]
+      if (!target) return
+
+      if (action === 'email') {
+        addTicketComment(target.id, message || 'Email user action started')
+        // for demo open mailto (keeps behavior similar to earlier handler)
+        const subject = encodeURIComponent(`[${target.id}] ${target.subject}`)
+        window.open(`mailto:${detail.to || 'admin@example.com'}?subject=${subject}`)
+      } else if (action === 'log') {
+        addTicketComment(target.id, message || 'Logged to supplier')
+      } else if (action === 'close') {
+        const updated = incidents.map(i => i.id === target.id ? { ...i, status: 'Closed' as Incident['status'] } : i)
+        setIncidents(updated)
+        setSelectedTicket(prev => prev ? { ...prev, status: 'Closed' } : prev)
+        addTicketComment(target.id, message || 'Ticket closed')
+      }
+    }
+
+    window.addEventListener('ticket-action', handler)
+    return () => window.removeEventListener('ticket-action', handler)
+  }, [selectedTicket, incidents])
+
+  const filteredIncidents = incidents.filter(incident => {
+    // Filter by filter type
+    let filterMatch = false
+    if (filterType === 'All Tickets') {
+      filterMatch = true
+    } else if (filterType === 'Closed Tickets') {
+      // Closed Tickets: only incidents whose status is exactly 'Closed'
+      filterMatch = incident.status === 'Closed'
+    } else if (filterType === 'Open Tickets') {
+      // Open Tickets: any ticket that is NOT Closed should be considered open
+      filterMatch = incident.status !== 'Closed'
+    }
+    if (!filterMatch) return false
+
+    // Filter by global search
+    if (globalSearch.trim()) {
+      const searchLower = globalSearch.toLowerCase()
+        const globalMatch = (
+          incident.id.toLowerCase().includes(searchLower) ||
+          incident.subject.toLowerCase().includes(searchLower) ||
+          incident.category.toLowerCase().includes(searchLower) ||
+          String(incident.slaTimeLeft || '').toLowerCase().includes(searchLower) ||
+          String(incident.assetTag || '').toLowerCase().includes(searchLower) ||
+          incident.priority.toLowerCase().includes(searchLower) ||
+          incident.status.toLowerCase().includes(searchLower) ||
+          incident.type.toLowerCase().includes(searchLower) ||
+          incident.endUser.toLowerCase().includes(searchLower) ||
+          String(incident.clientCompany || '').toLowerCase().includes(searchLower) ||
+          String(incident.lastAction || '').toLowerCase().includes(searchLower) ||
+          String(incident.lastActionTime || '').toLowerCase().includes(searchLower) ||
+          incident.dateReported.toLowerCase().includes(searchLower) ||
+          String(incident.staff || '').toLowerCase().includes(searchLower) ||
+          String(incident.issueDetail || '').toLowerCase().includes(searchLower) ||
+          String(incident.resolution || '').toLowerCase().includes(searchLower) ||
+          String(incident.closedAt ? new Date(incident.closedAt).toLocaleString() : '').toLowerCase().includes(searchLower)
+        )
+      if (!globalMatch) return false
+    }
+
+    // Filter by column-specific searches
+    if (searchValues.id && !incident.id.toLowerCase().includes(searchValues.id.toLowerCase())) return false
+    if (searchValues.team) {
+      const teamLabel = mapTeam(incident).team
+      if (!String(teamLabel || '').toLowerCase().includes(searchValues.team.toLowerCase())) return false
+    }
+    if (searchValues.subject && !String(incident.subject || '').toLowerCase().includes(searchValues.subject.toLowerCase())) return false
+    if (searchValues.assetTag && !String(incident.assetTag || '').toLowerCase().includes(searchValues.assetTag.toLowerCase())) return false
+    if (searchValues.category && !incident.category.toLowerCase().includes(searchValues.category.toLowerCase())) return false
+    if (searchValues.slaTimeLeft && !String(incident.slaTimeLeft || '').toLowerCase().includes(searchValues.slaTimeLeft.toLowerCase())) return false
+    if (searchValues.priority && !incident.priority.toLowerCase().includes(searchValues.priority.toLowerCase())) return false
+    if (searchValues.status && !incident.status.toLowerCase().includes(searchValues.status.toLowerCase())) return false
+    if (searchValues.type && !incident.type.toLowerCase().includes(searchValues.type.toLowerCase())) return false
+    if (searchValues.lastAction && !incident.lastAction.toLowerCase().includes(searchValues.lastAction.toLowerCase())) return false
+    if (searchValues.dateReported && !incident.dateReported.toLowerCase().includes(searchValues.dateReported.toLowerCase())) return false
+    if (searchValues.staff && !String(incident.staff || '').toLowerCase().includes(searchValues.staff.toLowerCase())) return false
+    if (searchValues.issueDetail && !String(incident.issueDetail || '').toLowerCase().includes(searchValues.issueDetail.toLowerCase())) return false
+    if (searchValues.resolution && !String(incident.resolution || '').toLowerCase().includes(searchValues.resolution.toLowerCase())) return false
+    if (searchValues.endUser) {
+      const needle = searchValues.endUser.toLowerCase()
+      const clientMatch = String(incident.clientCompany || '').toLowerCase().includes(needle)
+      const endUserMatch = incident.endUser.toLowerCase().includes(needle)
+      if (!clientMatch && !endUserMatch) return false
+    }
+    if (searchValues.dateClosed) {
+      const closedLabel = incident.closedAt ? new Date(incident.closedAt).toLocaleString() : ''
+      if (!closedLabel.toLowerCase().includes(searchValues.dateClosed.toLowerCase())) return false
+    }
+
+    // Filter by queue selection (unassigned / agent / supplier)
+    if (queueFilter.type === 'unassigned') {
+      if (incident.assignedAgentId || incident.assignedAgentName) return false
+    } else if (queueFilter.type === 'supplier') {
+      const s = (incident.status || '').toLowerCase()
+      if (!s.includes('supplier')) return false
+    } else if (queueFilter.type === 'agent') {
+      const byId = queueFilter.agentId && String(incident.assignedAgentId || '') === String(queueFilter.agentId)
+      const byName = queueFilter.agentName && incident.assignedAgentName && incident.assignedAgentName === queueFilter.agentName
+      if (!byId && !byName) return false
+    } else if (queueFilter.type === 'team') {
+      if (mapTeam(incident).team !== queueFilter.value) return false
+    } else if (queueFilter.type === 'teamUnassigned') {
+      const mapped = mapTeam(incident)
+      if (mapped.team !== queueFilter.team) return false
+      if (!mapped.forcedUnassigned && (incident.assignedAgentId || incident.assignedAgentName)) return false
+    } else if (queueFilter.type === 'teamAgent') {
+      const mapped = mapTeam(incident)
+      if (mapped.team !== queueFilter.team) return false
+      if (mapped.forcedUnassigned) return false
+      const agentKey = String(incident.assignedAgentId || incident.assignedAgentName || '').trim()
+      if (!agentKey || agentKey !== String(queueFilter.value || '')) return false
+    } else if (queueFilter.type === 'ticketType') {
+      if (String(incident.type || '') !== String(queueFilter.value || '')) return false
+    } else if (queueFilter.type === 'status') {
+      if (String(incident.status || '') !== String(queueFilter.value || '')) return false
+    } else if (queueFilter.type === 'myList') {
+      const rule = ticketMyListRules.find((r) => r.id === queueFilter.value)
+      if (rule) {
+        if (rule.field === 'sla' && rule.value === 'breach' && !String(incident.slaTimeLeft || '').startsWith('-')) return false
+        if (rule.field === 'sla' && String(rule.value).toLowerCase() === 'hold') {
+          const status = String(incident.status || '').toLowerCase()
+          const sla = String(incident.slaTimeLeft || '').toLowerCase()
+          if (!status.includes('hold') && !sla.includes('hold')) return false
+        }
+        if (rule.field === 'status' && rule.value.toLowerCase() === 'open') {
+          const s = String(incident.status || '').toLowerCase()
+          const normalized = s === 'resolved' ? 'closed' : s
+          if (normalized === 'closed') return false
+        } else if (rule.field === 'status' && rule.value.toLowerCase() === 'all') {
+          // Show all tickets.
+        } else if (rule.field === 'status' && rule.value.toLowerCase() === 'closed') {
+          const s = String(incident.status || '').toLowerCase()
+          const normalized = s === 'resolved' ? 'closed' : s
+          if (normalized !== 'closed') return false
+        } else if (rule.field !== 'sla') {
+          if (String((incident as any)[rule.field] || '').toLowerCase() !== String(rule.value || '').toLowerCase()) return false
+        }
+      }
+    }
+
+    return true
+  })
+
+  const totalTickets = filteredIncidents.length
+  const totalPages = Math.max(1, Math.ceil(totalTickets / rowsPerPage))
+  const safePage = Math.min(page, totalPages)
+  const pageStart = (safePage - 1) * rowsPerPage
+  const pageItems = filteredIncidents.slice(pageStart, pageStart + rowsPerPage)
+  const rangeStart = totalTickets > 0 ? pageStart + 1 : 0
+  const rangeEnd = Math.min(pageStart + rowsPerPage, totalTickets)
+
+  React.useEffect(() => {
+    if (page !== safePage) setPage(safePage)
+  }, [page, safePage])
+
+  React.useEffect(() => {
+    setPage(1)
+  }, [globalSearch, filterType, queueFilter, searchValues])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.innerWidth > 900) return
+    if (showDetailView || ticketsLoading) return
+    const frame = window.requestAnimationFrame(() => {
+      if (tableRef.current) {
+        tableRef.current.scrollLeft = 0
+        tableRef.current.scrollTop = 0
+      }
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [showDetailView, ticketsLoading, safePage, filterType, globalSearch, showSearchBar, incidents.length])
+
+  const handleGlobalSearch = () => {
+    // Search is already being filtered in real-time via filteredIncidents
+    // This function is called on Enter key or icon click
+    console.log('Searching for:', globalSearch)
+  }
+
+  const handleMouseDown = (e: React.MouseEvent, column: string) => {
+    const toKey = (c: string) => c
+    const colKey = toKey(column)
+    if (colKey === 'checkbox') return
+    e.preventDefault()
+    e.stopPropagation()
+    setResizingColumn(colKey)
+    setResizeStartX(e.clientX)
+    setResizeStartWidth(Number(columnWidths[colKey] || 60))
+  }
+
+  const handleAutoFit = (column: string) => {
+    const toKey = (c: string) => c
+    const key = toKey(column) as keyof typeof columnWidths
+    if (key === 'checkbox' || !tableRef.current) return
+
+    const classMap: Record<string, string> = {
+      checkbox: 'checkbox',
+      status: 'status',
+      id: 'id',
+      team: 'team',
+      subject: 'subject',
+      type: 'type',
+      endUser: 'endUser',
+      category: 'category',
+      assetTag: 'assetTag',
+      priority: 'priority',
+      lastAction: 'lastAction',
+      date: 'date',
+      staff: 'staff',
+      issueDetail: 'issueDetail',
+      resolution: 'resolution',
+      dateClosed: 'dateClosed'
+    }
+    const className = classMap[key] || String(key)
+    const nodes = Array.from(tableRef.current.querySelectorAll<HTMLElement>(`.col-${className}`))
+    if (nodes.length === 0) return
+
+    const maxContent = nodes.reduce((max, el) => Math.max(max, el.scrollWidth), 0)
+    const padding = 18
+    const desired = maxContent + padding
+    const minWidth = 1
+    const maxWidth = 2000
+
+    setColumnWidths(prev => {
+      const next = { ...prev }
+      let newCurrent = Math.max(minWidth, Math.min(maxWidth, desired))
+      next[key] = newCurrent as any
+      return next
+    })
+
+    setTableWidth(prevTable => {
+      const cols = Object.keys(columnWidths).length
+      const gapTotal = (cols - 1) * 12
+      const paddingHorizontal = 8
+      const sumCols = Object.values(columnWidths).reduce((s, v) => s + (v as number), 0)
+      const totalNeeded = sumCols + gapTotal + paddingHorizontal
+      return Math.max(prevTable, Math.ceil(totalNeeded))
+    })
+  }
+
+  React.useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingColumn) return
+
+      const diff = e.clientX - resizeStartX
+      setColumnWidths(prev => {
+        const newWidths = { ...prev }
+        const maxWidth = 2000
+
+        const colKey = resizingColumn as keyof typeof prev
+        let newCurrent = resizeStartWidth + diff
+        const minCurrent = 1
+        newCurrent = Math.round(newCurrent / widthSnap) * widthSnap
+        newCurrent = Math.max(minCurrent, Math.min(maxWidth, newCurrent))
+        newWidths[colKey] = newCurrent as any
+
+        // compute total needed width (sum of all column pixel widths + gaps + padding)
+        const cols = Object.keys(newWidths).length
+        const gapTotal = (cols - 1) * 12 // grid gap from CSS
+        const paddingHorizontal = 8 // matches tighter table row/header horizontal padding
+        const sumCols = Object.values(newWidths).reduce((s, v) => s + (v as number), 0)
+        const totalNeeded = sumCols + gapTotal + paddingHorizontal
+
+        setTableWidth(prevTable => Math.max(prevTable, Math.ceil(totalNeeded)))
+
+        return newWidths
+      })
+    }
+
+    const handleMouseUp = () => {
+      setResizingColumn(null)
+    }
+
+    if (resizingColumn) {
+      document.body.classList.add('is-column-resizing')
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      return () => {
+        document.body.classList.remove('is-column-resizing')
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+      }
+    }
+    document.body.classList.remove('is-column-resizing')
+  }, [resizingColumn, resizeStartX, resizeStartWidth])
+
+  const ticketVisuals = React.useMemo(() => {
+    const total = incidents.length
+    const open = incidents.filter((t) => {
+      const s = String(t.status || '').toLowerCase()
+      const normalized = s === 'resolved' ? 'closed' : s
+      return normalized !== 'closed'
+    }).length
+    const closed = incidents.filter((t) => {
+      const s = String(t.status || '').toLowerCase()
+      return (s === 'resolved' ? 'closed' : s) === 'closed'
+    }).length
+    const byPriority = incidents.reduce<Record<string, number>>((acc, t) => {
+      const key = String(t.priority || 'Low')
+      acc[key] = (acc[key] || 0) + 1
+      return acc
+    }, {})
+    const days = 10
+    const today = new Date()
+    const counts = new Array(days).fill(0)
+    const keys: string[] = []
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      d.setHours(0, 0, 0, 0)
+      keys.push(d.toISOString().slice(0, 10))
+    }
+    const indexByKey = new Map(keys.map((k, idx) => [k, idx]))
+    incidents.forEach((t) => {
+      const raw = t.dateReported
+      if (!raw) return
+      const d = new Date(raw)
+      if (Number.isNaN(d.getTime())) return
+      const key = d.toISOString().slice(0, 10)
+      const idx = indexByKey.get(key)
+      if (idx !== undefined) counts[idx] += 1
+    })
+    return { total, open, closed, byPriority, counts }
+  }, [incidents])
+
+  const ticketSparkline = React.useMemo(() => {
+    const width = 180
+    const height = 40
+    const max = Math.max(1, ...ticketVisuals.counts)
+    const points = ticketVisuals.counts
+      .map((v, i) => {
+        const x = (i / Math.max(1, ticketVisuals.counts.length - 1)) * width
+        const y = height - (v / max) * height
+        return `${x},${y}`
+      })
+      .join(' ')
+    return { width, height, points }
+  }, [ticketVisuals])
+
+  const ticketsGridTemplate = `${columnWidths.checkbox}px ${columnWidths.status}px ${columnWidths.team}px ${columnWidths.id}px ${columnWidths.subject}px ${columnWidths.type}px ${columnWidths.endUser}px ${columnWidths.sla}px ${columnWidths.assetTag}px ${columnWidths.priority}px ${columnWidths.lastAction}px ${columnWidths.date}px ${columnWidths.staff}px ${columnWidths.category}px ${columnWidths.issueDetail}px ${columnWidths.resolution}px ${columnWidths.dateClosed}px 1fr`
+  const ticketsGridStyle = { gridTemplateColumns: ticketsGridTemplate, width: '100%', minWidth: `${tableWidth}px` }
+  const activeSlaPriorityRank = Number(selectedTicket?.sla?.priorityRank || rankFromPriorityLabel(selectedTicket?.sla?.priority || selectedTicket?.priority))
+  const activeSlaPolicyName = String(selectedTicket?.sla?.policyName || 'Select Policy')
+  const currentSlaPolicyName = String(selectedSlaPolicyName || activeSlaPolicyName)
+  const activePolicies = React.useMemo(() => {
+    const names = Array.from(
+      new Set(
+        slaPolicies
+          .filter((p) => p?.active !== false)
+          .map((p) => String(p?.name || '').trim())
+          .filter(Boolean)
+      )
+    )
+    return names
+  }, [slaPolicies])
+  const activePolicyRows = React.useMemo(() => {
+    if (!selectedTicket) return []
+    return slaPolicies
+      .filter((p) => p?.active !== false && String(p?.name || '') === currentSlaPolicyName)
+      .slice()
+      .sort((a, b) => Number(a?.priorityRank || rankFromPriorityLabel(a?.priority)) - Number(b?.priorityRank || rankFromPriorityLabel(b?.priority)))
+  }, [slaPolicies, selectedTicket, currentSlaPolicyName])
+  const activeSlaPriorityLabel = (() => {
+    const matched = activePolicyRows.find((row) => Number(row?.priorityRank || rankFromPriorityLabel(row?.priority)) === activeSlaPriorityRank)
+    if (matched?.priority) return String(matched.priority)
+    return String(selectedTicket?.sla?.priority || selectedTicket?.priority || 'P3')
+  })()
+  const slaToneClass = (() => {
+    const rank = Number.isFinite(activeSlaPriorityRank) ? activeSlaPriorityRank : 3
+    if (rank <= 1) return 'sla-tone-p1'
+    if (rank === 2) return 'sla-tone-p2'
+    if (rank === 3) return 'sla-tone-p3'
+    return 'sla-tone-p4'
+  })()
+  const policyRowForActivePriority = activePolicyRows.find((row) => Number(row?.priorityRank || rankFromPriorityLabel(row?.priority)) === activeSlaPriorityRank) || activePolicyRows[0]
+  const getPolicyMinutes = (kind: 'response' | 'resolution'): number => {
+    const keyPrimary = kind === 'response' ? 'responseTimeMin' : 'resolutionTimeMin'
+    const keyAlt = kind === 'response' ? 'responseMinutes' : 'resolutionMinutes'
+    const raw = Number(policyRowForActivePriority?.[keyPrimary] ?? policyRowForActivePriority?.[keyAlt] ?? 0)
+    return Number.isFinite(raw) && raw > 0 ? raw : 0
+  }
+  const computeSlaProgress = (kind: 'response' | 'resolution') => {
+    const branch = selectedTicket?.sla?.[kind] || {}
+    const policyMinutes = getPolicyMinutes(kind)
+    const fallbackStart = toTimestamp(selectedTicket?.dateReported) ?? slaNowMs
+    const targetAtMs = toTimestamp(branch?.targetAt)
+    let startAtMs = toTimestamp(branch?.startedAt) ?? toTimestamp(selectedTicket?.sla?.startedAt) ?? fallbackStart
+    let effectiveTargetMs = targetAtMs
+    if (!effectiveTargetMs && policyMinutes > 0) {
+      effectiveTargetMs = startAtMs + policyMinutes * 60_000
+    }
+    if (effectiveTargetMs && !startAtMs && policyMinutes > 0) {
+      startAtMs = effectiveTargetMs - policyMinutes * 60_000
+    }
+    const totalMs = Math.max(0, (effectiveTargetMs ?? startAtMs) - startAtMs)
+    const remainingMsRaw = (effectiveTargetMs ?? slaNowMs) - slaNowMs
+    const balancePercent = totalMs > 0 ? Math.max(0, Math.min(100, (remainingMsRaw / totalMs) * 100)) : 0
+    const percent = Math.max(0, 100 - balancePercent)
+    const remainingMs = remainingMsRaw
+    const completedAtMs = toTimestamp(branch?.completedAt)
+    const responseCompletedById = Number(branch?.completedById || 0)
+    const done = kind === 'response'
+      ? Boolean(completedAtMs && responseCompletedById > 0)
+      : Boolean(completedAtMs)
+    const breachedByCompletion = Boolean(done && effectiveTargetMs && completedAtMs && completedAtMs > effectiveTargetMs)
+    const breachedByRunning = Boolean(!done && effectiveTargetMs ? slaNowMs > effectiveTargetMs : false)
+    const breached = Boolean(branch?.breached) || breachedByCompletion || breachedByRunning
+    const met = done && !breached
+    return {
+      percent,
+      balancePercent,
+      remainingLabel: formatSlaClock(remainingMs),
+      targetLabel: toLocalDateTime(effectiveTargetMs),
+      completedLabel: toLocalDateTime(completedAtMs),
+      done,
+      met,
+      breached,
+      color: getSlaElapsedColor(percent),
+    }
+  }
+  const responseSla = computeSlaProgress('response')
+  const resolutionSla = computeSlaProgress('resolution')
+  const parseSlaClockToSeconds = (raw: string) => {
+    const txt = String(raw || '').trim()
+    if (!txt) return null
+    const negative = txt.startsWith('-')
+    const normalized = negative ? txt.slice(1) : txt
+    const parts = normalized.split(':').map((p) => Number(p))
+    if (parts.some((p) => !Number.isFinite(p))) return null
+    let seconds = 0
+    if (parts.length === 2) {
+      seconds = parts[0] * 60 + parts[1]
+    } else if (parts.length === 3) {
+      seconds = parts[0] * 3600 + parts[1] * 60 + parts[2]
+    } else {
+      return null
+    }
+    return negative ? -seconds : seconds
+  }
+  const getDefaultResponseWindowMinutes = (priority: string) => {
+    const p = String(priority || '').toLowerCase()
+    if (p === 'critical' || p === 'p1') return 15
+    if (p === 'high' || p === 'p2') return 30
+    if (p === 'medium' || p === 'p3') return 60
+    return 240
+  }
+  const getDefaultResolutionWindowMinutes = (priority: string) => {
+    const p = String(priority || '').toLowerCase()
+    if (p === 'critical' || p === 'p1') return 2 * 60
+    if (p === 'high' || p === 'p2') return 4 * 60
+    if (p === 'medium' || p === 'p3') return 8 * 60
+    return 24 * 60
+  }
+  const getTableSlaVisual = (incident: Incident) => {
+    const now = slaNowMs
+    const responseBranch = (incident as any)?.sla?.response || {}
+    const resolutionBranch = (incident as any)?.sla?.resolution || {}
+    const responseDone = Boolean(responseBranch?.completedAt) && Number(responseBranch?.completedById || 0) > 0
+    const activeBranch = responseDone ? resolutionBranch : responseBranch
+    const startMs = toTimestamp(activeBranch?.startedAt) ?? toTimestamp((incident as any)?.sla?.startedAt) ?? toTimestamp((incident as any)?.createdAt) ?? toTimestamp(incident.dateReported)
+    const targetMs = toTimestamp(activeBranch?.targetAt)
+    let balancePercent = 0
+    let breached = false
+    let label = responseDone
+      ? String((incident as any)?.sla?.resolution?.remainingLabel || incident.slaTimeLeft || '--:--')
+      : String((incident as any)?.sla?.response?.remainingLabel || incident.slaTimeLeft || '--:--')
+
+    if (startMs && targetMs && targetMs > startMs) {
+      const total = targetMs - startMs
+      const remaining = targetMs - now
+      const completedAtMs = toTimestamp(activeBranch?.completedAt)
+      breached = completedAtMs ? completedAtMs > targetMs : remaining < 0
+      balancePercent = breached ? 0 : Math.max(0, Math.min(100, (remaining / total) * 100))
+      label = completedAtMs ? 'SLA met' : formatSlaClock(remaining)
+    } else {
+      const parsedSeconds = parseSlaClockToSeconds(label)
+      if (parsedSeconds !== null) {
+        breached = parsedSeconds < 0
+        const defaultWindowSeconds = (
+          responseDone
+            ? getDefaultResolutionWindowMinutes(String(incident.priority || 'Low'))
+            : getDefaultResponseWindowMinutes(String(incident.priority || 'Low'))
+        ) * 60
+        balancePercent = breached ? 0 : Math.max(0, Math.min(100, (parsedSeconds / Math.max(1, defaultWindowSeconds)) * 100))
+      } else {
+        breached = String(label || '').trim().startsWith('-')
+        balancePercent = breached ? 0 : 50
+      }
+    }
+
+    const elapsedPercent = Math.max(0, 100 - balancePercent)
+    return { balancePercent, elapsedPercent, breached, label, color: getSlaElapsedColor(elapsedPercent) }
+  }
+  const isTicketClosed = String(selectedTicket?.status || '').trim().toLowerCase() === 'closed'
+  const isPortalUser = String(user?.role || '').trim().toUpperCase() === 'USER'
+  const selectedTicketTimeline = React.useMemo<TimelineEntry[]>(() => {
+    if (!selectedTicket) return []
+    return ticketComments[selectedTicket.id] || []
+  }, [selectedTicket, ticketComments])
+  React.useEffect(() => {
+    if (progressFilterInitializedRef.current) return
+    progressFilterInitializedRef.current = true
+    if (!isPortalUser) setProgressFilter('Conversation & Internal')
+  }, [isPortalUser])
+  const filteredProgressTimeline = React.useMemo<TimelineEntry[]>(() => {
+    const list = selectedTicketTimeline
+    const meId = Number(user?.id || 0)
+    const meName = String(getCurrentAgentName() || '').trim().toLowerCase()
+    const isConversation = (entry: TimelineEntry) => {
+      const kind = String(entry?.kind || '').toLowerCase()
+      const text = String(entry?.text || '').toLowerCase()
+      return kind === 'conversation' || text.includes('inbound email reply received') || text.includes('[email]')
+    }
+    const isInternal = (entry: TimelineEntry) => Boolean(entry?.internal) || String(entry?.kind || '').toLowerCase() === 'internal' || String(entry?.kind || '').toLowerCase() === 'private'
+    const isPrivate = (entry: TimelineEntry) => String(entry?.kind || '').toLowerCase() === 'private' || (Boolean(entry?.internal) && String(entry?.text || '').toLowerCase().startsWith('private'))
+    const isSlaOrUserOrAsset = (entry: TimelineEntry) => {
+      const kind = String(entry?.kind || '').toLowerCase()
+      return kind === 'sla' || kind === 'user' || kind === 'asset'
+    }
+    const isAcceptStatusChange = (entry: TimelineEntry) => {
+      const action = String(entry?.action || '').toLowerCase()
+      if (action.includes('accept ticket')) return true
+      const fromStatus = String((entry as any)?.fromStatus || '').trim().toLowerCase()
+      const toStatus = String((entry as any)?.toStatus || '').trim().toLowerCase()
+      if (fromStatus === 'new' && (toStatus === 'in progress' || toStatus === 'assigned')) return true
+      const text = String(entry?.text || '').toLowerCase()
+      return text.includes('status changed') && text.includes('new') && (text.includes('in progress') || text.includes('assigned'))
+    }
+    const normalizeActionEntry = (entry: TimelineEntry) => {
+      if (!isAcceptStatusChange(entry)) return entry
+      const existing = String(entry?.text || '').trim()
+      if (existing.toLowerCase().startsWith('accepted by')) {
+        return { ...entry, action: 'Accept Ticket', text: existing }
+      }
+      const acceptedBy = getCurrentAgentName() || 'You'
+      return { ...entry, action: 'Accept Ticket', text: `Accepted by ${acceptedBy}` }
+    }
+    const resolveActionLabel = (entry: TimelineEntry) => {
+      const action = String(entry?.action || '').trim()
+      const actionKey = action.toLowerCase()
+      const canonicalMap: Record<string, string> = {
+        'accept ticket': 'Accept Ticket',
+        'mark as responded': 'Mark as responsed',
+        'email user': 'Email User',
+        'log to supplier': 'Log to Supplier',
+        'internal note': 'Internal note',
+        'private note': 'Private note',
+        'note + email': 'Note + Email',
+        'requesting approval': 'Requesting Approval',
+        'request approval': 'Requesting Approval',
+        'close ticket': 'Close',
+        'close': 'Close',
+      }
+      if (canonicalMap[actionKey]) return canonicalMap[actionKey]
+      const text = String(entry?.text || '').trim().toLowerCase()
+      if (!text) return ''
+      if (text.startsWith('ticket created')) return 'New'
+      if (text.includes('accepted by')) return 'Accept Ticket'
+      if (text.includes('response sla marked as responded') || text.includes('mark as responded')) return 'Mark as responsed'
+      if (text.includes('email user')) return 'Email User'
+      if (text.includes('log to supplier') || text.includes('log with supplier')) return 'Log to Supplier'
+      if (text.startsWith('internal:')) return 'Internal note'
+      if (text.startsWith('private:')) return 'Private note'
+      if (text.includes('note + email') || text.includes('email+note')) return 'Note + Email'
+      if (text.includes('requesting approval') || text.includes('request approval')) return 'Requesting Approval'
+      if (text.includes('closed') || text.startsWith('closed:')) return 'Close'
+      if (text.includes('inbound email reply received') || text.includes('[email]')) return 'Conversation'
+      return ''
+    }
+    const allowedConversationActions = new Set([
+      'Accept Ticket',
+      'Mark as responsed',
+      'Email User',
+      'Log to Supplier',
+      'Internal note',
+      'Private note',
+      'Note + Email',
+      'Requesting Approval',
+      'Close',
+      'New',
+    ])
+    const isAllActionsOnlyEntry = (entry: TimelineEntry) => {
+      if (isSlaOrUserOrAsset(entry)) return true
+      if (isAcceptStatusChange(entry)) return false
+      const text = String(entry?.text || '').toLowerCase()
+      return (
+        text.includes('ticket updated') ||
+        text.includes('status changed') ||
+        text.includes('status updated') ||
+        text.includes('updated to') ||
+        text.includes('created from') ||
+        text.includes('ticket type') ||
+        text.includes('workflow') ||
+        text.includes('assigned staff') ||
+        text.includes('additional staff') ||
+        text.includes('issue - detail') ||
+        text.includes('service level agreement') ||
+        text.includes('response target') ||
+        text.includes('resolution target') ||
+        text.includes('end-user') ||
+        text.includes('reporting manager') ||
+        text.includes('phone number')
+      )
+    }
+    const isAllowedActionEntry = (entry: TimelineEntry) => {
+      const action = String(entry?.action || '').trim().toLowerCase()
+      const text = String(entry?.text || '').trim().toLowerCase()
+      if (text.includes('ticket updated')) return false
+      if ((text.includes('status changed') || text.includes('status updated')) && !isAcceptStatusChange(entry)) return false
+      const allowedActions = new Set([
+        'new',
+        'opened',
+        'accept ticket',
+        'mark as responded',
+        'internal note',
+        'private note',
+        'note + email',
+        'requesting approval',
+        'request approval',
+        'email user',
+        'log to supplier',
+        'close ticket',
+        'close',
+      ])
+      if (allowedActions.has(action)) return true
+      if (text.startsWith('ticket created')) return true
+      if (text.includes('mark as responded')) return true
+      if (text.includes('email user')) return true
+      if (text.includes('log to supplier') || text.includes('log with supplier')) return true
+      if (text.includes('requesting approval') || text.includes('request approval')) return true
+      if (text.startsWith('internal:') || text.startsWith('private:')) return true
+      if (text.includes('[email]') || text.includes('inbound email reply received')) return true
+      if (action.includes('close')) return true
+      if (action.includes('accept')) return true
+      if (action.includes('mark as responded')) return true
+      return false
+    }
+    const isPublic = (entry: TimelineEntry) => !isPrivate(entry) && !isInternal(entry) && !isSlaOrUserOrAsset(entry)
+    const isStaff = (entry: TimelineEntry) => {
+      const kind = String(entry?.kind || '').toLowerCase()
+      const changedById = Number(entry?.changedById || 0)
+      return (kind === 'system' || kind === 'internal' || kind === 'private') && changedById > 0
+    }
+
+    const sanitizedList = progressFilter === 'All Actions'
+      ? list
+      : list.filter((entry) => {
+        const text = String(entry?.text || '').toLowerCase()
+        if (isAcceptStatusChange(entry)) return true
+        if (text.includes('ticket updated')) return false
+        if (text.includes('status changed') || text.includes('status updated')) return false
+        return true
+      })
+
+    // User portal visibility: show only conversation timeline.
+    if (isPortalUser) return sanitizedList.filter((entry) => isConversation(entry) && !isAllActionsOnlyEntry(entry))
+
+    switch (progressFilter) {
+      case 'Conversation & Internal':
+        return sanitizedList
+          .map((entry) => {
+            const normalized = normalizeActionEntry(entry)
+            const resolved = resolveActionLabel(normalized)
+            return resolved ? { ...normalized, action: resolved } : normalized
+          })
+          .filter((entry) => {
+            if (isAllActionsOnlyEntry(entry)) return false
+            const action = String(entry?.action || '').trim()
+            if (allowedConversationActions.has(action)) return true
+            return isConversation(entry) || isInternal(entry)
+          })
+      case 'Conversation':
+        return sanitizedList
+          .filter((entry) => isConversation(entry) && isAllowedActionEntry(entry) && !isAllActionsOnlyEntry(entry))
+          .map((entry) => {
+            const normalized = normalizeActionEntry(entry)
+            const resolved = resolveActionLabel(normalized)
+            return resolved ? { ...normalized, action: resolved } : normalized
+          })
+      case 'Internal Conversations':
+        return sanitizedList
+          .filter((entry) => isInternal(entry) && isAllowedActionEntry(entry) && !isAllActionsOnlyEntry(entry))
+          .map((entry) => {
+            const normalized = normalizeActionEntry(entry)
+            const resolved = resolveActionLabel(normalized)
+            return resolved ? { ...normalized, action: resolved } : normalized
+          })
+      case 'Staff':
+        return sanitizedList.filter((entry) => isStaff(entry) && !isAllActionsOnlyEntry(entry)).map(normalizeActionEntry)
+      case 'Public ( User View)':
+        return sanitizedList.filter((entry) => isPublic(entry) && !isAllActionsOnlyEntry(entry)).map(normalizeActionEntry)
+      case 'Private':
+        return sanitizedList.filter((entry) => {
+          if (isAllActionsOnlyEntry(entry)) return false
+          if (!isPrivate(entry)) return false
+          const byId = meId > 0 && Number(entry?.changedById || 0) === meId
+          const byAuthor = !byId && meName && String(entry?.author || '').trim().toLowerCase() === meName
+          return byId || byAuthor
+        }).map(normalizeActionEntry)
+      case 'All Actions':
+      default:
+        return list
+    }
+  }, [isPortalUser, progressFilter, selectedTicketTimeline, user?.id, user?.name, user?.email, user?.username])
+  const closingEntry = React.useMemo(() => {
+    if (!selectedTicket) return null
+    const timeline = selectedTicketTimeline
+    return timeline
+      .slice()
+      .sort((a, b) => (toTimestamp(b.time) || 0) - (toTimestamp(a.time) || 0))
+      .find((entry) => {
+        const text = String(entry?.text || '').toLowerCase()
+        return text.startsWith('closed:') || text.includes('status updated to closed') || text.includes('ticket resolved/closed')
+      }) || null
+  }, [selectedTicket, selectedTicketTimeline])
+  const updateProgressScrollState = React.useCallback(() => {
+    const el = progressListRef.current
+    if (!el) return
+    const threshold = 24
+    const atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
+    setProgressAtEnd(atEnd)
+  }, [])
+  const jumpProgressList = () => {
+    const el = progressListRef.current
+    if (!el) return
+    if (progressAtEnd) {
+      el.scrollTo({ top: 0, behavior: 'smooth' })
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    }
+  }
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => updateProgressScrollState(), 0)
+    return () => window.clearTimeout(timer)
+  }, [selectedTicket?.id, filteredProgressTimeline.length, showActionComposer, showInternalNoteEditor, progressExpanded, updateProgressScrollState])
+  const closedAtMs =
+    toTimestamp((selectedTicket as any)?.closedAt) ??
+    toTimestamp(closingEntry?.time) ??
+    (isTicketClosed ? (toTimestamp((selectedTicket as any)?.updatedAt) ?? slaNowMs) : null)
+  const closedByName =
+    String((selectedTicket as any)?.closedByName || '').trim() ||
+    String(closingEntry?.author || '').trim() ||
+    String(selectedTicket?.assignedAgentName || '').trim() ||
+    'System'
+  const createdAtMs = toTimestamp((selectedTicket as any)?.createdAt) ?? toTimestamp(selectedTicket?.dateReported)
+  const timeToCloseLabel =
+    closedAtMs && createdAtMs
+      ? formatElapsedClock(Math.max(0, closedAtMs - createdAtMs))
+      : '--:--'
+  const createdDateObj = createdAtMs ? new Date(createdAtMs) : new Date()
+  const createdTimeValue = `${String(createdDateObj.getHours()).padStart(2, '0')}:${String(createdDateObj.getMinutes()).padStart(2, '0')}`
+
+  const pendingOpenTicketFieldRef = React.useRef<string | null>(null)
+  const openTicketFieldEditor = (field: string) => {
+    pendingOpenTicketFieldRef.current = field
+    setEditingTicketField(field)
+  }
+  const closeTicketFieldEditor = () => setEditingTicketField(null)
+
+  React.useEffect(() => {
+    if (editingTicketField !== 'status') return undefined
+    const handleClick = (event: MouseEvent) => {
+      if (!statusMenuRef.current) return
+      if (!statusMenuRef.current.contains(event.target as Node)) {
+        setEditingTicketField(null)
+      }
+    }
+    window.addEventListener('mousedown', handleClick)
+    return () => window.removeEventListener('mousedown', handleClick)
+  }, [editingTicketField])
+
+  const renderTicketFieldValue = (
+    field: string,
+    value: string,
+    onSelect: (next: string) => void,
+    options: string[],
+    fallback = 'Not set'
+  ) => {
+    if (editingTicketField === field) {
+      return (
+        <select
+          className="sidebar-select"
+          autoFocus
+          ref={(el) => {
+            if (!el) return
+            if (pendingOpenTicketFieldRef.current !== field) return
+            pendingOpenTicketFieldRef.current = null
+            // Open option list immediately on first click (single-click edit+open).
+            window.setTimeout(() => {
+              try {
+                el.focus()
+                const picker = (el as any).showPicker
+                if (typeof picker === 'function') picker.call(el)
+              } catch {
+                // keep focused as fallback for browsers without showPicker
+                el.focus()
+              }
+            }, 0)
+          }}
+          value={value || ''}
+          onBlur={closeTicketFieldEditor}
+          onChange={(e) => {
+            onSelect(e.target.value)
+            closeTicketFieldEditor()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') closeTicketFieldEditor()
+          }}
+        >
+          {options.map((option) => (
+            <option key={`${field}-${option || 'empty'}`} value={option}>{option || fallback}</option>
+          ))}
+        </select>
+      )
+    }
+    return (
+      <button type="button" className="sidebar-inline-value" onClick={() => openTicketFieldEditor(field)}>
+        {String(value || '').trim() || fallback}
+      </button>
+    )
+  }
+
+  const saveEndUserField = async (field: 'name' | 'email' | 'phone' | 'site' | 'accountManager') => {
+    const value = String(endUserDraft[field] || '').trim()
+    setEndUser((prev: any) => ({ ...(prev || {}), [field]: value }))
+    if (field === 'name' && selectedTicket) {
+      syncSelectedTicketInList(selectedTicket.id, { endUser: value || selectedTicket.endUser })
+    }
+    setEditingEndUserField(null)
+    if (!endUser?.id) return
+    try {
+      await userService.updateUser(Number(endUser.id), { [field]: value })
+    } catch (error: any) {
+      alert(error?.response?.data?.error || error?.message || 'Failed to update end-user details')
+    }
+  }
+
+  const renderEndUserField = (label: string, field: 'name' | 'email' | 'phone' | 'site' | 'accountManager') => {
+    const value = String((endUser as any)?.[field] || '')
+    const isEditing = editingEndUserField === field
+    return (
+      <div className="sidebar-field">
+        <label>{label}</label>
+        {isEditing ? (
+          <input
+            className="sidebar-select"
+            autoFocus
+            value={endUserDraft[field]}
+            onChange={(e) => setEndUserDraft((prev) => ({ ...prev, [field]: e.target.value }))}
+            onBlur={() => saveEndUserField(field)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveEndUserField(field)
+              if (e.key === 'Escape') {
+                setEndUserDraft((prev) => ({ ...prev, [field]: value }))
+                setEditingEndUserField(null)
+              }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className="sidebar-inline-value"
+            onClick={() => {
+              setEndUserDraft((prev) => ({ ...prev, [field]: value }))
+              setEditingEndUserField(field)
+            }}
+          >
+            {value || 'Not set'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  React.useEffect(() => {
+    setSlaPolicyMenuOpen(false)
+    setSlaPriorityMenuOpen(false)
+    setShowProgressFilterMenu(false)
+    setSelectedSlaPolicyName('')
+    setActiveDetailTab('Progress')
+    setIsEditingSubject(false)
+    setSubjectDraft(selectedTicket?.subject || '')
+  }, [selectedTicket?.id])
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const updateCompactLayout = () => {
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth
+      setIsCompactDetailLayout(viewportWidth <= 1360)
+    }
+    updateCompactLayout()
+    window.addEventListener('resize', updateCompactLayout)
+    window.visualViewport?.addEventListener('resize', updateCompactLayout)
+    return () => {
+      window.removeEventListener('resize', updateCompactLayout)
+      window.visualViewport?.removeEventListener('resize', updateCompactLayout)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (!isEditingSubject) return
+    const handleClickOutside = (event: Event) => {
+      const target = event.target as Node
+        if (subjectInputRef.current && target && !subjectInputRef.current.contains(target)) {
+          commitSubjectEdit(subjectInputRef.current.value)
+          setIsEditingSubject(false)
+          subjectInputRef.current.blur()
+        }
+    }
+    document.addEventListener('pointerdown', handleClickOutside, true)
+    window.addEventListener('pointerdown', handleClickOutside, true)
+    document.addEventListener('click', handleClickOutside, true)
+    window.addEventListener('click', handleClickOutside, true)
+    return () => {
+      document.removeEventListener('pointerdown', handleClickOutside, true)
+      window.removeEventListener('pointerdown', handleClickOutside, true)
+      document.removeEventListener('click', handleClickOutside, true)
+      window.removeEventListener('click', handleClickOutside, true)
+    }
+  }, [isEditingSubject, subjectDraft, selectedTicket?.id])
+
+  const mainContent = showDetailView && selectedTicket ? (
+    <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
+      <div className="work-main">
+        <div className="detail-view-container">
+        <div className="detail-action-bar">
+        <div className="action-toolbar">
+          {queueCollapsed && (
+            <button
+              className="pill-icon-btn"
+              title="Show side panel"
+              aria-label="Show side panel"
+              onClick={() => setQueueCollapsed(false)}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="4" y1="7" x2="20" y2="7" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="17" x2="20" y2="17" />
+              </svg>
+            </button>
+          )}
+          {getActionButtons().map((btn, idx) => (
+            btn.label === 'Back' ? (
+              <button key={idx} className="pill-icon-btn back-icon-btn" onClick={btn.onClick} title="Back" aria-label="Back">
+                {renderActionIcon(btn.label)}
+              </button>
+            ) : (
+              <button key={idx} className="pill-btn" onClick={btn.onClick}>
+                {renderActionIcon(btn.label)}
+                {btn.label}
+              </button>
+            )
+          ))}
+        </div>
+      </div>
+            {isCompactDetailLayout && (
+              <div className="detail-tabs compact">
+                <button
+                  className={`tab-btn${activeDetailTab === 'Progress' ? ' active' : ''}`}
+                  onClick={() => setActiveDetailTab('Progress')}
+                >
+                  Progress
+                </button>
+                <button
+                  className={`tab-btn${activeDetailTab === 'Details' ? ' active' : ''}`}
+                  onClick={() => setActiveDetailTab('Details')}
+                >
+                  Details
+                </button>
+              </div>
+            )}
+            <div className={`detail-view-card${isCompactDetailLayout ? ' compact' : ''}`}>
+        {(!isCompactDetailLayout || activeDetailTab === 'Progress') && (
+        <div className="progress-card">
+          <div className="ticket-detail-header ticket-detail-header-inline">
+            <div className="ticket-detail-id">
+              <div className={`ticket-detail-icon status-badge ${statusClass(selectedTicket.status || '')}`}>
+                <svg className="ticket-detail-icon-svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4z" />
+                  <path d="M9 9h.01M12 9h.01M15 9h.01" />
+                </svg>
+              </div>
+              <div className="ticket-detail-meta">
+                <div className="ticket-detail-code ticket-detail-code-lg">[{selectedTicket.id}]</div>
+              </div>
+              <div className="ticket-detail-subject ticket-detail-subject-row">
+                {isEditingSubject ? (
+                  <input
+                    ref={(el) => {
+                      subjectInputRef.current = el
+                      subjectEditWrapRef.current = el
+                    }}
+                    className="ticket-detail-subject-input"
+                    value={subjectDraft}
+                    autoFocus
+                    onChange={(e) => setSubjectDraft(e.target.value)}
+                    onBlur={(e) => commitSubjectEdit(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        commitSubjectEdit()
+                      }
+                      if (e.key === 'Escape') {
+                        setIsEditingSubject(false)
+                        setSubjectDraft(selectedTicket.subject || '')
+                      }
+                    }}
+                  />
+                ) : (
+                    <button
+                      type="button"
+                      className="ticket-detail-subject-btn"
+                      onClick={() => {
+                        setSubjectDraft(selectedTicket.subject || '')
+                        setIsEditingSubject(true)
+                        setTimeout(() => subjectInputRef.current?.focus(), 0)
+                      }}
+                    >
+                    {selectedTicket.subject || 'Not set'}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="ticket-detail-header-actions">
+              {!isPortalUser && (
+                <div className="filter-dropdown progress-filter-dropdown" ref={progressFilterMenuRef}>
+                  <button
+                    className="progress-icon-btn progress-icon-btn-filter"
+                    type="button"
+                    onClick={() => setShowProgressFilterMenu((v) => !v)}
+                    title={progressFilter}
+                    aria-label="Progress filter"
+                  >
+                    {renderIconGlyph('messages-square', 'progress-icon-image')}
+                  </button>
+                  {showProgressFilterMenu && (
+                    <div className="filter-menu progress-filter-menu">
+                      {progressFilterOptions.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          className={`filter-option progress-filter-option ${option === progressFilter ? 'active' : ''}`}
+                          onClick={() => {
+                            setProgressFilter(option)
+                            setShowProgressFilterMenu(false)
+                          }}
+                        >
+                          {renderIconGlyph(progressFilterIcons[option], 'progress-filter-icon')}
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="progress-actions">
+                <button
+                  type="button"
+                  className="progress-icon-btn"
+                  title={progressExpanded ? 'Collapse All' : 'Expand All'}
+                  aria-label={progressExpanded ? 'Collapse All' : 'Expand All'}
+                  onClick={() => setProgressExpanded((v) => !v)}
+                >
+                  {renderIconGlyph(progressExpanded ? 'square-minus' : 'square-plus', 'progress-icon-image')}
+                </button>
+                <button
+                  type="button"
+                  className="progress-icon-btn"
+                  title={progressAtEnd ? 'Move to Top' : 'Move to Last'}
+                  aria-label={progressAtEnd ? 'Move to Top' : 'Move to Last'}
+                  onClick={jumpProgressList}
+                >
+                  {renderIconGlyph(progressAtEnd ? 'arrow-up' : 'arrow-down', 'progress-icon-image')}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div
+            ref={progressListRef}
+            onScroll={updateProgressScrollState}
+            className={`progress-list${showActionComposer || showInternalNoteEditor ? ' progress-list-editor-open' : ''}${!progressExpanded ? ' progress-list-collapsed' : ''}`}
+          >
+            {showActionComposer && (
+              <div className={`action-compose-modal inline-compose-card${composerFullscreen ? ' compose-fullscreen' : ''}`}>
+                <div className="compose-header">
+                  <div className="compose-identity">
+                    {renderCurrentUserAvatar()}
+                    <div>
+                      <div className="compose-user">{getCurrentAgentName()}</div>
+                      <div className="compose-mode">| {getComposerHeading()}</div>
+                    </div>
+                  </div>
+                  <div className="compose-header-actions">
+                    <button className="compose-icon-btn" onClick={() => setComposerMenuOpen((v) => !v)} aria-label="More actions">...</button>
+                    <button className="compose-icon-btn" aria-label="High priority">!</button>
+                    <button className="compose-icon-btn compose-icon-btn-active" aria-label="Mail mode">@</button>
+                    <button
+                      className="compose-icon-btn"
+                      aria-label="Attach file"
+                      onClick={() => composerFileInputRef.current?.click()}
+                      type="button"
+                    >
+                      +
+                    </button>
+                    {composerMenuOpen && (
+                      <div className="compose-menu">
+                        <button onClick={() => setShowCcField((v) => !v)}>Show Cc</button>
+                        <button onClick={() => setShowBccField((v) => !v)}>Show Bcc</button>
+                        <button onClick={() => setComposerForm((prev) => ({ ...prev, to: endUser?.email || '' }))}>Reply directly to me</button>
+                      </div>
+                    )}
+                    <button
+                      className="compose-icon-btn"
+                      onClick={() => {
+                        setComposerAttachments([])
+                        clearComposerMediaPreviewUrls()
+                        setShowSendReview(false)
+                        setShowActionComposer(false)
+                      }}
+                      aria-label="Close"
+                    >
+                      x
+                    </button>
+                  </div>
+                </div>
+
+                <div className="compose-row compose-row-line">
+                  <label>To</label>
+                  <input
+                    value={composerForm.to}
+                    onChange={(e) => setComposerForm((prev) => ({ ...prev, to: e.target.value }))}
+                    placeholder="Enter recipient"
+                  />
+                  <div className="compose-row-tools">
+                    <button type="button" onClick={() => setComposerMenuOpen((v) => !v)} aria-label="Recipient options">v</button>
+                    <button type="button" onClick={() => setShowCcField((v) => !v)} aria-label="Toggle Cc">cc</button>
+                  </div>
+                </div>
+                {showCcField && (
+                  <div className="compose-row compose-row-line">
+                    <label>Cc</label>
+                    <input value={composerForm.cc} onChange={(e) => setComposerForm((prev) => ({ ...prev, cc: e.target.value }))} placeholder="Enter cc recipient" />
+                  </div>
+                )}
+                {showBccField && (
+                  <div className="compose-row compose-row-line">
+                    <label>Bcc</label>
+                    <input value={composerForm.bcc} onChange={(e) => setComposerForm((prev) => ({ ...prev, bcc: e.target.value }))} placeholder="Enter bcc recipient" />
+                  </div>
+                )}
+                <div className="compose-row compose-row-line compose-row-subject">
+                  <label />
+                  <input
+                    value={composerForm.subject}
+                    onChange={(e) => setComposerForm((prev) => ({ ...prev, subject: e.target.value }))}
+                    placeholder="Enter a subject here"
+                  />
+                </div>
+
+                <div className="compose-editor-shell">
+                  <div className="compose-editor-toolbar">
+                    <button type="button" onClick={() => setComposerFullscreen((v) => !v)} aria-label="Fullscreen">{toolbarIcon('fullscreen')}</button>
+                    <button type="button" onClick={() => setShowFontMenu((v) => !v)} aria-label="Font styles">{toolbarIcon('font')}</button>
+                    {showFontMenu && (
+                      <div className="compose-toolbar-menu">
+                        <div className="compose-toolbar-group">
+                          <button type="button" onClick={() => applyComposerCommand('bold')}>B</button>
+                          <button type="button" onClick={() => applyComposerCommand('italic')}>i</button>
+                          <button type="button" onClick={() => applyComposerCommand('underline')}>U</button>
+                          <button type="button" onClick={() => applyComposerCommand('strikeThrough')}>S</button>
+                        </div>
+                        <div className="compose-toolbar-group">
+                          <button type="button" onClick={() => applyComposerCommand('fontName', 'Arial')}>Aa</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontName', 'Georgia')}>Gg</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontName', 'Courier New')}>Mono</button>
+                        </div>
+                        <div className="compose-toolbar-group">
+                          <button type="button" onClick={() => applyComposerCommand('fontSize', '2')}>A-</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontSize', '3')}>A</button>
+                          <button type="button" onClick={() => applyComposerCommand('fontSize', '5')}>A+</button>
+                        </div>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowAlignMenu((v) => !v)} aria-label="Align">{toolbarIcon('align')}</button>
+                    {showAlignMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyComposerCommand('justifyLeft')}>Left</button>
+                        <button type="button" onClick={() => applyComposerCommand('justifyCenter')}>Center</button>
+                        <button type="button" onClick={() => applyComposerCommand('justifyRight')}>Right</button>
+                        <button type="button" onClick={() => applyComposerCommand('justifyFull')}>Justify</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => { applyComposerCommand('insertOrderedList'); setShowOrderedMenu((v) => !v) }} aria-label="Ordered list">{toolbarIcon('ordered')}</button>
+                    {showOrderedMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyListStyle('decimal')}>Default</button>
+                        <button type="button" onClick={() => applyListStyle('lower-alpha')}>Lower Alpha</button>
+                        <button type="button" onClick={() => applyListStyle('upper-alpha')}>Upper Alpha</button>
+                        <button type="button" onClick={() => applyListStyle('lower-roman')}>Lower Roman</button>
+                        <button type="button" onClick={() => applyListStyle('upper-roman')}>Upper Roman</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => { applyComposerCommand('insertUnorderedList'); setShowUnorderedMenu((v) => !v) }} aria-label="Unordered list">{toolbarIcon('unordered')}</button>
+                    {showUnorderedMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyListStyle('disc')}>Disc</button>
+                        <button type="button" onClick={() => applyListStyle('circle')}>Circle</button>
+                        <button type="button" onClick={() => applyListStyle('square')}>Square</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => { applyComposerCommand('formatBlock', 'blockquote'); setShowQuoteMenu((v) => !v) }} aria-label="Quote">{toolbarIcon('quote')}</button>
+                    {showQuoteMenu && (
+                      <div className="compose-toolbar-menu">
+                        <button type="button" onClick={() => applyComposerCommand('indent')}>Increase</button>
+                        <button type="button" onClick={() => applyComposerCommand('outdent')}>Decrease</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowLinkModal(true)} aria-label="Insert link">{toolbarIcon('link')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('image/*')} aria-label="Insert image">{toolbarIcon('image')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('video/*')} aria-label="Insert video">{toolbarIcon('video')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('audio/*')} aria-label="Insert audio">{toolbarIcon('audio')}</button>
+                    <button type="button" onClick={() => openComposerMediaPicker('*/*')} aria-label="Insert document">{toolbarIcon('doc')}</button>
+                    <button type="button" onClick={() => setShowTablePicker((v) => !v)} aria-label="Insert table">{toolbarIcon('table')}</button>
+                    {showTablePicker && (
+                      <div className="compose-toolbar-menu">
+                        <label>
+                          Rows
+                          <input value={tableSize.rows} onChange={(e) => setTableSize((prev) => ({ ...prev, rows: Number(e.target.value || 1) }))} />
+                        </label>
+                        <label>
+                          Cols
+                          <input value={tableSize.cols} onChange={(e) => setTableSize((prev) => ({ ...prev, cols: Number(e.target.value || 1) }))} />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rows = Math.max(1, tableSize.rows)
+                            const cols = Math.max(1, tableSize.cols)
+                            const table = `<table style="border-collapse:collapse;width:100%;">${Array.from({ length: rows })
+                              .map(() => `<tr>${Array.from({ length: cols }).map(() => `<td style="border:1px solid #d1d5db;padding:6px;">&nbsp;</td>`).join('')}</tr>`)
+                              .join('')}</table>`
+                            insertHtmlAtCursor(table)
+                            setShowTablePicker(false)
+                          }}
+                        >
+                          Insert
+                        </button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowEmojiPicker((v) => !v)} aria-label="Emoticons">{toolbarIcon('emoji')}</button>
+                    {showEmojiPicker && (
+                      <div className="compose-toolbar-menu emoji">
+                        {['??','??','??','??','??','??','??','??','??','??','??','??','??','?','??','?','??','??'].map((e) => (
+                          <button key={e} type="button" onClick={() => { applyComposerCommand('insertText', e); setShowEmojiPicker(false) }}>{e}</button>
+                        ))}
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setShowCannedMenu((v) => !v)} aria-label="Insert canned">{toolbarIcon('canned')}</button>
+                    {showCannedMenu && (
+                      <div className="compose-toolbar-menu">
+                        {loadCannedTexts().length === 0 && <span style={{ fontSize: 12, color: '#6b7280' }}>No canned text</span>}
+                        {loadCannedTexts().map((item) => (
+                          <button key={item.id} type="button" onClick={() => { insertHtmlAtCursor(item.html); setShowCannedMenu(false) }}>
+                            {item.name}
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => { setShowCannedMenu(false); setShowCannedModal(true) }}>Create Canned Text</button>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => applyComposerCommand('insertHorizontalRule')} aria-label="Horizontal line">{toolbarIcon('line')}</button>
+                    <button type="button" onClick={() => applyComposerCommand('removeFormat')} aria-label="Clear formatting">{toolbarIcon('clear')}</button>
+                  </div>
+                  <div
+                    ref={composerEditorRef}
+                    className="compose-editor-body rich"
+                    contentEditable
+                    suppressContentEditableWarning
+                    data-placeholder="Type your update/note here"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleComposerDrop}
+                    onPaste={handleComposerPaste}
+                    onInput={(e) => handleComposerInput(e.currentTarget.innerHTML)}
+                  />
+                </div>
+                <div className="compose-meta-row">
+                  <label className="compose-meta-field">
+                    <span>Status *</span>
+                    <select
+                      value={composerForm.actionStatus}
+                      onChange={(e) => setComposerForm((prev) => ({ ...prev, actionStatus: e.target.value }))}
+                    >
+                      {defaultStatusOptions.map((status) => (
+                        <option key={status}>{status}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {(composerMode === 'logSupplier' || composerMode === 'emailSupplier' || composerMode === 'callbackSupplier') && (
+                    <label className="compose-meta-field">
+                      <span>Supplier</span>
+                      <select
+                        value={composerForm.supplier}
+                        onChange={(e) => {
+                          const supplierId = e.target.value
+                          const match = supplierOptions.find((s) => String(s.id) === String(supplierId))
+                          const email = resolveSupplierEmail(match)
+                          setComposerForm((prev) => ({
+                            ...prev,
+                            supplier: supplierId,
+                            to: email || prev.to,
+                          }))
+                        }}
+                      >
+                        <option value="">Select supplier</option>
+                        {supplierOptions.map((supplier) => (
+                          <option key={supplier.id} value={supplier.id}>
+                            {getSupplierDisplayName(supplier)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
+                <input
+                  ref={composerFileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    pushAttachments(e.target.files, 'composer')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                <input
+                  ref={composerMediaInputRef}
+                  type="file"
+                  accept={composerMediaAccept}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    insertComposerMedia(e.target.files)
+                    const nonImageTransfer = new DataTransfer()
+                    Array.from(e.target.files || []).forEach((file) => {
+                      if (!String(file.type || '').toLowerCase().startsWith('image/')) nonImageTransfer.items.add(file)
+                    })
+                    pushAttachments(nonImageTransfer.files, 'composer')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                {composerAttachments.length > 0 && (
+                  <div className="compose-attachments">
+                    {composerAttachments.map((attachment) => (
+                      <div className="compose-attachment-chip" key={attachment.key}>
+                        <span>{attachment.file.name} ({formatAttachmentSize(attachment.file.size)})</span>
+                        <button type="button" onClick={() => removeAttachment(attachment.key, 'composer')}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {composerMode === 'approval' && (
+                  <div className="compose-grid three">
+                    <label>
+                      Approval Team
+                      <select value={composerForm.approvalTeam} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalTeam: e.target.value }))}>
+                        <option>Management Team</option>
+                        <option>HR Team</option>
+                        <option>Account Team</option>
+                      </select>
+                    </label>
+                    <label>
+                      Priority
+                      <input value={composerForm.approvalPriority} onChange={(e) => setComposerForm((prev) => ({ ...prev, approvalPriority: e.target.value }))} />
+                    </label>
+                    <label>
+                      Current Action
+                      <input value={composerForm.currentAction} onChange={(e) => setComposerForm((prev) => ({ ...prev, currentAction: e.target.value }))} />
+                    </label>
+                  </div>
+                )}
+
+                <div className="compose-footer-actions">
+                  <button className="btn-submit" onClick={openSendReview} disabled={isUploadingAttachments}>
+                    {isUploadingAttachments ? 'Uploading...' : 'Send'}
+                  </button>
+                  <button
+                    className="btn-cancel"
+                    onClick={() => {
+                      setComposerAttachments([])
+                      clearComposerMediaPreviewUrls()
+                      setShowSendReview(false)
+                      setShowActionComposer(false)
+                    }}
+                  >
+                    Discard
+                  </button>
+                  <button type="button" className="compose-footer-icon" aria-label="Schedule">[]</button>
+                </div>
+              </div>
+            )}
+            {showInternalNoteEditor && (
+              <div className="action-compose-modal inline-compose-card">
+                <div className="compose-header">
+                  <div className="compose-identity">
+                    {renderCurrentUserAvatar()}
+                    <div>
+                    <div className="compose-user">{getCurrentAgentName()}</div>
+                    <div className="compose-mode">
+                      {internalNoteContext === 'escalate'
+                        ? 'Escalate'
+                        : internalNoteVisibility === 'internal'
+                        ? 'Internal Note'
+                        : 'Private Note'}
+                    </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className="compose-icon-btn"
+                      onClick={() => internalNoteFileInputRef.current?.click()}
+                      type="button"
+                      aria-label="Attach file"
+                    >
+                      +
+                    </button>
+                    <button
+                      className="compose-icon-btn"
+                      onClick={() => {
+                        setInternalNoteAttachments([])
+                        clearInternalNoteMediaPreviewUrls()
+                        setShowInternalNoteEditor(false)
+                        setInternalNoteContext('note')
+                      }}
+                    >
+                      x
+                    </button>
+                  </div>
+                </div>
+                <div className="compose-editor-shell">
+                  <div className="compose-editor-toolbar">
+                    <button type="button" aria-label="Font styles">{toolbarIcon('font')}</button>
+                    <button type="button" aria-label="Horizontal line">{toolbarIcon('line')}</button>
+                    <button type="button" aria-label="Ordered list">{toolbarIcon('ordered')}</button>
+                    <button type="button" aria-label="Quote">{toolbarIcon('quote')}</button>
+                    <button type="button" aria-label="Insert link">{toolbarIcon('link')}</button>
+                    <button type="button" onClick={() => openInternalNoteMediaPicker()} aria-label="Insert image">{toolbarIcon('image')}</button>
+                    <button type="button" onClick={() => { setInternalNoteMediaAccept('video/*'); internalNoteMediaInputRef.current?.click() }} aria-label="Insert video">{toolbarIcon('video')}</button>
+                    <button type="button" onClick={() => { setInternalNoteMediaAccept('audio/*'); internalNoteMediaInputRef.current?.click() }} aria-label="Insert audio">{toolbarIcon('audio')}</button>
+                    <button type="button" onClick={openInternalNoteDocumentPicker} aria-label="Insert document">{toolbarIcon('doc')}</button>
+                    <button type="button" aria-label="Insert table">{toolbarIcon('table')}</button>
+                  </div>
+                  <div
+                    ref={internalNoteEditorRef}
+                    className="compose-editor-body rich"
+                    contentEditable
+                    suppressContentEditableWarning
+                    data-placeholder="Enter your note here"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={handleInternalNoteDrop}
+                    onPaste={handleInternalNotePaste}
+                    onInput={(e) => handleInternalNoteInput(e.currentTarget.innerHTML)}
+                  />
+                </div>
+                <input
+                  ref={internalNoteFileInputRef}
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    pushAttachments(e.target.files, 'note')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                <input
+                  ref={internalNoteMediaInputRef}
+                  type="file"
+                  accept={internalNoteMediaAccept}
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    insertInternalNoteMedia(e.target.files)
+                    pushAttachments(e.target.files, 'note')
+                    e.currentTarget.value = ''
+                  }}
+                />
+                {internalNoteAttachments.length > 0 && (
+                  <div className="compose-attachments">
+                    {internalNoteAttachments.map((attachment) => (
+                      <div className="compose-attachment-chip" key={attachment.key}>
+                        <span>{attachment.file.name} ({formatAttachmentSize(attachment.file.size)})</span>
+                        <button type="button" onClick={() => removeAttachment(attachment.key, 'note')}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {internalNoteContext === 'escalate' && (
+                  <div className="compose-grid" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                    <label className="compose-required">
+                      Team
+                      <select
+                        value={escalateForm.teamId}
+                        onChange={(e) => setEscalateForm((prev) => ({ ...prev, teamId: e.target.value }))}
+                      >
+                        <option value="">Select team</option>
+                        {createTeamOptions.map((team) => (
+                          <option key={team.key} value={team.key}>{team.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="compose-required">
+                      Staff
+                      <select
+                        value={escalateForm.staffId}
+                        onChange={(e) => setEscalateForm((prev) => ({ ...prev, staffId: e.target.value }))}
+                      >
+                        <option value="unassigned">Unassigned</option>
+                        {escalationStaffOptions.map((agent) => (
+                          <option key={agent.id} value={agent.id}>{agent.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+                <div className="compose-footer-actions">
+                  <button className="btn-submit" onClick={handleSaveInternalNote} disabled={isUploadingAttachments}>
+                    {isUploadingAttachments ? 'Uploading...' : 'Save'}
+                  </button>
+                  <button
+                    className="btn-cancel"
+                    onClick={() => {
+                      setInternalNoteAttachments([])
+                      clearInternalNoteMediaPreviewUrls()
+                      setShowInternalNoteEditor(false)
+                      setInternalNoteContext('note')
+                    }}
+                  >
+                    Discard
+                  </button>
+                </div>
+              </div>
+            )}
+            {filteredProgressTimeline
+              .slice()
+              .sort((a, b) => {
+                const ta = new Date(a.time).getTime()
+                const tb = new Date(b.time).getTime()
+                if (Number.isNaN(ta) || Number.isNaN(tb)) return 0
+                return tb - ta
+              })
+              .map((c, idx) => {
+                const authorName = String((c as any)?.author ?? '')
+                const identity = resolveCommentIdentity(authorName, c)
+                const actionLabel = String((c as any)?.action || '').trim()
+                return (
+              <div key={`${c.time}-${idx}`} className={`progress-item${!progressExpanded ? ' is-collapsed' : ''}`}>
+                <div className={`progress-avatar unified-user-avatar${identity.isMe ? ' queue-avatar-with-presence' : ''}`}>
+                  <span className={`queue-avatar-content${identity.avatarUrl ? '' : ' fallback-visible'}`}>
+                    {identity.avatarUrl ? (
+                      <img
+                        src={identity.avatarUrl}
+                        alt={identity.name}
+                        className="queue-avatar-image"
+                        onError={(e) => {
+                          e.currentTarget.parentElement?.classList.add('fallback-visible')
+                        }}
+                      />
+                    ) : null}
+                    <span className="queue-avatar-fallback">{identity.initials}</span>
+                  </span>
+                  {identity.isMe ? (
+                    <span className={`queue-avatar-presence queue-avatar-presence-${identity.presenceClass || 'available'}`} />
+                  ) : null}
+                </div>
+                <div className="progress-body">
+                  <div className="progress-meta">
+                    <div className="progress-head-left">
+                      <div className="progress-author">{identity.name}</div>
+                      {actionLabel ? <div className="progress-action-line">| {actionLabel}</div> : null}
+                    </div>
+                    <div className="progress-meta-right">
+                      <div className="progress-time">{c.time}</div>
+                      <div className="progress-action-buttons">
+                        <button
+                          type="button"
+                          className="progress-action-trigger"
+                          onClick={() => setActiveActionMenuId((prev) => (prev === String((c as any)?.actionId || '') ? null : String((c as any)?.actionId || '')))}
+                          aria-label="More actions"
+                        >
+                          ...
+                        </button>
+                        {activeActionMenuId === String((c as any)?.actionId || '') && (
+                          <div className="progress-action-menu">
+                            <button type="button" onClick={() => openActionDetail(c)}>View/Edit Action</button>
+                            <button type="button" onClick={() => forwardActionEntry(c)}>Forward</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="progress-text">{c.text}</div>
+                </div>
+              </div>
+            )})}
+            {filteredProgressTimeline.length === 0 && (
+              <div className="progress-item">
+                {isPortalUser ? (
+                  <div className="progress-body">
+                    <div className="progress-meta">
+                      <div className="progress-author">No conversation yet</div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="progress-avatar">
+                      {getInboundDisplayUser().avatarUrl ? (
+                        <img
+                          src={getInboundDisplayUser().avatarUrl}
+                          alt={getInboundDisplayUser().name}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      ) : getInitials(getInboundDisplayUser().name)}
+                    </div>
+                    <div className="progress-body">
+                      <div className="progress-meta">
+                        <div className="progress-author">{getInboundDisplayUser().name}</div>
+                        <div className="progress-time">{selectedTicket.dateReported}</div>
+                      </div>
+                      <div className="progress-text">{selectedTicket.subject}</div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+            {progressAtEnd && filteredProgressTimeline.length > 0 && (
+              <button
+                type="button"
+                className="progress-float-btn"
+                title="Move to Top"
+                aria-label="Move to Top"
+                onClick={jumpProgressList}
+              >
+                ?
+              </button>
+            )}
+          </div>
+        </div>
+        )}
+        {actionDetail && (
+          <div className="modal-overlay" onClick={() => setActionDetail(null)}>
+            <div className="modal-content action-detail-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>{String(actionDetail.action || 'Action')}</h2>
+                <div className="action-detail-id">ID: {String(actionDetail.actionId || '-')}</div>
+                <button className="modal-close" onClick={() => setActionDetail(null)}>x</button>
+              </div>
+              <div className="modal-body">
+                <div className="detail-row">
+                  <label>Action by</label>
+                  <span>{String(actionDetail.author || 'System')}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Date Done</label>
+                  <span>{String(actionDetail.time || '-')}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Date Created</label>
+                  <span>{String(actionDetail.time || '-')}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Hide from End-User</label>
+                  <span>{actionDetail.internal ? 'Yes' : 'No'}</span>
+                </div>
+                <div className="detail-row">
+                  <label>Action is Important</label>
+                  <span>No</span>
+                </div>
+                <div className="detail-row">
+                  <label>Application</label>
+                  <span>itsm-agent-web-application</span>
+                </div>
+                <div className="detail-row">
+                  <label>Note</label>
+                  <span>{String(actionDetail.text || '-')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {(!isCompactDetailLayout || activeDetailTab === 'Details') && (
+        <div className="detail-sidebar-wrap">
+          <div className="detail-sidebar">
+            <div className="sidebar-stack">
+              <div className="ticket-info-card">
+                <h3 className="sidebar-title">Ticket information</h3>
+                <div className="sidebar-field">
+                  <label>Date Created</label>
+                  <span>{createdDateObj.toLocaleDateString()} {createdTimeValue}</span>
+                </div>
+                <div className="sidebar-field">
+                  <label>Created from</label>
+                  {renderTicketFieldValue(
+                    'createdFrom',
+                    createdFromValue,
+                    (value) => {
+                      setCreatedFromValue(value)
+                      syncSelectedTicketInList(selectedTicket.id, { createdFrom: value })
+                    },
+                    createdFromOptions
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Ticket Type</label>
+                  {renderTicketFieldValue(
+                    'type',
+                    selectedTicket.type || '',
+                    (value) => {
+                      const nextWorkflow = getWorkflowForType(value)
+                      setTicketWorkflowValue(nextWorkflow)
+                      updateTicketPatch({ type: value, workflow: nextWorkflow }, { type: value, workflow: nextWorkflow })
+                    },
+                    ticketTypeOptions
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Workflow</label>
+                  {renderTicketFieldValue(
+                    'workflow',
+                    ticketWorkflowValue,
+                    (value) => {
+                      setTicketWorkflowValue(value)
+                      syncSelectedTicketInList(selectedTicket.id, { workflow: value })
+                    },
+                    workflowOptions
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Status</label>
+                  {editingTicketField === 'status' ? (
+                    <div className="status-menu-wrap" ref={statusMenuRef}>
+                      <div className="status-menu">
+                        {statusOptions.map((option) => (
+                          <button
+                            key={`status-${option || 'empty'}`}
+                            type="button"
+                            className={`status-menu-item${String(option || '').toLowerCase() === String(selectedTicket.status || '').toLowerCase() ? ' active' : ''}`}
+                            onClick={() => {
+                              applyStatus(option, `Status updated to ${option}`)
+                              closeTicketFieldEditor()
+                            }}
+                          >
+                            {option || 'Not set'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className={`sidebar-inline-value status-badge ${statusClass(selectedTicket.status || '')}`}
+                      onClick={() => openTicketFieldEditor('status')}
+                    >
+                      {selectedTicket.status || 'Not set'}
+                    </button>
+                  )}
+                </div>
+                {isTicketClosed && (
+                  <div className="closure-section">
+                    <div className="closure-title-row">
+                      <h4 className="closure-title">Closure details</h4>
+                      <span className="closure-chevron">^</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Date Closed</label>
+                      <span>{closedAtMs ? new Date(closedAtMs).toLocaleString() : '-'}</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Closed by</label>
+                      <span>{closedByName}</span>
+                    </div>
+                    <div className="sidebar-field">
+                      <label>Time to Close</label>
+                      <span>{timeToCloseLabel}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="sidebar-field">
+                  <label>Team</label>
+                  {renderTicketFieldValue(
+                    'team',
+                    ticketTeamValue,
+                    (value) => {
+                      setTicketTeamValue(value)
+                      syncSelectedTicketInList(selectedTicket.id, { team: value, category: value })
+                      ticketService.updateTicket(selectedTicket.id, { category: value }).catch(() => undefined)
+                    },
+                    teamOptions
+                  )}
+                </div>
+                <div className="sidebar-field assigned-field">
+                  <label>Assigned Staff</label>
+                  {renderTicketFieldValue(
+                    'assignedStaff',
+                    selectedTicket.assignedAgentName || '',
+                    (value) => {
+                      const match = agentOptions.find((option) => option.label === value)
+                      const selectedId = String(match?.id || '')
+                      const name = match?.label || 'Not set'
+                      updateTicketPatch(
+                        { assigneeId: selectedId ? Number(selectedId) : null },
+                        { assignedAgentId: selectedId, assignedAgentName: name }
+                      )
+                    },
+                    ['Not set', ...uniqueOptions(agentOptions.map((option) => option.label))]
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Additional Staff</label>
+                  {renderTicketFieldValue(
+                    'additionalStaff',
+                    additionalStaffValue,
+                    (value) => {
+                      const next = value === 'Not set' ? '' : value
+                      setAdditionalStaffValue(next)
+                      syncSelectedTicketInList(selectedTicket.id, { additionalAgents: next ? [next] : [] })
+                    },
+                    ['Not set', ...uniqueOptions(agentOptions.map((option) => option.label))]
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Issue</label>
+                  {renderTicketFieldValue(
+                    'issue',
+                    issueValue,
+                    (value) => {
+                      if (value === 'Not set') {
+                        setIssueValue('Not set')
+                        setIssueDetailValue('Not set')
+                        return
+                      }
+                      const next = value
+                      setIssueValue(next)
+                      updateTicketPatch({ category: next }, { category: next })
+                    },
+                    ['Not set', ...issueOptions]
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Issue - Detail</label>
+                  {renderTicketFieldValue(
+                    'issueDetail',
+                    issueDetailValue,
+                    (value) => {
+                      if (issueValue === 'Not set') {
+                        setIssueDetailValue('Not set')
+                        return
+                      }
+                      const next = value === 'Not set' ? '' : value
+                      setIssueDetailValue(next || 'Not set')
+                      updateTicketPatch({ subcategory: next }, { issueDetail: next })
+                    },
+                    ['Not set', ...issueDetailOptions]
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Resolution</label>
+                  {renderTicketFieldValue(
+                    'resolution',
+                    resolutionValue,
+                    (value) => {
+                      const next = value === 'Not set' ? '' : value
+                      setResolutionValue(value)
+                      updateTicketPatch({ resolution: next }, { resolution: next })
+                    },
+                    uniqueOptions([...defaultResolutionOptions, selectedTicket.resolution, resolutionValue])
+                  )}
+                </div>
+                <div className="sidebar-field">
+                  <label>Source</label>
+                  <span>Manual</span>
+                </div>
+                <div className="sidebar-field">
+                  <label>Assigned Asset</label>
+                  <span>{ticketAsset ? `${ticketAsset.name} (${ticketAsset.serial || 'no-serial'})` : 'None'}</span>
+                </div>
+              </div>
+              <div className={`sla-card ${slaToneClass}`}>
+                <h3 className="sidebar-title">Service Level Agreement</h3>
+                <div className="sla-pill">
+                  <div
+                    className="sla-pill-select-wrap"
+                    ref={slaPolicyMenuRef}
+                  >
+                    <button
+                      type="button"
+                      className="sla-pill-select"
+                      onClick={() => setSlaPolicyMenuOpen((v) => !v)}
+                      disabled={slaApplying}
+                    >
+                      <span>{currentSlaPolicyName}</span>
+                    </button>
+                    {slaPolicyMenuOpen && (
+                      <div className="sla-pill-dropdown">
+                        {activePolicies.map((policyName) => (
+                          <button
+                            key={policyName}
+                            type="button"
+                            className={`sla-pill-option${String(currentSlaPolicyName) === String(policyName) ? ' active' : ''}`}
+                            onClick={() => handlePolicySelectFromPill(String(policyName))}
+                          >
+                            {policyName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div
+                    className="sla-pill-select-wrap"
+                    ref={slaPriorityMenuRef}
+                  >
+                    <button
+                      type="button"
+                      className="sla-pill-select"
+                      onClick={() => setSlaPriorityMenuOpen((v) => !v)}
+                      disabled={slaApplying}
+                    >
+                      <span>{activeSlaPriorityLabel}</span>
+                    </button>
+                    {slaPriorityMenuOpen && (
+                      <div className="sla-pill-dropdown">
+                        {activePolicyRows.map((row) => {
+                          const rank = Number(row?.priorityRank || rankFromPriorityLabel(row?.priority))
+                          const canonical = canonicalPriorityForRank(rank)
+                          const label = String(row?.priority || canonical)
+                          return (
+                          <button
+                            key={`${row.id}-${label}`}
+                            type="button"
+                            className={`sla-pill-option${String(activeSlaPriorityLabel).toLowerCase() === label.toLowerCase() ? ' active' : ''}`}
+                            onClick={() => {
+                              setSlaPriorityMenuOpen(false)
+                              applySlaPriority(canonical)
+                              setSelectedSlaPolicyName(currentSlaPolicyName)
+                            }}
+                          >
+                            {label}
+                          </button>
+                        )})}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="sla-metric">
+                  <div className="sla-row">
+                    <span>Response Target</span>
+                    <span>{responseSla.targetLabel}</span>
+                    <span className={`sla-x${responseSla.met ? ' sla-check' : ''}`}>{responseSla.met ? '✓' : responseSla.breached ? '✕' : ''}</span>
+                  </div>
+                  {!responseSla.done ? (
+                    <div className="sla-progress-track" role="progressbar" aria-label="Response SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(responseSla.percent)}>
+                      <div
+                        className="sla-progress-fill"
+                        style={{
+                          width: `${responseSla.breached ? 100 : responseSla.percent}%`,
+                          background: responseSla.breached ? '#8B0000' : responseSla.color,
+                        }}
+                      />
+                      <span className="sla-progress-time">{responseSla.remainingLabel}</span>
+                    </div>
+                  ) : (
+                    <div className="sla-done-line">First response completed {responseSla.completedLabel !== '-' ? `at ${responseSla.completedLabel}` : ''}</div>
+                  )}
+                </div>
+                <div className="sla-metric">
+                  <div className="sla-row">
+                    <span>Resolution Target</span>
+                    <span>{resolutionSla.targetLabel}</span>
+                    <span className={`sla-x${resolutionSla.met ? ' sla-check' : ''}`}>{resolutionSla.met ? '✓' : resolutionSla.breached ? '✕' : ''}</span>
+                  </div>
+                  {!resolutionSla.done ? (
+                    <div className="sla-progress-track" role="progressbar" aria-label="Resolution SLA progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(resolutionSla.percent)}>
+                      <div
+                        className="sla-progress-fill"
+                        style={{
+                          width: `${resolutionSla.breached ? 100 : resolutionSla.percent}%`,
+                          background: resolutionSla.breached ? '#8B0000' : resolutionSla.color,
+                        }}
+                      />
+                      <span className="sla-progress-time">{resolutionSla.remainingLabel}</span>
+                    </div>
+                  ) : (
+                    <div className="sla-done-line">Resolution completed {resolutionSla.completedLabel !== '-' ? `at ${resolutionSla.completedLabel}` : ''}</div>
+                  )}
+                </div>
+              </div>
+              <div className="enduser-card">
+                <h3 className="sidebar-title" style={{ marginTop: 0, marginBottom: 8 }}>End-User details</h3>
+                <div className="enduser-header" style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                  <div className="enduser-avatar">{(endUser && endUser.name ? endUser.name.split(' ').map((n:string)=>n[0]).slice(0,2).join('') : 'EU')}</div>
+                  <div>
+                    <div className="enduser-name" style={{ fontWeight: 700 }}>{endUser?.name || 'Not set'}</div>
+                    <div className="enduser-client" style={{ color: '#6b7280', fontSize: 13 }}>{endUser?.email || 'Not set'}</div>
+                  </div>
+                </div>
+                {renderEndUserField('User Name', 'name')}
+                {renderEndUserField('Email Address', 'email')}
+                {renderEndUserField('Phone Number', 'phone')}
+                {renderEndUserField('Site', 'site')}
+                {renderEndUserField('Reporting Manager', 'accountManager')}
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="message-button" onClick={handleOpenGChat}>Message Directly on GChat</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
+        </div>
+      </div>
+      </div>
+    </div>
+  ) : (
+    <div className={`tickets-shell main-only ${queueCollapsed ? 'queue-collapsed' : ''}`}>
+      <div className="work-main">
+        <div className="tickets-tool-bar">
+          <div className="tool-bar-left">
+            {queueCollapsed && (
+              <button
+                className="table-icon-btn"
+                title="Show Menu"
+                onClick={() => {
+                  setQueueCollapsed(false)
+                }}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="4" y1="7" x2="20" y2="7" />
+                  <line x1="4" y1="12" x2="20" y2="12" />
+                  <line x1="4" y1="17" x2="20" y2="17" />
+                </svg>
+              </button>
+            )}
+            <div className="filter-dropdown">
+              <button 
+                className="filter-button"
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
+              >
+                {filterType}
+                <span className="dropdown-icon">▼</span>
+              </button>
+              {showFilterMenu && (
+                <div className="filter-menu">
+                  {filterOptions.map((option) => (
+                    <div
+                      key={option}
+                      className={`filter-option ${option === filterType ? 'active' : ''}`}
+                      onClick={() => {
+                        setFilterType(option)
+                        setShowFilterMenu(false)
+                      }}
+                    >
+                      {option}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="global-search tickets-search">
+              <input 
+                type="text" 
+                placeholder="Search..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleGlobalSearch()}
+              />
+              <span className="search-icon" onClick={handleGlobalSearch}>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="11" cy="11" r="7" />
+                  <line x1="16.5" y1="16.5" x2="21" y2="21" />
+                </svg>
+              </span>
+            </div>
+            <div className="tickets-mobile-actions">
+              <div className="toolbar-pagination-group">
+                <button
+                  className="users-page-btn"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  aria-label="Previous page"
+                >
+                  {'<'}
+                </button>
+                <button className="users-page-btn active" aria-label="Current page">
+                  {safePage}
+                </button>
+                <button
+                  className="users-page-btn"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  aria-label="Next page"
+                >
+                  {'>'}
+                </button>
+              </div>
+              <button
+                className="table-icon-btn"
+                title="Refresh"
+                aria-label="Refresh"
+                onClick={loadTickets}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="23 4 23 10 17 10" />
+                  <polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              </button>
+              <button className="table-primary-btn" onClick={() => setShowNewIncidentModal(true)}>+ New</button>
+              <button
+                className="table-icon-btn"
+                title="Filter"
+                onClick={() => {
+                  setShowFilterMenu(false)
+                  setShowSearchBar((v) => {
+                    const next = !v
+                    if (!next) clearColumnFilters()
+                    return next
+                  })
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="tool-bar-right">
+            <span className="pagination">{rangeStart}-{rangeEnd} of {totalTickets}</span>
+            <div className="toolbar-pagination-group">
+              <button
+                className="users-page-btn"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                aria-label="Previous page"
+              >
+                {'<'}
+              </button>
+              <button className="users-page-btn active" aria-label="Current page">
+                {safePage}
+              </button>
+              <button
+                className="users-page-btn"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                aria-label="Next page"
+              >
+                {'>'}
+              </button>
+            </div>
+            <button
+              className="table-icon-btn"
+              title="Refresh"
+              aria-label="Refresh"
+              onClick={loadTickets}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="23 4 23 10 17 10" />
+                <polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10M1 14l5.36 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            </button>
+            <button className="table-primary-btn" onClick={() => setShowNewIncidentModal(true)}>+ New</button>
+            <button
+              className="table-icon-btn"
+              title="Filter"
+              onClick={() => {
+                setShowFilterMenu(false)
+                setShowSearchBar((v) => {
+                  const next = !v
+                  if (!next) clearColumnFilters()
+                  return next
+                })
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+              </svg>
+            </button>
+          </div>
+        </div>
+        {selectedTickets.length > 0 && (
+          <div className="tickets-bulk-bar">
+            <div className="tool-bar-left">
+              <span className="bulk-count">{selectedTickets.length} selected</span>
+              <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} disabled={bulkBusy}>
+                <option value="">Change status...</option>
+                {statusOptions.map((option) => (
+                  <option key={`bulk-status-${option}`} value={option}>{option}</option>
+                ))}
+              </select>
+              <button className="table-primary-btn" onClick={applyBulkStatus} disabled={!bulkStatus || bulkBusy}>
+                {bulkBusy ? 'Working...' : 'Update Status'}
+              </button>
+              <select value={bulkTeam} onChange={(e) => setBulkTeam(e.target.value)} disabled={bulkBusy}>
+                <option value="">Change team...</option>
+                {teamOptions.map((option) => (
+                  <option key={`bulk-team-${option}`} value={option}>{option}</option>
+                ))}
+              </select>
+              <button className="table-primary-btn" onClick={applyBulkTeam} disabled={!bulkTeam || bulkBusy}>
+                {bulkBusy ? 'Working...' : 'Update Team'}
+              </button>
+              <button className="admin-settings-ghost" onClick={() => setSelectedTickets([])} disabled={bulkBusy}>
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+        <div className="incidents-table" ref={tableRef}>
+          <div className="table-header" style={ticketsGridStyle}>
+            <div className="col-checkbox col-header">
+              <input type="checkbox" checked={selectAll} onChange={handleSelectAll} aria-label="Select all tickets" />
+              <span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'checkbox')} />
+            </div>
+            <div className="col-status col-header">Status<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'status')} onDoubleClick={() => handleAutoFit('status')} /></div>
+            <div className="col-team col-header">Team<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'team')} onDoubleClick={() => handleAutoFit('team')} /></div>
+            <div className="col-id col-header">Ticket ID<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'id')} onDoubleClick={() => handleAutoFit('id')} /></div>
+              <div className="col-subject col-header">Subject<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'subject')} onDoubleClick={() => handleAutoFit('subject')} /></div>
+              <div className="col-type col-header">Ticket Type<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'type')} onDoubleClick={() => handleAutoFit('type')} /></div>
+              <div className="col-endUser col-header">Client<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'endUser')} onDoubleClick={() => handleAutoFit('endUser')} /></div>
+            <div className="col-sla col-header">SLA Time Left<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'sla')} onDoubleClick={() => handleAutoFit('sla')} /></div>
+            <div className="col-assetTag col-header">Asset Tag<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'assetTag')} onDoubleClick={() => handleAutoFit('assetTag')} /></div>
+            <div className="col-priority col-header">Priority<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'priority')} onDoubleClick={() => handleAutoFit('priority')} /></div>
+            <div className="col-lastAction col-header">Last Action<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'lastAction')} onDoubleClick={() => handleAutoFit('lastAction')} /></div>
+            <div className="col-date col-header">Date Created<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'date')} onDoubleClick={() => handleAutoFit('date')} /></div>
+            <div className="col-staff col-header">Staff<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'staff')} onDoubleClick={() => handleAutoFit('staff')} /></div>
+            <div className="col-category col-header">Issue<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'category')} onDoubleClick={() => handleAutoFit('category')} /></div>
+            <div className="col-issueDetail col-header">Issue - Detail<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'issueDetail')} onDoubleClick={() => handleAutoFit('issueDetail')} /></div>
+            <div className="col-resolution col-header">Resolution<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'resolution')} onDoubleClick={() => handleAutoFit('resolution')} /></div>
+            <div className="col-dateClosed col-header">Date Closed<span className="col-resize-handle" onMouseDown={(e) => handleMouseDown(e, 'dateClosed')} onDoubleClick={() => handleAutoFit('dateClosed')} /></div>
+            <div className="col-spacer col-header" aria-hidden="true" />
+          </div>
+          {showSearchBar && (
+            <div className="table-row table-search-row" style={ticketsGridStyle}>
+              <div className="col-checkbox">
+                <button className="search-close-btn" onClick={() => { setShowSearchBar(false); clearColumnFilters() }} aria-label="Close search">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="col-status"><input className="table-filter-input" value={searchValues.status} onChange={(e) => handleSearchChange('status', e.target.value)} /></div>
+              <div className="col-team"><input className="table-filter-input" value={searchValues.team} onChange={(e) => handleSearchChange('team', e.target.value)} /></div>
+              <div className="col-id"><input className="table-filter-input" value={searchValues.id} onChange={(e) => handleSearchChange('id', e.target.value)} /></div>
+              <div className="col-subject"><input className="table-filter-input" value={searchValues.subject} onChange={(e) => handleSearchChange('subject', e.target.value)} /></div>
+              <div className="col-type"><input className="table-filter-input" value={searchValues.type} onChange={(e) => handleSearchChange('type', e.target.value)} /></div>
+              <div className="col-endUser"><input className="table-filter-input" value={searchValues.endUser} onChange={(e) => handleSearchChange('endUser', e.target.value)} /></div>
+              <div className="col-sla"><input className="table-filter-input" value={searchValues.slaTimeLeft} onChange={(e) => handleSearchChange('slaTimeLeft', e.target.value)} /></div>
+              <div className="col-assetTag"><input className="table-filter-input" value={searchValues.assetTag} onChange={(e) => handleSearchChange('assetTag', e.target.value)} /></div>
+              <div className="col-priority"><input className="table-filter-input" value={searchValues.priority} onChange={(e) => handleSearchChange('priority', e.target.value)} /></div>
+              <div className="col-lastAction"><input className="table-filter-input" value={searchValues.lastAction} onChange={(e) => handleSearchChange('lastAction', e.target.value)} /></div>
+              <div className="col-date"><input className="table-filter-input" value={searchValues.dateReported} onChange={(e) => handleSearchChange('dateReported', e.target.value)} /></div>
+              <div className="col-staff"><input className="table-filter-input" value={searchValues.staff} onChange={(e) => handleSearchChange('staff', e.target.value)} /></div>
+              <div className="col-category"><input className="table-filter-input" value={searchValues.category} onChange={(e) => handleSearchChange('category', e.target.value)} /></div>
+              <div className="col-issueDetail"><input className="table-filter-input" value={searchValues.issueDetail} onChange={(e) => handleSearchChange('issueDetail', e.target.value)} /></div>
+              <div className="col-resolution"><input className="table-filter-input" value={searchValues.resolution} onChange={(e) => handleSearchChange('resolution', e.target.value)} /></div>
+              <div className="col-dateClosed"><input className="table-filter-input" value={searchValues.dateClosed} onChange={(e) => handleSearchChange('dateClosed', e.target.value)} /></div>
+              <div className="col-spacer" aria-hidden="true" />
+            </div>
+          )}
+          {pageItems.map((incident) => (
+            <div
+              key={incident.id}
+              className="table-row"
+              style={ticketsGridStyle}
+              onClick={() => handleTicketClick(incident)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handleTicketClick(incident)
+                }
+              }}
+            >
+              <div className="col-checkbox" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedTickets.includes(incident.id)}
+                  onChange={() => handleSelectTicket(incident.id)}
+                  aria-label={`Select ${incident.id}`}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+              <div className="col-status">
+                {(() => {
+                  const isUpdatedStatus = String(incident.status || '').trim().toLowerCase() === 'updated'
+                  const showUpdate = isUpdatedStatus || hasInboundUpdate(incident)
+                  const statusLabel = showUpdate ? 'Update' : incident.status
+                  const statusKey = showUpdate ? 'Updated' : incident.status
+                  return <span className={`status-badge ${statusClass(statusKey)}`}>{statusLabel}</span>
+                })()}
+              </div>
+              <div className="col-team">{mapTeam(incident).team || '-'}</div>
+              <div className="col-id">{incident.id}</div>
+              <div className="col-subject">{incident.subject || '-'}</div>
+              <div className="col-type">{incident.type || '-'}</div>
+              <div className="col-endUser">{incident.clientCompany || incident.endUser || '-'}</div>
+              <div className="col-sla">
+                {(() => {
+                  const isClosed = String(incident.status || '').trim().toLowerCase() === 'closed'
+                  if (isClosed) return <span>-</span>
+                  const slaVisual = getTableSlaVisual(incident)
+                  return (
+                    <div className={`sla-table-track${slaVisual.breached ? ' is-breached' : ''}`}>
+                      <div
+                        className="sla-table-fill"
+                        style={{
+                          width: `${slaVisual.breached ? 100 : slaVisual.elapsedPercent}%`,
+                          background: slaVisual.breached ? '#8B0000' : slaVisual.color,
+                        }}
+                      />
+                      <span className="sla-table-text">{slaVisual.label}</span>
+                    </div>
+                  )
+                })()}
+              </div>
+              <div className="col-assetTag">{incident.assetTag || '-'}</div>
+              <div className="col-priority">{incident.priority || '-'}</div>
+              <div className="col-lastAction">{formatDateTime(incident.lastActionTime) || '-'}</div>
+              <div className="col-date">{formatDateTime(incident.dateReported) || '-'}</div>
+              <div className="col-staff">
+                {(() => {
+                  const staffLabel = String(incident.staff || incident.assignedAgentName || '').trim()
+                  const agentKey = String(incident.assignedAgentId || '').trim()
+                  const record = findAgentRecord(agentKey, staffLabel)
+                  const presenceClass = record ? getAgentPresenceClass(record) : 'offline'
+                  if (!staffLabel && !record) {
+                    return (
+                      <div className="staff-cell">
+                        {renderUnassignedAvatar()}
+                        <span>Unassigned</span>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="staff-cell">
+                      <div className="queue-avatar queue-avatar-with-presence">
+                        {renderQueueAgentAvatar(record || { id: agentKey, name: staffLabel }, staffLabel || 'User')}
+                        <span className={`queue-avatar-presence queue-avatar-presence-${presenceClass}`} />
+                      </div>
+                      <span>{staffLabel || 'Unassigned'}</span>
+                    </div>
+                  )
+                })()}
+              </div>
+              <div className="col-category">{incident.category || '-'}</div>
+              <div className="col-issueDetail">{incident.issueDetail || '-'}</div>
+              <div className="col-resolution">{incident.resolution || '-'}</div>
+              <div className="col-dateClosed">{incident.closedAt ? new Date(incident.closedAt).toLocaleString() : '-'}</div>
+              <div className="col-spacer" aria-hidden="true" />
+            </div>
+          ))}
+          {pageItems.length === 0 && (
+            <div className="table-empty">No tickets found.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+
+  if (ticketsLoading && incidents.length === 0) {
+    return (
+      <div className="tickets-view">
+        {queueSidebar}
+        <div className="tickets-shell">
+          <div className="ticket-main">
+            <PageSkeleton title="Tickets" cardCount={2} rowCount={10} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="tickets-view"
+      onPointerDownCapture={(event) => {
+        if (!isEditingSubject) return
+        const target = event.target as Node
+        if (subjectInputRef.current && target && !subjectInputRef.current.contains(target)) {
+          commitSubjectEdit()
+          subjectInputRef.current.blur()
+        }
+      }}
+    >
+      {queueSidebar}
+      {mainContent}
+
+      {showSendReview && (
+        <div className="compose-review-overlay" onClick={() => setShowSendReview(false)}>
+          <div className="compose-review-card" onClick={(e) => e.stopPropagation()}>
+            <div className="compose-review-topbar">
+              <button
+                className="compose-review-send"
+                onClick={async () => {
+                  setShowSendReview(false)
+                  await handleSendActionComposer()
+                }}
+                disabled={isUploadingAttachments}
+              >
+                Send
+              </button>
+              <button className="compose-review-cancel" onClick={() => setShowSendReview(false)}>Cancel</button>
+              <button className="compose-review-close" onClick={() => setShowSendReview(false)} aria-label="Close">x</button>
+            </div>
+            <div className="compose-review-header">
+              {renderCurrentUserAvatar('compose-review-avatar')}
+              <div>
+                <div className="compose-review-title">{getComposerHeading()}</div>
+                <div className="compose-review-subtitle">Email</div>
+              </div>
+            </div>
+            <div className="compose-review-body">
+              <div className="compose-review-row">
+                <span>Sent:</span>
+                <span>Not yet ready to send (press "Send" to save your Action and send this Email or "Cancel" to edit your Action).</span>
+              </div>
+              <div className="compose-review-row">
+                <span>From:</span>
+                <span>{PLATFORM_FROM_MAIL || 'support.techdesk@gmail.com'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>To:</span>
+                <span>{composerForm.to || 'Not set'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>Cc:</span>
+                <span>{composerForm.cc || 'Not set'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>Bcc:</span>
+                <span>{composerForm.bcc || 'Not set'}</span>
+              </div>
+              <div className="compose-review-row">
+                <span>Subject:</span>
+                <span>{composerForm.subject || 'Not set'}</span>
+              </div>
+              {composerAttachments.length > 0 && (
+                <div className="compose-review-row">
+                  <span>Attachments:</span>
+                  <span>{composerAttachments.map((a) => a.file.name).join(', ')}</span>
+                </div>
+              )}
+              <div className="compose-review-content" dangerouslySetInnerHTML={{ __html: buildMailPreviewHtml() }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLinkModal && (
+        <div className="compose-modal-overlay" onClick={() => setShowLinkModal(false)}>
+          <div className="compose-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Insert Link</h4>
+            <label>
+              URL
+              <input value={linkForm.url} onChange={(e) => setLinkForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
+            </label>
+            <label>
+              Text
+              <input value={linkForm.text} onChange={(e) => setLinkForm((prev) => ({ ...prev, text: e.target.value }))} placeholder="Link text" />
+            </label>
+            <div className="compose-modal-actions">
+              <button onClick={() => setShowLinkModal(false)}>Cancel</button>
+              <button
+                onClick={() => {
+                  const url = linkForm.url.trim()
+                  if (!url) return
+                  const text = linkForm.text.trim()
+                  if (text) insertHtmlAtCursor(`<a href="${url}">${text}</a>`)
+                  else applyComposerCommand('createLink', url)
+                  setLinkForm({ url: '', text: '' })
+                  setShowLinkModal(false)
+                }}
+              >
+                Insert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImageModal && (
+        <div className="compose-modal-overlay" onClick={() => setShowImageModal(false)}>
+          <div className="compose-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Insert Image</h4>
+            <label>
+              Image URL
+              <input value={imageForm.url} onChange={(e) => setImageForm((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
+            </label>
+            <div className="compose-modal-actions">
+              <button onClick={() => setShowImageModal(false)}>Cancel</button>
+              <button
+                onClick={() => {
+                  const url = imageForm.url.trim()
+                  if (!url) return
+                  insertHtmlAtCursor(`<img src="${url}" alt="" style="max-width:100%;" />`)
+                  setImageForm({ url: '' })
+                  setShowImageModal(false)
+                }}
+              >
+                Insert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCannedModal && (
+        <div className="compose-modal-overlay" onClick={() => setShowCannedModal(false)}>
+          <div className="compose-modal" onClick={(e) => e.stopPropagation()}>
+            <h4>Create Canned Text</h4>
+            <label>
+              Name
+              <input value={cannedForm.name} onChange={(e) => setCannedForm((prev) => ({ ...prev, name: e.target.value }))} />
+            </label>
+            <label>
+              Text
+              <textarea value={cannedForm.html} onChange={(e) => setCannedForm((prev) => ({ ...prev, html: e.target.value }))} />
+            </label>
+            <div className="compose-modal-actions">
+              <button onClick={() => setShowCannedModal(false)}>Cancel</button>
+              <button
+                onClick={() => {
+                  const name = cannedForm.name.trim()
+                  const raw = (cannedForm.html.trim() || composerBodyHtml).trim()
+                  const hasTags = /<[^>]+>/.test(raw)
+                  const html = hasTags ? raw : raw.replace(/\n/g, '<br/>')
+                  if (!name || !html) return
+                  const items = loadCannedTexts()
+                  saveCannedTexts([{ id: `ct-${Date.now()}`, name, html }, ...items])
+                  setCannedForm({ name: '', html: '' })
+                  setShowCannedModal(false)
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNewIncidentModal && (
+        <div className="modal-overlay" onClick={() => setShowNewIncidentModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Ticket details</h2>
+              <button className="modal-close" onClick={() => setShowNewIncidentModal(false)}>?</button>
+            </div>
+
+            <div className="modal-body">
+              <div className="form-section">
+                <label className="form-label">Ticket Type *</label>
+                <select 
+                  value={newIncidentForm.ticketType}
+                  onChange={(e) => setNewIncidentForm({...newIncidentForm, ticketType: e.target.value})}
+                  className="form-select"
+                >
+                  <option value="" disabled>Select Ticket Type</option>
+                  {createTicketTypeOptions.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+
+              {(isIncidentType || isTaskType) && (
+                <div className="form-section">
+                  <label className="form-label">Team *</label>
+                  <select
+                    value={newIncidentForm.teamId}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, teamId: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Team</option>
+                    {createTeamOptions.map((team) => (
+                      <option key={team.key} value={team.key}>{team.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">Staff *</label>
+                  <select
+                    value={newIncidentForm.staffId}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, staffId: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Staff</option>
+                    {taskStaffOptions.map((staff) => (
+                      <option key={staff.id} value={staff.id}>{staff.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="form-section">
+                <label className="form-label">Email CC List (Separate by ; )</label>
+                <input
+                  type="text"
+                  placeholder="Email CC List"
+                  value={newIncidentForm.cc}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, cc: e.target.value })}
+                  className="form-input"
+                />
+              </div>
+
+              <div className="form-section">
+                <label className="form-label">Subject *</label>
+                <input 
+                  type="text" 
+                  placeholder="Enter subject"
+                  value={newIncidentForm.subject}
+                  onChange={(e) => setNewIncidentForm({...newIncidentForm, subject: e.target.value})}
+                  className="form-input"
+                />
+              </div>
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">Start Date *</label>
+                  <input
+                    type="date"
+                    value={newIncidentForm.startDate}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, startDate: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
+              {isTaskType && (
+                <div className="form-section">
+                  <label className="form-label">End Date *</label>
+                  <input
+                    type="date"
+                    value={newIncidentForm.endDate}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, endDate: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
+              <div className="form-section">
+                <label className="form-label">Description *</label>
+                <textarea 
+                  placeholder={isNewStarterType ? 'Complete the New Starter fields' : 'Please provide a detailed description and include screenshots where possible.'}
+                  value={newIncidentForm.description}
+                  onChange={(e) => setNewIncidentForm({ ...newIncidentForm, description: e.target.value })}
+                  className="form-textarea"
+                />
+              </div>
+
+              {(isIncidentType || isServiceRequestType || isTaskType || isProblemType || isOffboardingType || isNewAssetsType) && (
+                <div className="form-section">
+                  <label className="form-label">Assets</label>
+                  <input
+                    type="text"
+                    placeholder="Add Asset"
+                    value={newIncidentForm.asset}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, asset: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+              )}
+
+              {(isIncidentType || isTaskType || isNewStarterType) && (
+                <div className="form-section">
+                  <label className="form-label">Priority *</label>
+                  <select 
+                    value={newIncidentForm.priority}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, priority: e.target.value as any })}
+                    className="form-select"
+                  >
+                    <option value="" disabled>Select Priority</option>
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                  </select>
+                </div>
+              )}
+
+              {isIncidentType && (
+                <div className="form-section">
+                  <label className="form-label">Classifications</label>
+                  <select
+                    value={newIncidentForm.classification}
+                    onChange={(e) => setNewIncidentForm({ ...newIncidentForm, classification: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="">Select Classification</option>
+                    {classificationOptions.filter(Boolean).map((option) => (
+                      <option key={option} value={option}>{option}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button className="btn-cancel" onClick={() => setShowNewIncidentModal(false)}>Cancel</button>
+              <button className="btn-submit" onClick={handleCreateIncident}>Create Ticket</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

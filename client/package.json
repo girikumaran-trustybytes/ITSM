@@ -1,0 +1,34 @@
+{
+  "name": "techdesk-frontend",
+  "version": "1.0.148",
+  "private": true,
+  "homepage": "https://supporttechdesk.github.io/techdesk",
+  "engines": {
+    "node": "20.20.2"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@hookform/resolvers": "^2.9.11",
+    "@mui/material": "^5.14.10",
+    "axios": "^1.4.0",
+    "lucide-react": "^0.452.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "react-hook-form": "^7.45.0",
+    "react-router-dom": "^6.14.1",
+    "zod": "^3.21.4"
+  },
+  "devDependencies": {
+    "@types/react": "18.0.28",
+    "@types/react-dom": "18.0.11",
+    "@vitejs/plugin-react": "4.0.0",
+    "typescript": "5.1.6",
+    "vite": "4.4.9"
+  }
+}

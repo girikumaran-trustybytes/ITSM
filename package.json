@@ -1,0 +1,12 @@
+{
+  "name": "techdesk-monorepo",
+  "private": true,
+  "engines": {
+    "node": "20.20.2"
+  },
+  "scripts": {
+    "build": "npm --prefix backend ci --include=dev && npm --prefix backend run build",
+    "start": "node backend/dist/index.js",
+    "dev": "npm --prefix backend run dev"
+  }
+}
