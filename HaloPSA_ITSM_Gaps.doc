@@ -1,0 +1,108 @@
+ITSM vs HaloPSA (Detailed Gap Analysis)
+======================================
+
+Assumption
+- Your ITSM includes an end-user portal for ticket submission and status tracking.
+
+A. End-User Experience
+- HaloPSA
+  - Full self-service portal + service catalog.
+  - Knowledge base integrated into portal.
+  - Request types can be governed with approvals and automation.
+- Your ITSM
+  - End-user portal exists (ticket submission + status view).
+  - Knowledge base removed/hidden.
+  - Request types and approvals exist but are less structured than full catalog.
+- Gaps
+  - No service catalog.
+  - No KB publishing.
+  - Limited request-type automation depth.
+
+B. Ticketing + Service Desk Core
+- HaloPSA
+  - Advanced automation, SLAs, multi-queue rules.
+  - Ticket templates and dynamic forms.
+  - Granular notification rules.
+- Your ITSM
+  - Queues, escalation, approvals, status workflows.
+  - Outbound mail only via explicit actions.
+  - Update badge for inbound replies without changing status.
+- Gaps
+  - Advanced templates/conditional fields.
+  - Granular notification rules.
+  - Rich form automation.
+
+C. Workflow & Automation Depth
+- HaloPSA
+  - Event-driven automation (RMM alerts, asset events, contract triggers).
+  - Automated routing and closure conditions.
+- Your ITSM
+  - Basic workflow transitions with limited automation.
+  - Manual or queue-based routing.
+- Gaps
+  - External triggers and automation orchestration.
+
+D. CRM / Client Account Management
+- HaloPSA
+  - CRM for accounts, contacts, agreements, service history.
+  - Designed for MSP multi-client operations.
+- Your ITSM
+  - Internal user directory only.
+  - No CRM or multi-client structure.
+- Gaps
+  - CRM + client lifecycle management.
+  - Multi-tenant client handling.
+
+E. PSA Billing & Contracts
+- HaloPSA
+  - Contracts, billing, invoicing, profitability tracking.
+  - Time entries drive billing.
+- Your ITSM
+  - No contract or billing layer.
+- Gaps
+  - PSA finance layer missing.
+
+F. Time Tracking & Projects
+- HaloPSA
+  - Time tracking, project tasks, resource planning.
+- Your ITSM
+  - No project module or time entry.
+- Gaps
+  - Worklog + project workflow missing.
+
+G. Integrations & Ecosystem
+- HaloPSA
+  - Large integration marketplace (RMM, documentation, finance, monitoring).
+- Your ITSM
+  - IMAP/SMTP mail only.
+- Gaps
+  - API connectors and integration ecosystem missing.
+
+H. Assets
+- HaloPSA
+  - Asset discovery and sync with RMM tools.
+  - Lifecycle cost tracking and procurement.
+- Your ITSM
+  - Basic asset records with category/type structure.
+  - Details tab limited to Laptop/Workstation/Desktop/PC.
+- Gaps
+  - Discovery, sync, costing, and procurement.
+
+I. Reporting & Analytics
+- HaloPSA
+  - Advanced dashboards, SLA and performance analytics.
+- Your ITSM
+  - Reports view currently empty by request.
+- Gaps
+  - Advanced reporting and analytics.
+
+Summary of Major Gaps
+1. PSA billing/contracts and finance
+2. CRM + multi-client account management
+3. Time tracking and project management
+4. Integration ecosystem
+5. Event-driven automation
+6. Advanced asset lifecycle management
+7. Reporting and analytics
+
+End of Document
