@@ -9,6 +9,8 @@ router.use(authenticateJWT)
 
 router.get('/database/config', permit(['ADMIN']), ctrl.getDatabaseConfig)
 router.post('/database/test', permit(['ADMIN']), ctrl.testDatabaseConfig)
+router.post('/database/save', permit(['ADMIN']), ctrl.saveDatabaseConfig)
+router.post('/database/migrate', permit(['ADMIN']), ctrl.migrateDatabaseConfig)
 router.get('/security-settings', permit(['ADMIN']), ctrl.getSecuritySettings)
 router.put('/security-settings', permit(['ADMIN']), ctrl.updateSecuritySettings)
 router.get('/account-settings', permit(['ADMIN']), ctrl.getAccountSettings)

@@ -1,0 +1,10 @@
+{
+  "name": "Support Tech Desk",
+  "short_name": "SupportDesk",
+  "description": "Support Tech Desk IT service management portal.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c3b67",
+  "theme_color": "#0c3b67",
+  "icons": []
+}

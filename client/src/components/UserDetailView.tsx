@@ -13,6 +13,7 @@ import {
 } from '../services/rbac.service'
 import { deleteUser, updateUser } from '../modules/users/services/user.service'
 import { PageSkeleton } from './Skeleton'
+import { useAuth } from '../contexts/AuthContext'
 
 type PermissionEntry = {
   permissionKey: string
@@ -133,6 +134,35 @@ export default function UserDetailView({
   })
   const [actionToast, setActionToast] = React.useState<{ type: 'ok' | 'error'; text: string } | null>(null)
   const [actionBusy, setActionBusy] = React.useState(false)
+
+  const { user: currentUser } = useAuth()
+  const currentRoles = React.useMemo(() => {
+    const roles = Array.isArray(currentUser?.roles)
+      ? currentUser.roles.map((value: any) => String(value || '').trim().toUpperCase())
+      : []
+    const mainRole = String(currentUser?.role || '').trim().toUpperCase()
+    if (mainRole && !roles.includes(mainRole)) roles.unshift(mainRole)
+    return Array.from(new Set(roles.filter((value) => value.length > 0)))
+  }, [currentUser?.role, currentUser?.roles])
+
+  const isSuperAdmin = currentRoles.includes('SUPERADMIN')
+  const isAdminRole = currentRoles.includes('ADMIN')
+  const isAgentRole = currentRoles.includes('AGENT')
+  const canViewUserActions = isSuperAdmin || isAdminRole || isAgentRole
+  const isRegularUserSelected = Boolean(user && !user?.isServiceAccount)
+  const shouldShowUserActions = canViewUserActions && isRegularUserSelected
+  const canPerformAdminUserActions = isSuperAdmin || isAdminRole
+
+  const visibleProfileTabs = React.useMemo(
+    () => (isAgentsMode ? profileTabs : profileTabs.filter((tab) => tab.key === 'profile' || tab.key === 'tickets')),
+    [isAgentsMode]
+  )
+
+  React.useEffect(() => {
+    if (!visibleProfileTabs.some((tab) => tab.key === activeTab)) {
+      setActiveTab('profile')
+    }
+  }, [activeTab, visibleProfileTabs])
 
   const notifyAction = (type: 'ok' | 'error', text: string) => {
     setActionToast({ type, text })
@@ -638,143 +668,163 @@ export default function UserDetailView({
                     </button>
                   </>
                 )}
-                <button
-                  type="button"
-                  className="admin-settings-ghost"
-                  onClick={async () => {
-                    if (!user?.id || actionBusy) return
-                    const email = String(
-                      user?.email ||
-                      user?.workEmail ||
-                      (user as any)?.mailId ||
-                      profileDraft.email ||
-                      profileDraft.workEmail ||
-                      ''
-                    ).trim()
-                    if (!email) {
-                      notifyAction('error', 'Selected user mail ID is missing')
-                      return
-                    }
-                    try {
-                      setActionBusy(true)
-                      const targetUserId = Number(user.id)
-                      const isServiceAccountUser = Boolean(user?.isServiceAccount)
-                      if (isAgentsMode || isServiceAccountUser) {
-                        if (inviteActionMode === 'invite') {
-                          const result = await sendServiceAccountInvite(targetUserId, email)
-                          await notifyInviteDelivery(
-                            result,
-                            `Service account invite sent to ${email}`,
-                            `Invite email was not sent immediately for ${email}. Please retry Invite.`
-                          )
-                        } else {
-                          const result = await reinviteServiceAccount(targetUserId, email)
-                          await notifyInviteDelivery(
-                            result,
-                            `Reactivation email sent to ${email}`,
-                            `Reactivation email was not sent immediately for ${email}. Please retry Invite.`
-                          )
+                {shouldShowUserActions && (
+                  <> 
+                    {!embedded && (
+                      <button type="button" className="admin-settings-ghost" onClick={() => navigate('/users')}>
+                        Back to list
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="admin-settings-ghost"
+                      onClick={() => {
+                        setEditMode(true)
+                        setPermissionEditing(true)
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-settings-ghost"
+                      onClick={async () => {
+                        if (!user?.id || actionBusy) return
+                        const email = String(
+                          user?.email ||
+                          user?.workEmail ||
+                          (user as any)?.mailId ||
+                          profileDraft.email ||
+                          profileDraft.workEmail ||
+                          ''
+                        ).trim()
+                        if (!email) {
+                          notifyAction('error', 'Selected user mail ID is missing')
+                          return
                         }
-                      } else {
-                        const result = await sendUserInvite(targetUserId, email)
-                        await notifyInviteDelivery(
-                          result,
-                          `Invite email sent to ${email}`,
-                          `Invite email was not sent immediately for ${email}. Please retry Invite.`
-                        )
-                      }
-                    } catch (err: any) {
-                      if (isTransientActionError(err)) {
-                        notifyAction('error', extractActionError(err, 'Invite email was not sent immediately. Please retry Invite.'))
-                      } else {
-                        notifyAction('error', extractActionError(err, 'Failed to process invite'))
-                      }
-                    } finally {
-                      setActionBusy(false)
-                    }
-                  }}
-                  disabled={actionBusy || !user?.id}
-                >
-                  {inviteActionLabel}
-                </button>
-                <button
-                  type="button"
-                  className="admin-settings-danger"
-                  onClick={async () => {
-                    if (!user?.id || actionBusy) return
-                    if (!canDeactivateToEndUser(user)) {
-                      notifyAction('ok', 'User is already a normal end user')
-                      return
-                    }
-                    try {
-                      setActionBusy(true)
-                      await updateUser(Number(user.id), { role: 'USER', isServiceAccount: false, status: 'DEACTIVATED' })
-                      notifyAction('ok', 'User converted to End User')
-                      setUser((prev: any) => {
-                        const next = { ...prev, role: 'USER', isServiceAccount: false, status: 'DEACTIVATED' }
-                        onUserUpdated?.(next)
-                        return next
-                      })
-                    } catch (err: any) {
-                      notifyAction('error', extractActionError(err, 'Failed to convert user'))
-                    } finally {
-                      setActionBusy(false)
-                    }
-                  }}
-                  disabled={actionBusy || !canDeactivate}
-                >
-                  Deactivate
-                </button>
-                <button
-                  type="button"
-                  className={user?.mfaEnabled ? 'admin-settings-ghost' : 'admin-settings-primary'}
-                  onClick={async () => {
-                    if (!user?.id || actionBusy) return
-                    try {
-                      setActionBusy(true)
-                      await updateUserMfaSettings(Number(user.id), !user?.mfaEnabled)
-                      setUser((prev: any) => {
-                        const next = { ...prev, mfaEnabled: !prev?.mfaEnabled }
-                        onUserUpdated?.(next)
-                        return next
-                      })
-                      notifyAction('ok', user?.mfaEnabled ? '2FA disabled' : '2FA enabled')
-                    } catch (err: any) {
-                      notifyAction('error', extractActionError(err, 'Failed to update 2FA'))
-                    } finally {
-                      setActionBusy(false)
-                    }
-                  }}
-                  disabled={actionBusy}
-                >
-                  {user?.mfaEnabled ? 'Disable 2FA' : 'Enable 2FA'}
-                </button>
-                <button
-                  type="button"
-                  className="admin-settings-danger"
-                  onClick={async () => {
-                    if (!user?.id || actionBusy) return
-                    if (!isDeactivatedAccount(user)) {
-                      notifyAction('error', 'Only deactivated accounts can be deleted')
-                      return
-                    }
-                    if (!window.confirm(`Delete ${user?.name || user?.email || `User #${user?.id}`}? This action cannot be undone.`)) return
-                    try {
-                      setActionBusy(true)
-                      await deleteUser(Number(user.id))
-                      notifyAction('ok', 'User deleted successfully')
-                      onUserDeleted?.(Number(user.id))
-                      if (!embedded) navigate('/admin')
-                    } catch (err: any) {
-                      notifyAction('error', extractActionError(err, 'Failed to delete user'))
-                    } finally {
-                      setActionBusy(false)
-                    }
-                  }}
-                  disabled={actionBusy || !canDelete}
-                >
-                  Delete
-                </button>
+                        try {
+                          setActionBusy(true)
+                          const targetUserId = Number(user.id)
+                          const isServiceAccountUser = Boolean(user?.isServiceAccount)
+                          if (isAgentsMode || isServiceAccountUser) {
+                            if (inviteActionMode === 'invite') {
+                              const result = await sendServiceAccountInvite(targetUserId, email)
+                              await notifyInviteDelivery(
+                                result,
+                                `Service account invite sent to ${email}`,
+                                `Invite email was not sent immediately for ${email}. Please retry Invite.`
+                              )
+                            } else {
+                              const result = await reinviteServiceAccount(targetUserId, email)
+                              await notifyInviteDelivery(
+                                result,
+                                `Reactivation email sent to ${email}`,
+                                `Reactivation email was not sent immediately for ${email}. Please retry Invite.`
+                              )
+                            }
+                          } else {
+                            const result = await sendUserInvite(targetUserId, email)
+                            await notifyInviteDelivery(
+                              result,
+                              `Invite email sent to ${email}`,
+                              `Invite email was not sent immediately for ${email}. Please retry Invite.`
+                            )
+                          }
+                        } catch (err: any) {
+                          if (isTransientActionError(err)) {
+                            notifyAction('error', extractActionError(err, 'Invite email was not sent immediately. Please retry Invite.'))
+                          } else {
+                            notifyAction('error', extractActionError(err, 'Failed to process invite'))
+                          }
+                        } finally {
+                          setActionBusy(false)
+                        }
+                      }}
+                      disabled={actionBusy || !user?.id}
+                    >
+                      {inviteActionLabel}
+                    </button>
+                    {canPerformAdminUserActions && (
+                      <button
+                        type="button"
+                        className="admin-settings-danger"
+                        onClick={async () => {
+                          if (!user?.id || actionBusy) return
+                          if (!canDeactivateToEndUser(user)) {
+                            notifyAction('ok', 'User is already a normal end user')
+                            return
+                          }
+                        try {
+                          setActionBusy(true)
+                          await updateUser(Number(user.id), { role: 'USER', isServiceAccount: false, status: 'DEACTIVATED' })
+                          notifyAction('ok', 'User converted to End User')
+                          setUser((prev: any) => {
+                            const next = { ...prev, role: 'USER', isServiceAccount: false, status: 'DEACTIVATED' }
+                            onUserUpdated?.(next)
+                            return next
+                          })
+                        } catch (err: any) {
+                          notifyAction('error', extractActionError(err, 'Failed to convert user'))
+                        } finally {
+                          setActionBusy(false)
+                        }
+                      }}
+                      disabled={actionBusy || !canDeactivate}
+                    >
+                      Deactivate
+                    </button>
+                    <button
+                      type="button"
+                      className={user?.mfaEnabled ? 'admin-settings-ghost' : 'admin-settings-primary'}
+                      onClick={async () => {
+                        if (!user?.id || actionBusy) return
+                        try {
+                          setActionBusy(true)
+                          await updateUserMfaSettings(Number(user.id), !user?.mfaEnabled)
+                          setUser((prev: any) => {
+                            const next = { ...prev, mfaEnabled: !prev?.mfaEnabled }
+                            onUserUpdated?.(next)
+                            return next
+                          })
+                          notifyAction('ok', user?.mfaEnabled ? '2FA disabled' : '2FA enabled')
+                        } catch (err: any) {
+                          notifyAction('error', extractActionError(err, 'Failed to update 2FA'))
+                        } finally {
+                          setActionBusy(false)
+                        }
+                      }}
+                      disabled={actionBusy}
+                    >
+                      {user?.mfaEnabled ? 'Disable 2FA' : 'Enable 2FA'}
+                    </button>
+                    <button
+                      type="button"
+                      className="admin-settings-danger"
+                      onClick={async () => {
+                        if (!user?.id || actionBusy) return
+                        if (!isDeactivatedAccount(user)) {
+                          notifyAction('error', 'Only deactivated accounts can be deleted')
+                          return
+                        }
+                        if (!window.confirm(`Delete ${user?.name || user?.email || `User #${user?.id}`}? This action cannot be undone.`)) return
+                        try {
+                          setActionBusy(true)
+                          await deleteUser(Number(user.id))
+                          notifyAction('ok', 'User deleted successfully')
+                          onUserDeleted?.(Number(user.id))
+                          if (!embedded) navigate('/admin')
+                        } catch (err: any) {
+                          notifyAction('error', extractActionError(err, 'Failed to delete user'))
+                        } finally {
+                          setActionBusy(false)
+                        }
+                      }}
+                      disabled={actionBusy || !canDelete}
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -809,7 +859,7 @@ export default function UserDetailView({
             )}
 
             <nav className="agent-tab-row" aria-label="Agent detail tabs">
-              {profileTabs.map((tab) => (
+              {visibleProfileTabs.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"

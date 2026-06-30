@@ -11,7 +11,7 @@ import {
 } from '../utils/leftPanelConfig'
 import RbacModule from './RbacModule'
 import { createSlaConfig, deleteSlaConfig, listSlaConfigs, updateSlaConfig } from '../services/sla.service'
-import { getDatabaseConfig, getMailConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, updateMailConfig, type MailProvider } from '../services/config.service'
+import { getDatabaseConfig, getMailConfig, saveDatabaseConfig, migrateDatabaseConfig, sendMailTest, testDatabaseConfig, testImap, testSmtp, updateInboundMailConfig, updateMailConfig, type MailProvider } from '../services/config.service'
 import { getSecuritySettings, updateSecuritySettings, type SecuritySettings } from '../services/security-settings.service'
 import { cancelAccount, exportAccountData, getAccountSettings, updateAccountSettings, type AccountSettings } from '../services/account-settings.service'
 import { createAnnouncement, deleteAnnouncement, listAnnouncements, repostAnnouncement, updateAnnouncement, type Announcement } from '../services/announcements.service'
@@ -586,6 +586,7 @@ type MailConfigForm = {
 }
 
 type DatabaseConfigForm = {
+  dialect: 'postgres' | 'mysql'
   connectionString: string
   host: string
   port: string
@@ -933,6 +934,7 @@ const defaultMailConfigForm = (): MailConfigForm => ({
 })
 
 const defaultDatabaseConfigForm = (): DatabaseConfigForm => ({
+  dialect: 'postgres',
   connectionString: '',
   host: '',
   port: '5432',
@@ -1536,11 +1538,13 @@ export default function AdminView(_props: AdminViewProps) {
   const inboundTicketTypeOptions = useMemo(() => ['Incident', 'Service request', 'HR request', 'Task', 'New starter'], [])
   const inboundPriorityOptions = useMemo(() => ['Low', 'Medium', 'High', 'Critical'], [])
   const [queuePanelKey, setQueuePanelKey] = useState<'ticketsMyLists' | 'users' | 'assets' | 'suppliers'>('ticketsMyLists')
+  const ALL_VISIBILITY_ROLES = ['ADMIN', 'AGENT', 'USER', 'SUPPLIER'] as const
+  type VisibilityRole = (typeof ALL_VISIBILITY_ROLES)[number]
   const [ticketQueueModalMode, setTicketQueueModalMode] = useState<TicketQueueModalMode | null>(null)
   const [ticketQueueModalOpen, setTicketQueueModalOpen] = useState(false)
   const [ticketQueueTargetId, setTicketQueueTargetId] = useState('')
   const [ticketQueueLabelInput, setTicketQueueLabelInput] = useState('')
-  const [ticketQueueVisibilityInput, setTicketQueueVisibilityInput] = useState('ADMIN,AGENT')
+  const [ticketQueueVisibilityRoles, setTicketQueueVisibilityRoles] = useState<VisibilityRole[]>(['ADMIN', 'AGENT'])
   const [ticketQueueModalError, setTicketQueueModalError] = useState('')
   const [assetTypesSettings, setAssetTypesSettings] = useState<AssetTypesSettings>({ types: [] })
   const [assetTypesLoading, setAssetTypesLoading] = useState(false)
@@ -2458,6 +2462,7 @@ export default function AdminView(_props: AdminViewProps) {
       const data = await getDatabaseConfig()
       setDbForm((prev) => ({
         ...prev,
+        dialect: String(data?.dialect || 'postgres') as DatabaseConfigForm['dialect'],
         host: String(data?.host || ''),
         port: String(data?.port ?? '5432'),
         database: String(data?.database || ''),
@@ -2619,6 +2624,7 @@ export default function AdminView(_props: AdminViewProps) {
       setDbBusy(true)
       setDbResult('')
       const payload: any = {
+        dialect: dbForm.dialect,
         connectionString: dbForm.connectionString.trim(),
         host: dbForm.host.trim(),
         port: Number(dbForm.port || 5432),
@@ -2631,6 +2637,54 @@ export default function AdminView(_props: AdminViewProps) {
       setDbResult(`Connected to ${result.database}@${result.host}:${result.port} in ${result.latencyMs}ms`)
     } catch (error: any) {
       setDbResult(error?.response?.data?.error || 'Database connection test failed')
+    } finally {
+      setDbBusy(false)
+    }
+  }
+
+  const saveDatabaseConfiguration = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      setDbBusy(true)
+      setDbResult('')
+      const payload: any = {
+        dialect: dbForm.dialect,
+        connectionString: dbForm.connectionString.trim(),
+        host: dbForm.host.trim(),
+        port: Number(dbForm.port || 5432),
+        database: dbForm.database.trim(),
+        user: dbForm.user.trim(),
+        password: dbForm.password,
+        ssl: dbForm.ssl,
+      }
+      const result = await saveDatabaseConfig(payload)
+      setDbResult(`Saved database settings for ${result.dialect}`)
+    } catch (error: any) {
+      setDbResult(error?.response?.data?.error || 'Failed to save database configuration')
+    } finally {
+      setDbBusy(false)
+    }
+  }
+
+  const migrateDatabaseConfiguration = async () => {
+    if (role !== 'ADMIN') return
+    try {
+      setDbBusy(true)
+      setDbResult('')
+      const payload: any = {
+        dialect: dbForm.dialect,
+        connectionString: dbForm.connectionString.trim(),
+        host: dbForm.host.trim(),
+        port: Number(dbForm.port || 5432),
+        database: dbForm.database.trim(),
+        user: dbForm.user.trim(),
+        password: dbForm.password,
+        ssl: dbForm.ssl,
+      }
+      const result = await migrateDatabaseConfig(payload)
+      setDbResult(`Migrated database to ${result.dialect}`)
+    } catch (error: any) {
+      setDbResult(error?.response?.data?.error || 'Failed to migrate database configuration')
     } finally {
       setDbBusy(false)
     }
@@ -3248,11 +3302,16 @@ export default function AdminView(_props: AdminViewProps) {
     resetLeftPanelConfig()
     setLeftPanelConfig(loadLeftPanelConfig())
   }
-  const parseVisibilityRoles = (raw: string): string[] => {
+  const parseVisibilityRoles = (raw: unknown): VisibilityRole[] => {
+    if (Array.isArray(raw)) {
+      return Array.from(new Set(raw
+        .map((value) => String(value || '').trim().toUpperCase())
+        .filter((value) => ALL_VISIBILITY_ROLES.includes(value as VisibilityRole)))) as VisibilityRole[]
+    }
     const parsed = String(raw || '')
-      .split(',')
+      .split(/[\n,]+/g)
       .map((v) => v.trim().toUpperCase())
-      .filter(Boolean)
+      .filter((value) => ALL_VISIBILITY_ROLES.includes(value as VisibilityRole)) as VisibilityRole[]
     return parsed.length ? Array.from(new Set(parsed)) : ['ADMIN', 'AGENT']
   }
   const closeTicketQueueModal = () => {
@@ -3260,14 +3319,14 @@ export default function AdminView(_props: AdminViewProps) {
     setTicketQueueModalMode(null)
     setTicketQueueTargetId('')
     setTicketQueueLabelInput('')
-    setTicketQueueVisibilityInput('ADMIN,AGENT')
+    setTicketQueueVisibilityRoles(['ADMIN', 'AGENT'])
     setTicketQueueModalError('')
   }
   const hydrateTicketQueueForm = (id: string) => {
     const target = leftPanelConfig.ticketQueues.find((q) => q.id === id)
     if (!target) return
     setTicketQueueLabelInput(target.label)
-    setTicketQueueVisibilityInput((target.visibilityRoles || []).join(',') || 'ADMIN,AGENT')
+    setTicketQueueVisibilityRoles(parseVisibilityRoles(target.visibilityRoles || ['ADMIN', 'AGENT']))
   }
   const handleTicketQueueAdd = () => {
     setTicketQueueModalMode('add')
@@ -3275,7 +3334,7 @@ export default function AdminView(_props: AdminViewProps) {
     setTicketQueueModalError('')
     setTicketQueueTargetId('')
     setTicketQueueLabelInput('')
-    setTicketQueueVisibilityInput('ADMIN,AGENT')
+    setTicketQueueVisibilityRoles(['ADMIN', 'AGENT'])
   }
   const handleTicketQueueEdit = () => {
     setTicketQueueModalMode('edit')
@@ -3284,7 +3343,7 @@ export default function AdminView(_props: AdminViewProps) {
     if (!leftPanelConfig.ticketQueues.length) {
       setTicketQueueTargetId('')
       setTicketQueueLabelInput('')
-      setTicketQueueVisibilityInput('ADMIN,AGENT')
+      setTicketQueueVisibilityRoles(['ADMIN', 'AGENT'])
       setTicketQueueModalError('No ticket queue available.')
       return
     }
@@ -3315,7 +3374,7 @@ export default function AdminView(_props: AdminViewProps) {
       }
       const exists = leftPanelConfig.ticketQueues.some((q) => q.label.trim().toLowerCase() === label.toLowerCase())
       if (exists) return setTicketQueueModalError(`Queue "${label}" already exists.`)
-      const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
+      const visibilityRoles = ticketQueueVisibilityRoles.length ? ticketQueueVisibilityRoles : ['ADMIN', 'AGENT']
       try {
         await userService.createTicketQueue({ label })
       } catch (error: any) {
@@ -3347,7 +3406,7 @@ export default function AdminView(_props: AdminViewProps) {
       }
       const duplicate = leftPanelConfig.ticketQueues.some((q) => q.id !== target.id && q.label.trim().toLowerCase() === label.toLowerCase())
       if (duplicate) return setTicketQueueModalError(`Queue "${label}" already exists.`)
-      const visibilityRoles = parseVisibilityRoles(ticketQueueVisibilityInput)
+      const visibilityRoles = ticketQueueVisibilityRoles.length ? ticketQueueVisibilityRoles : ['ADMIN', 'AGENT']
       const queueId = Number(target.queueId || target.id)
       if (Number.isFinite(queueId) && queueId > 0) {
         try {
@@ -5329,6 +5388,12 @@ export default function AdminView(_props: AdminViewProps) {
                 <button className="admin-settings-primary" onClick={runDatabaseTest} disabled={dbBusy || dbLoading}>
                   {dbBusy ? 'Testing...' : 'Test Connection'}
                 </button>
+                <button className="admin-settings-primary" onClick={saveDatabaseConfiguration} disabled={dbBusy || dbLoading} style={{ marginLeft: 8 }}>
+                  {dbBusy ? 'Saving...' : 'Save Configuration'}
+                </button>
+                <button className="admin-settings-primary" onClick={migrateDatabaseConfiguration} disabled={dbBusy || dbLoading} style={{ marginLeft: 8 }}>
+                  {dbBusy ? 'Migrating...' : 'Migrate Database'}
+                </button>
               </>
             )}
             {role !== 'ADMIN' ? (
@@ -5339,6 +5404,16 @@ export default function AdminView(_props: AdminViewProps) {
                   <article className="admin-config-card">
                     <h4>Application Database Connection</h4>
                     <p>Use either a connection string or explicit host credentials.</p>
+                    <label className="admin-field-row">
+                      <span>Database Dialect</span>
+                      <select
+                        value={dbForm.dialect}
+                        onChange={(e) => setDbForm((prev) => ({ ...prev, dialect: e.target.value as DatabaseConfigForm['dialect'] }))}
+                      >
+                        <option value="postgres">PostgreSQL</option>
+                        <option value="mysql">MySQL</option>
+                      </select>
+                    </label>
                     <label className="admin-field-row">
                       <span>Connection String</span>
                       <input
@@ -6187,14 +6262,26 @@ export default function AdminView(_props: AdminViewProps) {
                                   placeholder="Support Team"
                                 />
                               </label>
-                              <label className="admin-field-row" style={{ marginTop: 10 }}>
-                                <span>Visibility roles (comma separated)</span>
-                                <input
-                                  value={ticketQueueVisibilityInput}
-                                  onChange={(e) => setTicketQueueVisibilityInput(e.target.value)}
-                                  placeholder="ADMIN,AGENT"
-                                />
-                              </label>
+                              <div style={{ marginTop: 10 }}>
+                                <span style={{ display: 'block', marginBottom: 6 }}>Visibility roles</span>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                                  {ALL_VISIBILITY_ROLES.map((roleOption) => (
+                                    <label key={roleOption} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={ticketQueueVisibilityRoles.includes(roleOption)}
+                                        onChange={(e) => {
+                                          const nextRoles = e.target.checked
+                                            ? Array.from(new Set([...ticketQueueVisibilityRoles, roleOption]))
+                                            : ticketQueueVisibilityRoles.filter((value) => value !== roleOption)
+                                          setTicketQueueVisibilityRoles(nextRoles.length ? nextRoles : ['ADMIN', 'AGENT'])
+                                        }}
+                                      />
+                                      {roleOption}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
                             </>
                           )}
                           {ticketQueueModalMode === 'delete' && (
@@ -6247,17 +6334,15 @@ export default function AdminView(_props: AdminViewProps) {
                             return aId - bId
                           })
                           .map((queue) => {
-                          const queueId = queue.queueId ?? Number(queue.id)
-                          const queueIdLabel = Number.isFinite(queueId) && queueId > 0 ? queueId : '-'
-                          return (
-                            <div key={`${queue.label}-${queueIdLabel}`} className="admin-queue-rule-row">
-                              <span>{queue.label}</span>
-                              <small>
-                                ID: {queueIdLabel} | Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
-                              </small>
-                            </div>
-                          )
-                        })}
+                            return (
+                              <div key={`${queue.label}-${queue.id}`} className="admin-queue-rule-row">
+                                <span>{queue.label}</span>
+                                <small>
+                                  Scope: {(queue.visibilityRoles || []).join(', ') || 'ALL'} | Default: Unassigned (non-deletable)
+                                </small>
+                              </div>
+                            )
+                          })}
                       </div>
                     </>
                   ) : (

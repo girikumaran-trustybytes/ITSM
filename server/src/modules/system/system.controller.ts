@@ -1,5 +1,6 @@
 import { Request, Response } from 'express'
 import { Pool } from 'pg'
+import mysql from 'mysql2/promise'
 import fs from 'fs'
 import path from 'path'
 import { query } from '../../db'
@@ -150,22 +151,39 @@ function toBool(value: unknown, fallback = false) {
   return fallback
 }
 
+type DatabaseDialect = 'postgres' | 'mysql'
+
+type DatabaseConfig = {
+  dialect: DatabaseDialect
+  connectionString: string
+  host: string
+  port: number
+  database: string
+  user: string
+  password: string
+  ssl: boolean
+}
+
 function parseDbConfigFromUrl(connectionString: string) {
   try {
     const url = new URL(connectionString)
+    const protocol = String(url.protocol || '').toLowerCase()
+    const dialect = protocol.startsWith('mysql') ? 'mysql' : 'postgres'
     const database = String(url.pathname || '').replace(/^\/+/, '')
     const sslMode = String(url.searchParams.get('sslmode') || '').trim().toLowerCase()
     return {
+      dialect,
       connectionString,
       host: String(url.hostname || '').trim(),
-      port: Number(url.port || 5432),
+      port: Number(url.port || (dialect === 'mysql' ? 3306 : 5432)),
       database,
       user: decodeURIComponent(String(url.username || '').trim()),
-      ssl: ['require', 'verify-ca', 'verify-full'].includes(sslMode),
+      ssl: ['require', 'verify-ca', 'verify-full', 'ssl=true'].includes(sslMode),
       hasPassword: Boolean(String(url.password || '').trim()),
     }
   } catch {
     return {
+      dialect: 'postgres' as DatabaseDialect,
       connectionString,
       host: '',
       port: 5432,
@@ -180,8 +198,9 @@ function parseDbConfigFromUrl(connectionString: string) {
 function buildDbConnectionString(input: any): string {
   const raw = String(input?.connectionString || '').trim()
   if (raw) return raw
+  const dialect = String(input?.dialect || 'postgres').toLowerCase() === 'mysql' ? 'mysql' : 'postgres'
   const host = String(input?.host || '').trim()
-  const port = Number(input?.port || 5432) || 5432
+  const port = Number(input?.port || (dialect === 'mysql' ? 3306 : 5432)) || (dialect === 'mysql' ? 3306 : 5432)
   const database = String(input?.database || '').trim()
   const user = String(input?.user || '').trim()
   const password = String(input?.password || '').trim()
@@ -192,6 +211,10 @@ function buildDbConnectionString(input: any): string {
   if (!user) throw { status: 400, message: 'Database user is required' }
 
   const auth = `${encodeURIComponent(user)}:${encodeURIComponent(password)}`
+  if (dialect === 'mysql') {
+    const sslSuffix = ssl ? '?ssl=true' : ''
+    return `mysql://${auth}@${host}:${port}/${database}${sslSuffix}`
+  }
   const sslSuffix = ssl ? '?sslmode=require' : ''
   return `postgresql://${auth}@${host}:${port}/${database}${sslSuffix}`
 }
@@ -379,12 +402,10 @@ async function saveSystemSetting(key: string, value: any) {
 }
 
 export async function getDatabaseConfig(_req: Request, res: Response) {
-  const fromEnv = String(
-    process.env.DATABASE_URL ||
-    ''
-  ).trim()
+  const fromEnv = String(process.env.DATABASE_URL || '').trim()
   const cfg = parseDbConfigFromUrl(fromEnv)
   return res.json({
+    dialect: cfg.dialect,
     host: cfg.host,
     port: cfg.port,
     database: cfg.database,
@@ -395,50 +416,144 @@ export async function getDatabaseConfig(_req: Request, res: Response) {
   })
 }
 
+async function testPostgresConnection(connectionString: string, password?: string) {
+  const parsed = parseDbConfigFromUrl(connectionString)
+  const poolOptions: any = {
+    connectionString,
+    max: 1,
+    connectionTimeoutMillis: 6000,
+    idleTimeoutMillis: 1000,
+    ssl: parsed.ssl ? { rejectUnauthorized: false } : undefined,
+  }
+  if (password) {
+    poolOptions.password = password
+  }
+  const pool = new Pool(poolOptions)
+  try {
+    const rows = await pool.query('SELECT NOW()::text AS now')
+    return rows.rows?.[0]?.now || null
+  } finally {
+    await pool.end()
+  }
+}
+
+async function testMysqlConnection(connectionString: string) {
+  const conn = await mysql.createConnection(connectionString)
+  try {
+    const [rows] = await conn.execute('SELECT NOW() AS now')
+    if (Array.isArray(rows) && rows.length > 0 && typeof rows[0] === 'object') {
+      return (rows[0] as any).now || null
+    }
+    return null
+  } finally {
+    await conn.end()
+  }
+}
+
 export async function testDatabaseConfig(req: Request, res: Response) {
-  let pool: Pool | null = null
   try {
     const rawConnectionString = String(req.body?.connectionString || '').trim()
-    const manualPassword = typeof req.body?.password === 'string' ? req.body.password : ''
     const connectionString = buildDbConnectionString(req.body || {})
     const parsed = parseDbConfigFromUrl(connectionString)
-    if (rawConnectionString && !parsed.hasPassword && !manualPassword) {
+    if (rawConnectionString && !parsed.hasPassword && typeof req.body?.password === 'string' && !req.body.password) {
       throw {
         status: 400,
         message: 'Connection string password is missing. Add password in the URL or use the Password field.',
       }
     }
     const started = Date.now()
-    const poolOptions: any = {
-      connectionString,
-      max: 1,
-      connectionTimeoutMillis: 6000,
-      idleTimeoutMillis: 1000,
-      ssl: parsed.ssl ? { rejectUnauthorized: false } : undefined,
-    }
-    // Ensure password is always a string in manual mode; optionally allow overriding URL password.
-    if (!rawConnectionString || manualPassword) {
-      poolOptions.password = manualPassword
-    }
-    pool = new Pool(poolOptions)
-    const rows = await pool.query('SELECT NOW()::text AS now')
+    const serverTime = parsed.dialect === 'mysql'
+      ? await testMysqlConnection(connectionString)
+      : await testPostgresConnection(connectionString, String(req.body?.password || ''))
     const latencyMs = Date.now() - started
     return res.json({
       ok: true,
+      dialect: parsed.dialect,
       host: parsed.host,
       port: parsed.port,
       database: parsed.database,
       user: parsed.user,
       ssl: parsed.ssl,
       latencyMs,
-      serverTime: rows.rows?.[0]?.now || null,
+      serverTime,
     })
   } catch (err: any) {
     return res.status(err.status || 500).json({ error: err.message || 'Database connection test failed' })
-  } finally {
-    if (pool) {
-      try { await pool.end() } catch {}
+  }
+}
+
+function readDotEnv(pathToEnv: string) {
+  if (!fs.existsSync(pathToEnv)) return ''
+  return fs.readFileSync(pathToEnv, 'utf8')
+}
+
+function writeDotEnv(pathToEnv: string, content: string) {
+  fs.writeFileSync(pathToEnv, content, 'utf8')
+}
+
+function saveDotEnvValues(vars: Record<string, string>) {
+  const envPath = path.resolve(__dirname, '../../../.env')
+  const existing = readDotEnv(envPath).split(/\r?\n/)
+  const nextLines: string[] = []
+  const updatedKeys = new Set<string>()
+  for (const rawLine of existing) {
+    const match = rawLine.match(/^([A-Za-z0-9_]+)=(.*)$/)
+    if (match && match[1] in vars) {
+      nextLines.push(`${match[1]}=${vars[match[1]]}`)
+      updatedKeys.add(match[1])
+    } else {
+      nextLines.push(rawLine)
     }
+  }
+  for (const [key, value] of Object.entries(vars)) {
+    if (!updatedKeys.has(key)) {
+      nextLines.push(`${key}=${value}`)
+    }
+  }
+  writeDotEnv(envPath, nextLines.join('\n'))
+}
+
+export async function saveDatabaseConfig(req: Request, res: Response) {
+  try {
+    const connectionString = buildDbConnectionString(req.body || {})
+    const parsed = parseDbConfigFromUrl(connectionString)
+    saveDotEnvValues({
+      DATABASE_URL: connectionString,
+      DATABASE_DIALECT: parsed.dialect,
+    })
+    process.env.DATABASE_URL = connectionString
+    process.env.DATABASE_DIALECT = parsed.dialect
+    return res.json({ ok: true, dialect: parsed.dialect, connectionString })
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ error: err.message || 'Failed to save database configuration' })
+  }
+}
+
+export async function migrateDatabaseConfig(req: Request, res: Response) {
+  try {
+    const rawConnectionString = String(req.body?.connectionString || '').trim()
+    const connectionString = buildDbConnectionString(req.body || {})
+    const parsed = parseDbConfigFromUrl(connectionString)
+    if (rawConnectionString && !parsed.hasPassword && typeof req.body?.password === 'string' && !req.body.password) {
+      throw {
+        status: 400,
+        message: 'Connection string password is missing. Add password in the URL or use the Password field.',
+      }
+    }
+    if (parsed.dialect === 'mysql') {
+      await testMysqlConnection(connectionString)
+    } else {
+      await testPostgresConnection(connectionString, String(req.body?.password || ''))
+    }
+    saveDotEnvValues({
+      DATABASE_URL: connectionString,
+      DATABASE_DIALECT: parsed.dialect,
+    })
+    process.env.DATABASE_URL = connectionString
+    process.env.DATABASE_DIALECT = parsed.dialect
+    return res.json({ ok: true, migrated: true, dialect: parsed.dialect, connectionString })
+  } catch (err: any) {
+    return res.status(err.status || 500).json({ error: err.message || 'Failed to migrate database configuration' })
   }
 }
 

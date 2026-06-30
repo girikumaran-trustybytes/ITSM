@@ -205,18 +205,10 @@ export default function PortalAssets() {
       <header className="portal-topbar portal-home-topbar portal-unified-topbar">
         <div className="portal-top-actions">
           <nav className="portal-nav">
-            <button className="portal-nav-link" onClick={() => navigate('/portal/home')}>
-              Home
-            </button>
-            <button className="portal-nav-link" onClick={() => navigate('/portal/new-ticket')}>
-              New Ticket
-            </button>
-            <button className="portal-nav-link" onClick={() => navigate('/portal/tickets')}>
-              My Tickets
-            </button>
-            <button className="portal-nav-link active" onClick={() => navigate('/portal/assets')}>
-              My Devices
-            </button>
+            <button className="portal-nav-link" onClick={() => navigate('/portal/home')}>Home</button>
+            <button className="portal-nav-link" onClick={() => navigate('/portal/new-ticket')}>New Ticket</button>
+            <button className="portal-nav-link" onClick={() => navigate('/portal/tickets')}>My Tickets</button>
+            <button className="portal-nav-link active" onClick={() => navigate('/portal/assets')}>My Devices</button>
           </nav>
           <div className="portal-profile" onClick={() => { setProfileOpen(true); setShowPresenceMenu(false) }}>
             <div className="portal-profile-name">{user?.name || 'User'}</div>

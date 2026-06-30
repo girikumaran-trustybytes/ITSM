@@ -5742,7 +5742,7 @@ body.is-column-resizing * {
 }
 .portal-topbar {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   width: 100%;
   margin: 0 0 24px;
@@ -5762,6 +5762,11 @@ body.is-column-resizing * {
   display: flex;
   align-items: center;
   min-width: 198px;
+}
+.portal-topbar .portal-top-actions {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
 }
 .portal-logo-image {
   display: block;
@@ -6014,6 +6019,13 @@ body.is-column-resizing * {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+}
+.portal-editor-icon-btn svg {
+  display: block;
 }
 .portal-editor-size-select {
   width: 86px;

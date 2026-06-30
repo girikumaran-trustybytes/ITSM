@@ -1,0 +1,1 @@
+import{H as s}from"./index-b5e35175.js";async function r(a={}){return(await s.get("/sla",{params:a})).data}async function o(a){return(await s.post("/sla",a)).data}async function c(a,t){return(await s.patch(`/sla/${a}`,t)).data}async function i(a){return(await s.delete(`/sla/${a}`)).data}export{o as c,i as d,r as l,c as u};

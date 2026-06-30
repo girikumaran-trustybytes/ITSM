@@ -5,7 +5,6 @@ export type ItsmNavKey =
   | 'users'
   | 'suppliers'
   | 'accounts'
-  | 'reports'
   | 'admin'
 
 type AuthLikeUser = {
@@ -21,11 +20,10 @@ const NAV_PATHS: Record<ItsmNavKey, string> = {
   users: '/users',
   suppliers: '/supplier',
   accounts: '/accounts',
-  reports: '/reports',
   admin: '/admin',
 }
 
-const ORDERED_NAV: ItsmNavKey[] = ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'reports', 'accounts', 'admin']
+const ORDERED_NAV: ItsmNavKey[] = ['dashboard', 'tickets', 'assets', 'users', 'suppliers', 'accounts', 'admin']
 const DEFAULT_FALLBACK_ROUTE = NAV_PATHS.tickets
 
 function normalizeRoles(user?: AuthLikeUser | null): string[] {
@@ -98,13 +96,8 @@ export function canAccessItsmNav(user: AuthLikeUser | null | undefined, nav: Its
         hasAnyPermission(permissions, ['itsm.suppliers', 'suppliers:*:view', 'supplier:*:read'])
       )
 
-    case 'reports':
-      return (
-        roles.includes('AGENT') ||
-        hasAnyPermission(permissions, ['reports:*:view', 'report:*:read'])
-      )
-
     case 'accounts':
+      return true
       return true
 
     case 'admin':

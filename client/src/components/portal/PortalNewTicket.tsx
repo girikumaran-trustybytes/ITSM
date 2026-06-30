@@ -490,18 +490,10 @@ export default function PortalNewTicket() {
       <header className="portal-topbar portal-home-topbar portal-unified-topbar">
         <div className="portal-top-actions">
           <nav className="portal-nav">
-            <button className="portal-nav-link" onClick={() => navigate('/portal/home')}>
-              Home
-            </button>
-            <button className="portal-nav-link active" onClick={() => navigate('/portal/new-ticket')}>
-              New Ticket
-            </button>
-            <button className="portal-nav-link" onClick={() => navigate('/portal/tickets')}>
-              My Tickets
-            </button>
-            <button className="portal-nav-link" onClick={() => navigate('/portal/assets')}>
-              My Devices
-            </button>
+            <button className="portal-nav-link" onClick={() => navigate('/portal/home')}>Home</button>
+            <button className="portal-nav-link active" onClick={() => navigate('/portal/new-ticket')}>New Ticket</button>
+            <button className="portal-nav-link" onClick={() => navigate('/portal/tickets')}>My Tickets</button>
+            <button className="portal-nav-link" onClick={() => navigate('/portal/assets')}>My Devices</button>
           </nav>
           <div className="portal-profile" onClick={() => { setProfileOpen(true); setShowPresenceMenu(false) }}>
             <div className="portal-avatar unified-user-avatar">
@@ -690,9 +682,46 @@ export default function PortalNewTicket() {
                     <path d="m6 17 4-4 3 3 3-4 2 2" />
                   </svg>
                 </button>
-                <button type="button" className="portal-editor-plain-btn" onClick={() => openMediaPicker('video/*')}>video</button>
-                <button type="button" className="portal-editor-plain-btn" onClick={() => openMediaPicker('audio/*')}>audio</button>
-                <button type="button" className="portal-editor-plain-btn" onClick={() => openMediaPicker('*/*')}>doc</button>
+                <button
+                  type="button"
+                  className="portal-editor-icon-btn"
+                  onClick={() => openMediaPicker('video/*')}
+                  title="Insert video"
+                  aria-label="Insert video"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="6" width="14" height="12" rx="2" />
+                    <path d="m10 10 4 2-4 2z" />
+                    <path d="m17 10 4-2v8l-4-2z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="portal-editor-icon-btn"
+                  onClick={() => openMediaPicker('audio/*')}
+                  title="Insert audio"
+                  aria-label="Insert audio"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 10v4h4l5 4V6l-5 4z" />
+                    <path d="M18 9a4 4 0 0 1 0 6" />
+                    <path d="M20 7a7 7 0 0 1 0 10" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="portal-editor-icon-btn"
+                  onClick={() => openMediaPicker('*/*')}
+                  title="Insert document"
+                  aria-label="Insert document"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 3h7l5 5v13H7z" />
+                    <path d="M14 3v5h5" />
+                    <path d="M10 13h6" />
+                    <path d="M10 17h6" />
+                  </svg>
+                </button>
                 <button type="button" className="portal-editor-icon-btn" onClick={() => applyCommand('removeFormat')} title="Clear formatting" aria-label="Clear formatting">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
                     <path d="M4 20h10" />
@@ -704,15 +733,21 @@ export default function PortalNewTicket() {
                 <div className="portal-editor-insert-wrap" ref={insertMenuRef}>
                   <button
                     type="button"
-                    className="portal-editor-insert-btn"
+                    className="portal-editor-icon-btn"
                     onClick={() => {
                       setShowInsertMenu((v) => !v)
                       setShowAlignMenu(false)
                       setShowOrderedMenu(false)
                       setShowUnorderedMenu(false)
                     }}
+                    title="Insert options"
+                    aria-label="Insert options"
                   >
-                    Insert <span aria-hidden="true">v</span>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M6 12h12" />
+                      <path d="M12 6v12" />
+                      <path d="M18 16l-6 6-6-6" transform="translate(0 -10)" />
+                    </svg>
                   </button>
                   {showInsertMenu ? (
                     <div className="portal-editor-insert-menu" role="menu" aria-label="Insert options">
@@ -727,8 +762,18 @@ export default function PortalNewTicket() {
                   ) : null}
                 </div>
                 <span className="portal-editor-toolbar-spacer" />
-                <button type="button" className="portal-editor-plain-btn" onClick={() => applyCommand('removeFormat')}>
-                  Plain text
+                <button
+                  type="button"
+                  className="portal-editor-icon-btn"
+                  onClick={() => applyCommand('removeFormat')}
+                  title="Plain text"
+                  aria-label="Plain text"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6 5h12" />
+                    <path d="M6 12h12" />
+                    <path d="M6 19h12" />
+                  </svg>
                 </button>
               </div>
               <div

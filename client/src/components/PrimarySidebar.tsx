@@ -90,18 +90,6 @@ const navItems: NavItem[] = [
     )
   },
   {
-    id: 'reports',
-    label: 'Reports',
-    icon: (
-      <svg className="nav-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M4 19h16" />
-        <rect x="6" y="10" width="3" height="6" rx="1" />
-        <rect x="11" y="6" width="3" height="10" rx="1" />
-        <rect x="16" y="12" width="3" height="4" rx="1" />
-      </svg>
-    )
-  },
-  {
     id: 'admin',
     label: 'Admin',
     icon: (
@@ -121,7 +109,6 @@ export const primarySidebarModules = navItems.map((item) => ({
 function navPathById(id: string) {
   if (id === 'dashboard') return '/dashboard'
   if (id === 'suppliers') return '/supplier'
-  if (id === 'reports') return '/reports'
   return `/${id}`
 }
 

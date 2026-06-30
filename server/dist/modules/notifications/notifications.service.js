@@ -1,0 +1,157 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.saveNotificationState = exports.getNotificationState = exports.listNotifications = void 0;
+const db_1 = require("../../db");
+const announcements_service_1 = require("../announcements/announcements.service");
+let ensureStateTablePromise = null;
+async function ensureNotificationStateTable() {
+    if (!ensureStateTablePromise) {
+        ensureStateTablePromise = (async () => {
+            await (0, db_1.query)(`
+        CREATE TABLE IF NOT EXISTS "notificationstate" (
+          "userId" INTEGER PRIMARY KEY REFERENCES "user"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+          "readIds" JSONB NOT NULL DEFAULT '[]'::jsonb,
+          "deletedIds" JSONB NOT NULL DEFAULT '[]'::jsonb,
+          "clearedAt" TIMESTAMP(3),
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+        })().catch((err) => {
+            ensureStateTablePromise = null;
+            throw err;
+        });
+    }
+    await ensureStateTablePromise;
+}
+function normalizeIds(value) {
+    if (!Array.isArray(value))
+        return [];
+    return Array.from(new Set(value
+        .map((v) => Number(v))
+        .filter((v) => Number.isFinite(v) && v > 0))).slice(0, 5000);
+}
+function normalizeState(input) {
+    const clearedAtNum = Number(input?.clearedAt);
+    const clearedAt = Number.isFinite(clearedAtNum) && clearedAtNum > 0 ? clearedAtNum : undefined;
+    return {
+        readIds: normalizeIds(input?.readIds),
+        deletedIds: normalizeIds(input?.deletedIds),
+        clearedAt,
+    };
+}
+function getViewerId(viewer) {
+    const viewerId = Number(viewer?.id);
+    if (!Number.isFinite(viewerId) || viewerId <= 0)
+        return null;
+    return viewerId;
+}
+async function listNotifications(viewer, opts = {}) {
+    const role = String(viewer?.role || 'USER').toUpperCase();
+    const limit = Math.min(Math.max(Number(opts.limit || 100), 1), 200);
+    const viewerId = Number(viewer?.id);
+    const params = [];
+    const conditions = [];
+    conditions.push(`a."action" = 'create_ticket'`);
+    if (role === 'ADMIN') {
+        conditions.push('1=1');
+    }
+    else if (role === 'AGENT') {
+        params.push(['ticket', 'asset', 'change', 'problem', 'service', 'supplier', 'sla', 'system']);
+        conditions.push(`a."entity" = ANY($${params.length}::text[])`);
+    }
+    else {
+        if (!Number.isFinite(viewerId) || viewerId <= 0)
+            return [];
+        params.push(viewerId);
+        const userParam = `$${params.length}`;
+        conditions.push(`(
+      (a."entity" = 'ticket' AND (t."requesterId" = ${userParam} OR a."userId" = ${userParam}))
+      OR a."userId" = ${userParam}
+    )`);
+    }
+    params.push(limit);
+    const rows = await (0, db_1.query)(`SELECT
+      a."id",
+      a."action",
+      a."entity",
+      a."entityId",
+      a."userId",
+      a."meta",
+      a."createdAt",
+      (a."meta"->>'ticketId') AS "ticketId"
+     FROM "auditlog" a
+     LEFT JOIN "ticket" t ON t."ticketId" = (a."meta"->>'ticketId')
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY a."createdAt" DESC
+     LIMIT $${params.length}`, params);
+    const announcementRows = await (0, announcements_service_1.listActiveAnnouncements)('maintenance');
+    const announcementNotifications = announcementRows.map((row) => ({
+        id: 2000000000 + Number(row.id),
+        action: 'maintenance_announcement',
+        entity: 'announcement',
+        entityId: Number(row.id),
+        userId: null,
+        ticketId: null,
+        meta: {
+            title: row.title,
+            body: row.body,
+            type: row.type,
+            publishAt: row.publishAt,
+            expireAt: row.expireAt,
+        },
+        createdAt: row.publishAt || row.createdAt,
+    }));
+    const merged = [...rows, ...announcementNotifications];
+    merged.sort((a, b) => {
+        const aTime = new Date(a.createdAt || 0).getTime();
+        const bTime = new Date(b.createdAt || 0).getTime();
+        return bTime - aTime;
+    });
+    return merged.slice(0, limit);
+}
+exports.listNotifications = listNotifications;
+async function getNotificationState(viewer) {
+    const viewerId = getViewerId(viewer);
+    if (!viewerId)
+        return { readIds: [], deletedIds: [], clearedAt: undefined };
+    await ensureNotificationStateTable();
+    const rows = await (0, db_1.query)(`SELECT
+      "readIds",
+      "deletedIds",
+      CAST(EXTRACT(EPOCH FROM "clearedAt") * 1000 AS BIGINT) AS "clearedAtMs"
+     FROM "notificationstate"
+     WHERE "userId" = $1
+     LIMIT 1`, [viewerId]);
+    const row = rows[0];
+    if (!row)
+        return { readIds: [], deletedIds: [], clearedAt: undefined };
+    return normalizeState({
+        readIds: row.readIds,
+        deletedIds: row.deletedIds,
+        clearedAt: row.clearedAtMs,
+    });
+}
+exports.getNotificationState = getNotificationState;
+async function saveNotificationState(viewer, input) {
+    const viewerId = getViewerId(viewer);
+    const normalized = normalizeState(input);
+    if (!viewerId)
+        return normalized;
+    await ensureNotificationStateTable();
+    await (0, db_1.query)(`INSERT INTO "notificationstate" ("userId", "readIds", "deletedIds", "clearedAt", "updatedAt")
+     VALUES (
+      $1,
+      to_jsonb($2::int[]),
+      to_jsonb($3::int[]),
+      CASE WHEN $4::bigint > 0 THEN to_timestamp($4::double precision / 1000.0) ELSE NULL END,
+      CURRENT_TIMESTAMP
+     )
+     ON CONFLICT ("userId")
+     DO UPDATE SET
+      "readIds" = EXCLUDED."readIds",
+      "deletedIds" = EXCLUDED."deletedIds",
+      "clearedAt" = EXCLUDED."clearedAt",
+      "updatedAt" = CURRENT_TIMESTAMP`, [viewerId, normalized.readIds, normalized.deletedIds, normalized.clearedAt || null]);
+    return normalized;
+}
+exports.saveNotificationState = saveNotificationState;

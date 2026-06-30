@@ -27,7 +27,6 @@ const UserDetailView = React.lazy(() => import('./modules/users/components/UserD
 const SuppliersView = React.lazy(() => import('./modules/suppliers/components/SuppliersView'))
 const SupplierDetailView = React.lazy(() => import('./modules/suppliers/components/SupplierDetailView'))
 const AccountsView = React.lazy(() => import('./components/AccountsView'))
-const ReportsView = React.lazy(() => import('./components/ReportsView'))
 const PromptLibraryView = React.lazy(() => import('./components/PromptLibraryView'))
 const AdminView = React.lazy(() => import('./components/AdminView'))
 const AccountSecurityView = React.lazy(() => import('./components/AccountSecurityView'))
@@ -60,7 +59,6 @@ const navLabels: Record<string, string> = {
   users: 'Users',
   suppliers: 'Suppliers',
   accounts: 'Accounts',
-  reports: 'Reports',
   prompts: 'Prompt Library',
   admin: 'Admin',
 }
@@ -71,7 +69,6 @@ const navPaths: Record<string, string> = {
   users: '/users',
   suppliers: '/supplier',
   accounts: '/accounts',
-  reports: '/reports',
   prompts: '/prompt-library',
   admin: '/admin',
 }
@@ -82,7 +79,6 @@ function getNavFromPath(pathname: string) {
   if (pathname.startsWith('/users')) return 'users'
   if (pathname.startsWith('/supplier')) return 'suppliers'
   if (pathname.startsWith('/accounts')) return 'accounts'
-  if (pathname.startsWith('/reports')) return 'reports'
   if (pathname.startsWith('/prompt-library')) return 'prompts'
   if (pathname.startsWith('/admin')) return 'admin'
   return 'dashboard'
@@ -441,10 +437,6 @@ function MainShell() {
       navigate('/supplier')
       return
     }
-    if (id === 'reports') {
-      navigate('/reports')
-      return
-    }
     navigate(`/${id}`)
   }
 
@@ -499,7 +491,6 @@ function MainShell() {
 
   const isTicketsRoute = location.pathname.startsWith('/tickets')
   const isDashboardRoute = location.pathname.startsWith('/dashboard')
-  const isReportsRoute = location.pathname.startsWith('/reports')
   const isUsersListRoute = location.pathname === '/users'
   const isUsersDetailRoute = location.pathname.startsWith('/users/')
   const isAgentsDetailRoute = location.pathname.startsWith('/agents/')
@@ -509,7 +500,7 @@ function MainShell() {
   const isSuppliersListRoute = location.pathname === '/supplier'
   const isAdminListRoute = location.pathname === '/admin'
   const isSecurityRoute = location.pathname.startsWith('/security')
-  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isReportsRoute && !isAdminListRoute && !isAccountsListRoute && !isSecurityRoute
+  const showSharedToolbar = !isTicketsRoute && !isDashboardRoute && !isAdminListRoute && !isAccountsListRoute && !isSecurityRoute
   const toolbarPagination =
     isUsersListRoute || isAccountsListRoute ? usersPagination :
     isAssetsListRoute ? assetsPagination :
@@ -1159,7 +1150,6 @@ function MainShell() {
               </div>
             }
           />
-          <Route path="/reports" element={<div className="work-main"><ReportsView /></div>} />
           <Route
             path="/prompt-library"
             element={<div className="work-main"><PromptLibraryView /></div>}

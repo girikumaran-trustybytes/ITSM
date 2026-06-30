@@ -45,3 +45,13 @@ export async function testDatabaseConfig(payload: any) {
   const res = await api.post('/system/database/test', payload)
   return res.data
 }
+
+export async function saveDatabaseConfig(payload: any) {
+  const res = await api.post('/system/database/save', payload)
+  return res.data
+}
+
+export async function migrateDatabaseConfig(payload: any) {
+  const res = await api.post('/system/database/migrate', payload)
+  return res.data
+}
